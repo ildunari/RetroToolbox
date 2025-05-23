@@ -4,6 +4,7 @@ import { SoundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
+import { levels, BOSS_INTERVAL } from './levels';
 
 // Create sound manager instance
 const soundManager = new SoundManager();
@@ -30,31 +31,51 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     bricks: [],
     particles: [],
     powerUps: [],
+    boss: null,
     lastUpdate: 0
   });
 
   const initBricks = useCallback(() => {
+    const canvas = canvasRef.current;
+    const width = canvas ? canvas.width : 800;
     const bricks = [];
-    const rows = 4 + level;
-    const cols = 10;
     const brickWidth = 70;
     const brickHeight = 20;
     const padding = 5;
-    
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        bricks.push({
-          x: c * (brickWidth + padding) + 35,
-          y: r * (brickHeight + padding) + 60,
-          width: brickWidth,
-          height: brickHeight,
-          color: `hsl(${r * 40}, 70%, 50%)`,
-          hits: rows - r,
-          maxHits: rows - r,
-          powerUp: Math.random() < 0.1 ? ['multiball', 'expand', 'laser'][Math.floor(Math.random() * 3)] : null
-        });
+
+    if (level % BOSS_INTERVAL === 0) {
+      gameRef.current.bricks = [];
+      gameRef.current.boss = {
+        x: width / 2 - 75,
+        y: 60,
+        width: 150,
+        height: 30,
+        hits: 10 + level,
+        vx: 2
+      };
+      return;
+    }
+
+    const pattern = levels[(level - 1) % levels.length];
+
+    for (let r = 0; r < pattern.length; r++) {
+      for (let c = 0; c < pattern[r].length; c++) {
+        const hits = pattern[r][c];
+        if (hits > 0) {
+          bricks.push({
+            x: c * (brickWidth + padding) + 35,
+            y: r * (brickHeight + padding) + 60,
+            width: brickWidth,
+            height: brickHeight,
+            color: `hsl(${r * 40}, 70%, 50%)`,
+            hits,
+            maxHits: hits,
+            powerUp: Math.random() < 0.1 ? ['multiball', 'expand', 'laser'][Math.floor(Math.random() * 3)] : null
+          });
+        }
       }
     }
+    gameRef.current.boss = null;
     gameRef.current.bricks = bricks;
   }, [level]);
 
@@ -133,6 +154,13 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         if (game.ballY <= game.ballSize) {
           game.ballVY = -game.ballVY;
           soundManager.playTone(220, 50);
+        }
+
+        if (game.boss) {
+          game.boss.x += game.boss.vx;
+          if (game.boss.x <= 0 || game.boss.x + game.boss.width >= canvas.width) {
+            game.boss.vx = -game.boss.vx;
+          }
         }
 
         // Ball fell off bottom
@@ -221,6 +249,36 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
           return true;
         });
 
+        if (game.boss &&
+            game.ballX + game.ballSize >= game.boss.x &&
+            game.ballX - game.ballSize <= game.boss.x + game.boss.width &&
+            game.ballY + game.ballSize >= game.boss.y &&
+            game.ballY - game.ballSize <= game.boss.y + game.boss.height) {
+
+          game.boss.hits--;
+
+          if (game.boss.hits <= 0) {
+            setScore(s => s + 1000);
+            soundManager.playPowerUp();
+            game.boss = null;
+            setLevel(l => l + 1);
+            initBricks();
+          } else {
+            soundManager.playTone(440, 50);
+          }
+
+          const bossCenterX = game.boss.x + game.boss.width / 2;
+          const bossCenterY = game.boss.y + game.boss.height / 2;
+          const dx = Math.abs(game.ballX - bossCenterX);
+          const dy = Math.abs(game.ballY - bossCenterY);
+
+          if (dx / game.boss.width > dy / game.boss.height) {
+            game.ballVX = -game.ballVX;
+          } else {
+            game.ballVY = -game.ballVY;
+          }
+        }
+
         // Power-up collision
         game.powerUps = game.powerUps.filter(powerUp => {
           powerUp.y += powerUp.vy;
@@ -248,7 +306,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         });
 
         // Check level complete
-        if (game.bricks.length === 0) {
+        if (game.bricks.length === 0 && !game.boss) {
           setLevel(l => l + 1);
           soundManager.playPowerUp();
           initBricks();
@@ -281,6 +339,15 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
           ctx.fillText(brick.hits, brick.x + brick.width/2, brick.y + brick.height/2 + 4);
         }
       });
+
+      if (gameRef.current.boss) {
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(gameRef.current.boss.x, gameRef.current.boss.y, gameRef.current.boss.width, gameRef.current.boss.height);
+        ctx.fillStyle = 'white';
+        ctx.font = '16px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(gameRef.current.boss.hits, gameRef.current.boss.x + gameRef.current.boss.width / 2, gameRef.current.boss.y + gameRef.current.boss.height / 2 + 5);
+      }
 
       // Draw paddle
       const paddleGradient = ctx.createLinearGradient(0, canvas.height - 30, 0, canvas.height - 20);
@@ -329,6 +396,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     gameRef.current.ballVY = -4;
     gameRef.current.paddleWidth = 100;
     gameRef.current.powerUps = [];
+    gameRef.current.boss = null;
     setScore(0);
     setLives(3);
     setLevel(1);
