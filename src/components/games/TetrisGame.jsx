@@ -386,6 +386,11 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
+    const handleBlur = () => setPaused(true);
+    const handleFocus = () => setPaused(false);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
+
     const handleKeyDown = (e) => {
       if (gameOver) return;
       
@@ -795,6 +800,8 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('resize', resizeCanvas);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
       if (animationId) {
         cancelAnimationFrame(animationId);
       }

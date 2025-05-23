@@ -42,6 +42,11 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
+    const handleBlur = () => setPaused(true);
+    const handleFocus = () => setPaused(false);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
+
     const handleInput = (e) => {
       if (gameOver) return;
       
@@ -300,6 +305,8 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('keydown', handleInput);
       window.removeEventListener('resize', resizeCanvas);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [paused, gameOver, lives, score, powerUps, settings.difficulty, updateHighScore]);
 

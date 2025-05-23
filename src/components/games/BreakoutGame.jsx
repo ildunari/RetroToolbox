@@ -77,6 +77,11 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
+    const handleBlur = () => setPaused(true);
+    const handleFocus = () => setPaused(false);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
+
     const handleMouseMove = (e) => {
       const rect = canvas.getBoundingClientRect();
       gameRef.current.paddleX = e.clientX - rect.left - gameRef.current.paddleWidth / 2;
@@ -319,6 +324,8 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
       canvas.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('keydown', handleKeyboard);
       window.removeEventListener('resize', resizeCanvas);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [paused, gameOver, score, level, initBricks, updateHighScore]);
 
