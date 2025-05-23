@@ -17,12 +17,7 @@ RetroToolbox is a React-based retro arcade game collection featuring multiple cl
 
 **For Codex Environment:**
 ```bash
-# Codex setup (automated)
 ./codex-setup.sh
-
-# Or manual setup:
-npm ci
-npm run build
 ```
 
 **For Local Development:**

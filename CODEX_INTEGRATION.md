@@ -92,24 +92,18 @@ The `AGENTS.md` file in this repository provides Codex with:
 4. Optimize performance and mobile experience
 5. Enhance accessibility features
 
-### Correct Setup Script for Codex
+### Codex Setup Script
 
 **Use this in the Codex setup script field:**
 ```bash
 ./codex-setup.sh
 ```
 
-**Alternative (manual):**
-```bash
-npm ci
-npm run build
-```
-
 **Important Notes:**
 - Codex clones your repo to `/workspace/RetroToolbox`
-- The `startup.sh` script is for local development only
-- The `codex-setup.sh` script is optimized for Codex environment
-- Always use `npm ci` instead of `npm install` in Codex for faster, reliable installs
+- The `codex-setup.sh` script is specifically designed for Codex environment
+- Do not use `startup.sh` in Codex - that's for local development only
+- This handles all dependency installation and building automatically
 
 ### Recommended Codex Commands
 

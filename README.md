@@ -115,7 +115,8 @@ See [CODEX_INTEGRATION.md](CODEX_INTEGRATION.md) for detailed setup instructions
 ### Quick Codex Setup
 1. Access Codex in ChatGPT (Pro/Team/Enterprise)
 2. Connect repository: `ildunari/RetroToolbox`
-3. Start giving tasks: "Implement the missing Tetris game"
+3. Setup script: `./codex-setup.sh`
+4. Start giving tasks: "Implement the missing Tetris game"
 
 ## Development
 
