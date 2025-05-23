@@ -14,6 +14,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
   const [lives, setLives] = useState(3);
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
   const [level, setLevel] = useState(1);
   const [scoreFlash, setScoreFlash] = useState(false);
   const prevScore = useRef(0);
@@ -117,7 +118,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     };
 
     const gameLoop = (timestamp) => {
-      if (!paused && !gameOver) {
+      if (!paused && !gameOver && !transitioning) {
         const game = gameRef.current;
         
         // Update ball
@@ -248,10 +249,16 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         });
 
         // Check level complete
-        if (game.bricks.length === 0) {
-          setLevel(l => l + 1);
+        if (game.bricks.length === 0 && !transitioning) {
+          setTransitioning(true);
+          setPaused(true);
           soundManager.playPowerUp();
-          initBricks();
+          setTimeout(() => {
+            setLevel(l => l + 1);
+            initBricks();
+            setPaused(false);
+            setTransitioning(false);
+          }, 700);
         }
       }
 
@@ -333,6 +340,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     setLives(3);
     setLevel(1);
     setGameOver(false);
+    setTransitioning(false);
     setPaused(false);
     initBricks();
   };
@@ -359,7 +367,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         </div>
       </div>
       
-      <FadingCanvas active={!gameOver}>
+      <FadingCanvas active={!gameOver && !transitioning} slide={transitioning}>
         <canvas
           ref={canvasRef}
           className="border-2 border-red-500 rounded-lg shadow-lg shadow-red-500/50 cursor-none touch-none"
