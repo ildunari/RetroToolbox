@@ -219,7 +219,7 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
         ctx.stroke();
       }
 
-      // Draw snake with gradient
+      // Draw snake with gradient and glow
       const snake = gameRef.current.snake;
       snake.forEach((segment, index) => {
         const gradient = ctx.createRadialGradient(
@@ -230,7 +230,7 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
           segment.y * cellSize + cellSize/2,
           cellSize/2
         );
-        
+
         if (index === 0) {
           gradient.addColorStop(0, '#10b981');
           gradient.addColorStop(1, '#059669');
@@ -238,7 +238,9 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
           gradient.addColorStop(0, '#059669');
           gradient.addColorStop(1, '#047857');
         }
-        
+
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#10b981';
         ctx.fillStyle = gradient;
         ctx.fillRect(
           segment.x * cellSize + 2,
@@ -246,10 +248,13 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
           cellSize - 4,
           cellSize - 4
         );
+        ctx.shadowBlur = 0;
       });
 
-      // Draw food with animation
+      // Draw food with animation and subtle glow
       const foodPulse = Math.sin(timestamp * 0.005) * 0.2 + 0.8;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#ef4444';
       ctx.fillStyle = '#ef4444';
       ctx.fillRect(
         gameRef.current.food.x * cellSize + (1 - foodPulse) * cellSize/2,
@@ -257,6 +262,7 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
         cellSize * foodPulse,
         cellSize * foodPulse
       );
+      ctx.shadowBlur = 0;
 
       // Draw power-ups
       powerUps.forEach(powerUp => {
