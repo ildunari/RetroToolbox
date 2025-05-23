@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Star, Zap, Shield, Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle } from '../../core/ParticleSystem';
+import { ParticleSystem } from '../../core/ParticleSystem';
 
 export const SnakeGame = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
@@ -16,11 +16,12 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
     direction: { x: 1, y: 0 },
     nextDirection: { x: 1, y: 0 },
     food: { x: 15, y: 15 },
-    particles: [],
     speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
     lastUpdate: 0,
     gridSize: 20
   });
+
+  const particleSystemRef = useRef(new ParticleSystem());
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -84,31 +85,37 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
     };
 
     const createParticles = (x, y, color, count = 10) => {
-      const particles = gameRef.current.particles;
-      for (let i = 0; i < count; i++) {
-        const angle = (Math.PI * 2 * i) / count;
-        particles.push(new Particle(
-          x * (canvas.width / gameRef.current.gridSize) + 10,
-          y * (canvas.height / gameRef.current.gridSize) + 10,
-          Math.cos(angle) * 100,
-          Math.sin(angle) * 100,
-          color,
-          0.5
-        ));
-      }
+      const cellSize = canvas.width / gameRef.current.gridSize;
+      particleSystemRef.current.createExplosion(
+        x * cellSize + cellSize / 2,
+        y * cellSize + cellSize / 2,
+        color,
+        count
+      );
     };
 
     const gameLoop = (timestamp) => {
       if (!paused && !gameOver) {
         const deltaTime = timestamp - gameRef.current.lastUpdate;
-        
+
         if (deltaTime >= gameRef.current.speed) {
           const game = gameRef.current;
           const snake = game.snake;
-          
-          // Update direction
+
+          // Handle turn particles
+          const prevDir = game.direction;
           game.direction = game.nextDirection;
-          
+          if (prevDir.x !== game.direction.x || prevDir.y !== game.direction.y) {
+            const cellSize = canvas.width / game.gridSize;
+            particleSystemRef.current.createBurst(
+              snake[0].x * cellSize + cellSize / 2,
+              snake[0].y * cellSize + cellSize / 2,
+              -prevDir.x * 100,
+              '#10b981',
+              8
+            );
+          }
+
           // Calculate new head position
           const head = { ...snake[0] };
           head.x += game.direction.x;
@@ -195,10 +202,7 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       }
 
       // Update particles
-      gameRef.current.particles = gameRef.current.particles.filter(p => {
-        p.update(0.016);
-        return p.life > 0;
-      });
+      particleSystemRef.current.update(0.016);
 
       // Draw
       ctx.fillStyle = '#0f172a';
@@ -279,7 +283,7 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       });
 
       // Draw particles
-      gameRef.current.particles.forEach(p => p.draw(ctx));
+      particleSystemRef.current.draw(ctx);
 
       animationId = requestAnimationFrame(gameLoop);
     };
@@ -290,6 +294,7 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('keydown', handleInput);
       window.removeEventListener('resize', resizeCanvas);
+      particleSystemRef.current.clear();
     };
   }, [paused, gameOver, lives, score, powerUps, settings.difficulty, updateHighScore]);
 
@@ -319,11 +324,11 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       direction: { x: 1, y: 0 },
       nextDirection: { x: 1, y: 0 },
       food: { x: 15, y: 15 },
-      particles: [],
       speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
       lastUpdate: 0,
       gridSize: 20
     };
+    particleSystemRef.current.clear();
     setScore(0);
     setLives(3);
     setPowerUps([]);
