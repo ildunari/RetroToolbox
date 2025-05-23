@@ -98,6 +98,11 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
+    const handleBlur = () => setPaused(true);
+    const handleFocus = () => setPaused(false);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
+
     const handleKeyDown = (e) => {
       if (gameOver) return;
       gameRef.current.keys[e.key] = true;
@@ -606,6 +611,8 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('resize', resizeCanvas);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mousedown', handleMouseDown);
       canvas.removeEventListener('mouseup', handleMouseUp);
