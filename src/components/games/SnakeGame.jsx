@@ -12,9 +12,12 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
   const [lives, setLives] = useState(3);
   
   const gameRef = useRef({
-    snake: [{ x: 10, y: 10 }],
+    gridSnake: [{ x: 10, y: 10 }], // logical grid positions
+    snake: [{ x: 10, y: 10 }],    // interpolated positions for rendering
+    headPos: { x: 10, y: 10 },
     direction: { x: 1, y: 0 },
     nextDirection: { x: 1, y: 0 },
+    progress: 0, // progress toward next cell (0-1)
     food: { x: 15, y: 15 },
     particles: [],
     speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
@@ -99,35 +102,38 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
     };
 
     const gameLoop = (timestamp) => {
+      const game = gameRef.current;
+      if (game.lastUpdate === 0) {
+        game.lastUpdate = timestamp;
+        animationId = requestAnimationFrame(gameLoop);
+        return;
+      }
+      const deltaTime = timestamp - game.lastUpdate;
+      game.lastUpdate = timestamp;
+
       if (!paused && !gameOver) {
-        const deltaTime = timestamp - gameRef.current.lastUpdate;
-        
-        if (deltaTime >= gameRef.current.speed) {
-          const game = gameRef.current;
-          const snake = game.snake;
-          
-          // Update direction
+        game.progress += deltaTime / game.speed;
+
+        while (game.progress >= 1) {
+          game.progress -= 1;
           game.direction = game.nextDirection;
-          
-          // Calculate new head position
-          const head = { ...snake[0] };
-          head.x += game.direction.x;
-          head.y += game.direction.y;
 
-          // Wrap around walls
-          if (head.x < 0) head.x = game.gridSize - 1;
-          if (head.x >= game.gridSize) head.x = 0;
-          if (head.y < 0) head.y = game.gridSize - 1;
-          if (head.y >= game.gridSize) head.y = 0;
+          const newHead = { x: game.gridSnake[0].x + game.direction.x, y: game.gridSnake[0].y + game.direction.y };
 
-          // Check self collision
-          if (snake.some(segment => segment.x === head.x && segment.y === head.y)) {
+          if (newHead.x < 0) newHead.x = game.gridSize - 1;
+          if (newHead.x >= game.gridSize) newHead.x = 0;
+          if (newHead.y < 0) newHead.y = game.gridSize - 1;
+          if (newHead.y >= game.gridSize) newHead.y = 0;
+
+          if (game.gridSnake.some(seg => seg.x === newHead.x && seg.y === newHead.y)) {
             if (lives > 1) {
               setLives(l => l - 1);
               soundManager.playHit();
-              createParticles(head.x, head.y, '#ef4444', 20);
-              // Reset snake
+              createParticles(newHead.x, newHead.y, '#ef4444', 20);
+              game.gridSnake = [{ x: 10, y: 10 }];
               game.snake = [{ x: 10, y: 10 }];
+              game.headPos = { x: 10, y: 10 };
+              game.progress = 0;
               game.direction = { x: 1, y: 0 };
               game.nextDirection = { x: 1, y: 0 };
             } else {
@@ -137,34 +143,31 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
               return;
             }
           } else {
-            snake.unshift(head);
+            game.gridSnake.unshift(newHead);
 
-            // Check food collision
-            if (head.x === game.food.x && head.y === game.food.y) {
+            if (newHead.x === game.food.x && newHead.y === game.food.y) {
               setScore(s => s + 10);
               soundManager.playCollect();
               createParticles(game.food.x, game.food.y, '#10b981', 15);
-              
-              // Spawn new food
+
               do {
                 game.food = {
                   x: Math.floor(Math.random() * game.gridSize),
                   y: Math.floor(Math.random() * game.gridSize)
                 };
-              } while (snake.some(s => s.x === game.food.x && s.y === game.food.y));
-              
+              } while (game.gridSnake.some(s => s.x === game.food.x && s.y === game.food.y));
+
               spawnPowerUp();
             } else {
-              snake.pop();
+              game.gridSnake.pop();
             }
 
-            // Check power-up collision
             setPowerUps(prev => {
               const collected = prev.filter(p => {
-                if (head.x === p.x && head.y === p.y) {
+                if (newHead.x === p.x && newHead.y === p.y) {
                   soundManager.playPowerUp();
                   createParticles(p.x, p.y, '#f59e0b', 20);
-                  
+
                   switch(p.type) {
                     case 'points':
                       setScore(s => s + 50);
@@ -177,8 +180,8 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
                       setLives(l => Math.min(5, l + 1));
                       break;
                     case 'shrink':
-                      if (snake.length > 3) {
-                        snake.splice(-2);
+                      if (game.gridSnake.length > 3) {
+                        game.gridSnake.splice(-2);
                       }
                       break;
                   }
@@ -189,9 +192,24 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
               return collected;
             });
           }
-          
-          gameRef.current.lastUpdate = timestamp;
         }
+
+        const headCell = game.gridSnake[0];
+        game.headPos = {
+          x: headCell.x + game.direction.x * game.progress,
+          y: headCell.y + game.direction.y * game.progress
+        };
+
+        game.snake = game.gridSnake.map((cell, i) => {
+          if (i === 0) {
+            return { ...game.headPos };
+          }
+          const prev = game.gridSnake[i - 1];
+          return {
+            x: cell.x + (prev.x - cell.x) * game.progress,
+            y: cell.y + (prev.y - cell.y) * game.progress
+          };
+        });
       }
 
       // Update particles
@@ -315,9 +333,12 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
 
   const restart = () => {
     gameRef.current = {
+      gridSnake: [{ x: 10, y: 10 }],
       snake: [{ x: 10, y: 10 }],
+      headPos: { x: 10, y: 10 },
       direction: { x: 1, y: 0 },
       nextDirection: { x: 1, y: 0 },
+      progress: 0,
       food: { x: 15, y: 15 },
       particles: [],
       speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
