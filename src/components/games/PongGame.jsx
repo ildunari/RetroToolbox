@@ -32,6 +32,7 @@ export const PongGame = ({ settings, updateHighScore }) => {
     paddleHeight: 80,
     paddleWidth: 10,
     ballSize: 10,
+    ballTrail: [],
     lastUpdate: 0
   });
 
@@ -100,6 +101,10 @@ export const PongGame = ({ settings, updateHighScore }) => {
         game.ballX += game.ballVX;
         game.ballY += game.ballVY;
 
+        // Record trail
+        game.ballTrail.push({ x: game.ballX, y: game.ballY });
+        if (game.ballTrail.length > 15) game.ballTrail.shift();
+
         // Ball collision with top/bottom
         if (game.ballY <= game.ballSize || game.ballY >= canvas.height - game.ballSize) {
           game.ballVY = -game.ballVY;
@@ -151,6 +156,7 @@ export const PongGame = ({ settings, updateHighScore }) => {
           game.ballSpeed = 5;
           game.ballVX = -5;
           game.ballVY = (Math.random() - 0.5) * 6;
+          game.ballTrail = [];
         }
 
         if (game.ballX > canvas.width + game.ballSize) {
@@ -161,6 +167,7 @@ export const PongGame = ({ settings, updateHighScore }) => {
           game.ballSpeed = 5;
           game.ballVX = 5;
           game.ballVY = (Math.random() - 0.5) * 6;
+          game.ballTrail = [];
         }
 
         // Enhanced AI movement
@@ -199,7 +206,7 @@ export const PongGame = ({ settings, updateHighScore }) => {
 
       // Draw paddles with glow effect
       const drawPaddle = (x, y, color) => {
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 30;
         ctx.shadowColor = color;
         
         const gradient = ctx.createLinearGradient(x, y - gameRef.current.paddleHeight/2, x, y + gameRef.current.paddleHeight/2);
@@ -215,8 +222,17 @@ export const PongGame = ({ settings, updateHighScore }) => {
       drawPaddle(0, gameRef.current.playerY, '#3b82f6');
       drawPaddle(canvas.width - gameRef.current.paddleWidth, gameRef.current.aiY, '#ef4444');
 
-      // Draw ball with trail
+      // Draw ball trail
       const game = gameRef.current;
+      game.ballTrail.forEach((pos, i) => {
+        const alpha = ((i + 1) / game.ballTrail.length) * 0.6;
+        ctx.fillStyle = `rgba(251,191,36,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, game.ballSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Draw current ball
       ctx.shadowBlur = 20;
       ctx.shadowColor = '#fbbf24';
       ctx.fillStyle = '#fbbf24';
@@ -281,6 +297,7 @@ export const PongGame = ({ settings, updateHighScore }) => {
     gameRef.current.ballVX = 5;
     gameRef.current.ballVY = 3;
     gameRef.current.ballSpeed = 5;
+    gameRef.current.ballTrail = [];
     setPlayerScore(0);
     setAiScore(0);
     setGameOver(false);
