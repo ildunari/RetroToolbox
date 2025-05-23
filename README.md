@@ -1,6 +1,6 @@
 # Retro Game Toolbox
 
-A modular collection of retro arcade games with modern enhancements, built with React and deployed on a random port for Tailscale accessibility.
+A modular collection of retro arcade games with modern enhancements, built with React and deployed on a random port for Tailscale accessibility. Optimized for OpenAI Codex integration and AI-assisted development.
 
 ## Features
 
@@ -10,6 +10,7 @@ A modular collection of retro arcade games with modern enhancements, built with 
 - ✨ **Visual Effects**: Particle systems and animations
 - 📱 **Responsive Design**: Works on desktop and mobile devices
 - 🌐 **Network Access**: Random port assignment for Tailscale compatibility
+- 🤖 **AI Integration**: OpenAI Codex ready with AGENTS.md configuration
 
 ## Quick Start
 
@@ -24,9 +25,22 @@ npm run dev
 npm run serve
 ```
 
-Or use the deployment script:
+Or use the automatic startup script:
 ```bash
-./deploy.sh
+./startup.sh
+```
+
+### Service Management
+```bash
+# Start/stop/restart service
+./toolbox-service.sh start
+./toolbox-service.sh stop
+./toolbox-service.sh restart
+
+# Monitor service
+./toolbox-service.sh status
+./toolbox-service.sh logs
+./toolbox-service.sh url
 ```
 
 ## Architecture
@@ -88,9 +102,26 @@ Example output:
 - **Canvas**: HTML5 Canvas for game rendering
 - **TypeScript**: Type safety (partial implementation)
 
+## OpenAI Codex Integration
+
+This project is configured for OpenAI Codex (cloud-based AI coding agent):
+
+- **AGENTS.md**: Provides Codex with project context and guidelines
+- **Auto-service**: Startup script configures production environment
+- **GitHub Ready**: Repository configured for Codex collaboration
+
+See [CODEX_INTEGRATION.md](CODEX_INTEGRATION.md) for detailed setup instructions.
+
+### Quick Codex Setup
+1. Access Codex in ChatGPT (Pro/Team/Enterprise)
+2. Connect repository: `ildunari/RetroToolbox`
+3. Start giving tasks: "Implement the missing Tetris game"
+
 ## Development
 
 - `npm run dev`: Start development server
 - `npm run build`: Build for production
 - `npm run preview`: Preview production build
 - `npm start`: Start production server
+- `./startup.sh`: Complete setup and service start
+- `./toolbox-service.sh`: Service management
