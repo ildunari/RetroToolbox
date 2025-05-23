@@ -5,6 +5,14 @@ import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 
+// Background themes used for different levels
+const backgroundThemes = [
+  '#0f172a',
+  '#1e293b',
+  '#1e1b4b',
+  '#3f1f36'
+];
+
 // Create sound manager instance
 const soundManager = new SoundManager();
 
@@ -17,6 +25,9 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
   const [level, setLevel] = useState(1);
   const [scoreFlash, setScoreFlash] = useState(false);
   const prevScore = useRef(0);
+
+  // Determine current background theme based on level
+  const currentTheme = backgroundThemes[(level - 1) % backgroundThemes.length];
   
   const gameRef = useRef({
     paddleX: 350,
@@ -262,7 +273,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
       });
 
       // Draw
-      ctx.fillStyle = '#0f172a';
+      ctx.fillStyle = currentTheme;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Draw bricks
