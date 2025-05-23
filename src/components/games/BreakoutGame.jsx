@@ -16,6 +16,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
   const [paused, setPaused] = useState(false);
   const [level, setLevel] = useState(1);
   const [scoreFlash, setScoreFlash] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const prevScore = useRef(0);
   
   const gameRef = useRef({
@@ -137,23 +138,17 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
 
         // Ball fell off bottom
         if (game.ballY > canvas.height) {
-          setLives(l => {
-            const newLives = l - 1;
-            if (newLives <= 0) {
-              setGameOver(true);
-              soundManager.playGameOver();
-              updateHighScore('breakout', score);
-            } else {
-              soundManager.playHit();
-            }
-            return newLives;
-          });
-          
-          // Reset ball
-          game.ballX = canvas.width / 2;
-          game.ballY = canvas.height - 100;
-          game.ballVX = 4;
-          game.ballVY = -4;
+          const newLives = lives - 1;
+          setLives(newLives);
+          if (newLives <= 0) {
+            setGameOver(true);
+            soundManager.playGameOver();
+            updateHighScore('breakout', score);
+          } else {
+            soundManager.playHit();
+            setPaused(true);
+            setCountdown(3);
+          }
         }
 
         // Paddle collision
@@ -334,6 +329,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     setLevel(1);
     setGameOver(false);
     setPaused(false);
+    setCountdown(0);
     initBricks();
   };
 
@@ -346,9 +342,25 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     }
   }, [score]);
 
+  useEffect(() => {
+    if (countdown > 0) {
+      const t = setTimeout(() => setCountdown(c => c - 1), 1000);
+      return () => clearTimeout(t);
+    } else if (countdown === 0 && paused && !gameOver && lives > 0) {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        gameRef.current.ballX = canvas.width / 2;
+        gameRef.current.ballY = canvas.height - 100;
+        gameRef.current.ballVX = 4;
+        gameRef.current.ballVY = -4;
+      }
+      setPaused(false);
+    }
+  }, [countdown, paused, gameOver, lives]);
+
   return (
 
-    <div className="flex flex-col items-center p-4">
+    <div className="relative flex flex-col items-center p-4">
       <div className="mb-4 flex items-center gap-4 flex-wrap justify-center">
         <div className={`text-white font-bold text-xl transition-transform ${scoreFlash ? 'scale-125 text-yellow-400' : ''}`}>Score: {score}</div>
         <div className="text-white font-bold text-xl">Level: {level}</div>
@@ -365,6 +377,11 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
           className="border-2 border-red-500 rounded-lg shadow-lg shadow-red-500/50 cursor-none touch-none"
         />
       </FadingCanvas>
+      {countdown > 0 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="text-white text-8xl font-mono">{countdown}</span>
+        </div>
+      )}
       <GameOverBanner show={gameOver} />
       
       <div className="mt-4 flex gap-2">
