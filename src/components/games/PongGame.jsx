@@ -77,6 +77,11 @@ export const PongGame = ({ settings, updateHighScore }) => {
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
     window.addEventListener('keydown', handleKeyboard);
 
+    const shakeCanvas = () => {
+      canvas.classList.add('shake');
+      setTimeout(() => canvas.classList.remove('shake'), 300);
+    };
+
     const createParticles = (x, y, vx, color) => {
       for (let i = 0; i < 20; i++) {
         gameRef.current.particles.push(new Particle(
@@ -87,6 +92,7 @@ export const PongGame = ({ settings, updateHighScore }) => {
           0.5
         ));
       }
+      shakeCanvas();
     };
 
     const gameLoop = (timestamp) => {

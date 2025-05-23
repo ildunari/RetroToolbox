@@ -104,6 +104,11 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
     window.addEventListener('keydown', handleKeyboard);
 
+    const shakeCanvas = () => {
+      canvas.classList.add('shake');
+      setTimeout(() => canvas.classList.remove('shake'), 300);
+    };
+
     const createParticles = (x, y, color) => {
       for (let i = 0; i < 15; i++) {
         gameRef.current.particles.push(new Particle(
@@ -114,6 +119,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
           0.8
         ));
       }
+      shakeCanvas();
     };
 
     const gameLoop = (timestamp) => {

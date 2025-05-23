@@ -87,6 +87,11 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       }
     };
 
+    const shakeCanvas = () => {
+      canvas.classList.add('shake');
+      setTimeout(() => canvas.classList.remove('shake'), 300);
+    };
+
     const createParticles = (x, y, color, count = 10) => {
       const particles = gameRef.current.particles;
       for (let i = 0; i < count; i++) {
@@ -100,6 +105,7 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
           0.5
         ));
       }
+      shakeCanvas();
     };
 
     const gameLoop = (timestamp) => {
