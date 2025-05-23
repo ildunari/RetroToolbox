@@ -3,6 +3,8 @@ import { Play, Pause, RotateCcw } from 'lucide-react';
 import { SoundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 
+import { FadingCanvas } from "../ui/FadingCanvas";
+import { GameOverBanner } from "../ui/GameOverBanner";
 const soundManager = new SoundManager();
 
 export const PongGame = ({ settings, updateHighScore }) => {
@@ -11,6 +13,10 @@ export const PongGame = ({ settings, updateHighScore }) => {
   const [aiScore, setAiScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [playerFlash, setPlayerFlash] = useState(false);
+  const [aiFlash, setAiFlash] = useState(false);
+  const prevPlayer = useRef(0);
+  const prevAi = useRef(0);
   
   const gameRef = useRef({
     playerY: 200,
@@ -254,6 +260,21 @@ export const PongGame = ({ settings, updateHighScore }) => {
     }
   }, [playerScore, aiScore, updateHighScore]);
 
+  useEffect(() => {
+    if (playerScore > prevPlayer.current) {
+      setPlayerFlash(true);
+      const t = setTimeout(() => setPlayerFlash(false), 300);
+      prevPlayer.current = playerScore;
+      return () => clearTimeout(t);
+    }
+    if (aiScore > prevAi.current) {
+      setAiFlash(true);
+      const t = setTimeout(() => setAiFlash(false), 300);
+      prevAi.current = aiScore;
+      return () => clearTimeout(t);
+    }
+  }, [playerScore, aiScore]);
+
   const restart = () => {
     gameRef.current.ballX = 400;
     gameRef.current.ballY = 200;
@@ -271,11 +292,19 @@ export const PongGame = ({ settings, updateHighScore }) => {
       <div className="mb-4 text-center">
         <p className="text-gray-400 text-sm mb-2">First to 7 wins!</p>
       </div>
-      
-      <canvas
-        ref={canvasRef}
-        className="border-2 border-blue-500 rounded-lg shadow-lg shadow-blue-500/50 cursor-none touch-none"
-      />
+
+      <div className="flex justify-between w-full max-w-xl mb-2 text-4xl font-mono font-bold">
+        <span className={`text-blue-400 transition-transform ${playerFlash ? 'scale-125' : ''}`}>{playerScore}</span>
+        <span className={`text-red-400 transition-transform ${aiFlash ? 'scale-125' : ''}`}>{aiScore}</span>
+      </div>
+
+      <FadingCanvas active={!gameOver}>
+        <canvas
+          ref={canvasRef}
+          className="border-2 border-blue-500 rounded-lg shadow-lg shadow-blue-500/50 cursor-none touch-none"
+        />
+      </FadingCanvas>
+      <GameOverBanner show={gameOver} />
       
       <div className="mt-4 flex gap-2">
         <button
@@ -293,18 +322,9 @@ export const PongGame = ({ settings, updateHighScore }) => {
           </button>
         )}
       </div>
-      
+
       <div className="mt-4 text-center">
         <p className="text-gray-400 text-sm">Move mouse/touch or use W/S keys</p>
-        {gameOver && (
-          <div className="mt-2 text-2xl font-bold animate-pulse">
-            {playerScore > aiScore ? (
-              <span className="text-green-500">YOU WIN!</span>
-            ) : (
-              <span className="text-red-500">AI WINS!</span>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

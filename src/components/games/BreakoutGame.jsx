@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { SoundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
+import { FadingCanvas } from "../ui/FadingCanvas";
+import { GameOverBanner } from "../ui/GameOverBanner";
 
 // Create sound manager instance
 const soundManager = new SoundManager();
@@ -13,6 +15,8 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
   const [level, setLevel] = useState(1);
+  const [scoreFlash, setScoreFlash] = useState(false);
+  const prevScore = useRef(0);
   
   const gameRef = useRef({
     paddleX: 350,
@@ -333,10 +337,20 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     initBricks();
   };
 
+  useEffect(() => {
+    if (score > prevScore.current) {
+      setScoreFlash(true);
+      const t = setTimeout(() => setScoreFlash(false), 300);
+      prevScore.current = score;
+      return () => clearTimeout(t);
+    }
+  }, [score]);
+
   return (
+
     <div className="flex flex-col items-center p-4">
       <div className="mb-4 flex items-center gap-4 flex-wrap justify-center">
-        <div className="text-white font-bold text-xl">Score: {score}</div>
+        <div className={`text-white font-bold text-xl transition-transform ${scoreFlash ? 'scale-125 text-yellow-400' : ''}`}>Score: {score}</div>
         <div className="text-white font-bold text-xl">Level: {level}</div>
         <div className="flex items-center gap-1">
           {Array.from({ length: lives }).map((_, i) => (
@@ -345,10 +359,13 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         </div>
       </div>
       
-      <canvas
-        ref={canvasRef}
-        className="border-2 border-red-500 rounded-lg shadow-lg shadow-red-500/50 cursor-none touch-none"
-      />
+      <FadingCanvas active={!gameOver}>
+        <canvas
+          ref={canvasRef}
+          className="border-2 border-red-500 rounded-lg shadow-lg shadow-red-500/50 cursor-none touch-none"
+        />
+      </FadingCanvas>
+      <GameOverBanner show={gameOver} />
       
       <div className="mt-4 flex gap-2">
         <button
@@ -357,23 +374,10 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         >
           {paused ? <Play size={20} /> : <Pause size={20} />}
         </button>
-        {gameOver && (
-          <button
-            onClick={restart}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-          >
-            <RotateCcw size={20} /> Restart
-          </button>
-        )}
       </div>
       
       <div className="mt-4 text-center">
         <p className="text-gray-400 text-sm">Move mouse/touch or use A/D keys</p>
-        {gameOver && (
-          <div className="mt-2 text-red-500 font-bold text-xl animate-pulse">
-            GAME OVER! Final Score: {score}
-          </div>
-        )}
       </div>
     </div>
   );
