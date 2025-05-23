@@ -4,11 +4,12 @@ import { SoundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
+import { ShopModal } from "../ui/ShopModal";
 
 // Create sound manager instance
 const soundManager = new SoundManager();
 
-export const BreakoutGame = ({ settings, updateHighScore }) => {
+export const BreakoutGame = ({ settings, updateHighScore, addCoins }) => {
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
@@ -16,7 +17,52 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
   const [paused, setPaused] = useState(false);
   const [level, setLevel] = useState(1);
   const [scoreFlash, setScoreFlash] = useState(false);
+  const [coins, setCoins] = useState(() => parseInt(localStorage.getItem('breakoutCoins')) || 0);
+  const [showShop, setShowShop] = useState(false);
   const prevScore = useRef(0);
+
+  useEffect(() => {
+    localStorage.setItem('breakoutCoins', coins.toString());
+  }, [coins]);
+
+  const handleLevelComplete = useCallback(() => {
+    const earned = level * 50;
+    setCoins(c => c + earned);
+    addCoins && addCoins(earned);
+    localStorage.setItem('breakoutScore', score.toString());
+    setPaused(true);
+    setShowShop(true);
+    setLevel(l => l + 1);
+  }, [level, score, addCoins]);
+
+  const handlePurchase = (type) => {
+    const costs = { paddle: 50, ball: 50, life: 75 };
+    if (coins < costs[type]) return;
+    setCoins(c => c - costs[type]);
+    switch(type) {
+      case 'paddle':
+        gameRef.current.paddleWidth = Math.min(200, gameRef.current.paddleWidth + 20);
+        break;
+      case 'ball':
+        gameRef.current.ballVX *= 1.2;
+        gameRef.current.ballVY *= 1.2;
+        break;
+      case 'life':
+        setLives(l => l + 1);
+        break;
+      default:
+        break;
+    }
+    setShowShop(false);
+    setPaused(false);
+    initBricks();
+  };
+
+  const closeShop = () => {
+    setShowShop(false);
+    setPaused(false);
+    initBricks();
+  };
   
   const gameRef = useRef({
     paddleX: 350,
@@ -248,10 +294,9 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         });
 
         // Check level complete
-        if (game.bricks.length === 0) {
-          setLevel(l => l + 1);
+        if (game.bricks.length === 0 && !showShop) {
           soundManager.playPowerUp();
-          initBricks();
+          handleLevelComplete();
         }
       }
 
@@ -320,7 +365,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
       window.removeEventListener('keydown', handleKeyboard);
       window.removeEventListener('resize', resizeCanvas);
     };
-  }, [paused, gameOver, score, level, initBricks, updateHighScore]);
+  }, [paused, gameOver, score, level, initBricks, updateHighScore, handleLevelComplete]);
 
   const restart = () => {
     gameRef.current.ballX = 400;
@@ -334,6 +379,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     setLevel(1);
     setGameOver(false);
     setPaused(false);
+    setShowShop(false);
     initBricks();
   };
 
@@ -352,6 +398,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
       <div className="mb-4 flex items-center gap-4 flex-wrap justify-center">
         <div className={`text-white font-bold text-xl transition-transform ${scoreFlash ? 'scale-125 text-yellow-400' : ''}`}>Score: {score}</div>
         <div className="text-white font-bold text-xl">Level: {level}</div>
+        <div className="text-white font-bold text-xl">Coins: {coins}</div>
         <div className="flex items-center gap-1">
           {Array.from({ length: lives }).map((_, i) => (
             <Heart key={i} size={20} className="text-red-500 fill-red-500" />
@@ -366,6 +413,13 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         />
       </FadingCanvas>
       <GameOverBanner show={gameOver} />
+      {showShop && (
+        <ShopModal
+          coins={coins}
+          onPurchase={handlePurchase}
+          onClose={closeShop}
+        />
+      )}
       
       <div className="mt-4 flex gap-2">
         <button

@@ -30,7 +30,7 @@ function App() {
   const [selectedGame, setSelectedGame] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useSettings();
-  const { stats, updateHighScore, incrementGamesPlayed } = useStats();
+  const { stats, updateHighScore, incrementGamesPlayed, addCoins } = useStats();
 
   const handleGameSelect = (gameId) => {
     setSelectedGame(gameId);
@@ -114,9 +114,10 @@ function App() {
             </button>
           </div>
           {GameComponent && (
-            <GameComponent 
-              settings={settings} 
+            <GameComponent
+              settings={settings}
               updateHighScore={updateHighScore}
+              addCoins={addCoins}
             />
           )}
         </div>

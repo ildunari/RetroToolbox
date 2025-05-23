@@ -13,6 +13,7 @@ export const useStats = () => {
       },
       gamesPlayed: 0,
       totalScore: 0,
+      coins: 0,
       achievements: []
     };
   });
@@ -39,5 +40,9 @@ export const useStats = () => {
     setStats(prev => ({ ...prev, gamesPlayed: prev.gamesPlayed + 1 }));
   }, []);
 
-  return { stats, updateHighScore, incrementGamesPlayed };
+  const addCoins = useCallback((amount) => {
+    setStats(prev => ({ ...prev, coins: prev.coins + amount }));
+  }, []);
+
+  return { stats, updateHighScore, incrementGamesPlayed, addCoins };
 };
