@@ -43,6 +43,12 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
+        const rand = Math.random();
+        let type = 'normal';
+        if (rand < 0.1) type = 'moving';
+        else if (rand < 0.15) type = 'indestructible';
+        else if (rand < 0.2) type = 'regenerating';
+
         bricks.push({
           x: c * (brickWidth + padding) + 35,
           y: r * (brickHeight + padding) + 60,
@@ -51,7 +57,11 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
           color: `hsl(${r * 40}, 70%, 50%)`,
           hits: rows - r,
           maxHits: rows - r,
-          powerUp: Math.random() < 0.1 ? ['multiball', 'expand', 'laser'][Math.floor(Math.random() * 3)] : null
+          powerUp: Math.random() < 0.1 ? ['multiball', 'expand', 'laser'][Math.floor(Math.random() * 3)] : null,
+          type,
+          vx: type === 'moving' ? (Math.random() < 0.5 ? -1 : 1) * 2 : 0,
+          regenTimer: 0,
+          destroyed: false
         });
       }
     }
@@ -119,6 +129,26 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     const gameLoop = (timestamp) => {
       if (!paused && !gameOver) {
         const game = gameRef.current;
+        const deltaTime = game.lastUpdate ? timestamp - game.lastUpdate : 16;
+        game.lastUpdate = timestamp;
+
+        // Update brick movement and regeneration
+        game.bricks.forEach(brick => {
+          if (brick.type === 'moving') {
+            brick.x += brick.vx;
+            if (brick.x <= 0 || brick.x + brick.width >= canvas.width) {
+              brick.vx = -brick.vx;
+              brick.x = Math.max(0, Math.min(brick.x, canvas.width - brick.width));
+            }
+          }
+          if (brick.regenTimer > 0) {
+            brick.regenTimer -= deltaTime;
+            if (brick.regenTimer <= 0) {
+              brick.hits = brick.maxHits;
+              brick.destroyed = false;
+            }
+          }
+        });
         
         // Update ball
         game.ballX += game.ballVX;
@@ -174,19 +204,23 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         }
 
         // Brick collision
-        game.bricks = game.bricks.filter(brick => {
+        let collided = false;
+        game.bricks.forEach(brick => {
+          if (collided || brick.destroyed) return;
           if (game.ballX + game.ballSize >= brick.x &&
               game.ballX - game.ballSize <= brick.x + brick.width &&
               game.ballY + game.ballSize >= brick.y &&
               game.ballY - game.ballSize <= brick.y + brick.height) {
-            
-            brick.hits--;
-            
-            if (brick.hits <= 0) {
+
+            if (brick.type !== 'indestructible') {
+              brick.hits--;
+            }
+
+            if (brick.hits <= 0 && brick.type !== 'indestructible') {
               setScore(s => s + (brick.maxHits * 10));
               soundManager.playCollect();
               createParticles(brick.x + brick.width/2, brick.y + brick.height/2, brick.color);
-              
+
               if (brick.powerUp) {
                 game.powerUps.push({
                   x: brick.x + brick.width/2,
@@ -195,31 +229,35 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
                   vy: 2
                 });
               }
-              
-              return false;
+
+              if (brick.type === 'regenerating') {
+                brick.destroyed = true;
+                brick.regenTimer = 3000;
+              } else {
+                brick.remove = true;
+              }
             } else {
               soundManager.playTone(440, 50);
             }
-            
-            // Bounce ball
+
             const ballCenterX = game.ballX;
             const ballCenterY = game.ballY;
             const brickCenterX = brick.x + brick.width / 2;
             const brickCenterY = brick.y + brick.height / 2;
-            
+
             const dx = Math.abs(ballCenterX - brickCenterX);
             const dy = Math.abs(ballCenterY - brickCenterY);
-            
+
             if (dx / brick.width > dy / brick.height) {
               game.ballVX = -game.ballVX;
             } else {
               game.ballVY = -game.ballVY;
             }
-            
-            return true;
+
+            collided = true;
           }
-          return true;
         });
+        game.bricks = game.bricks.filter(b => !b.remove);
 
         // Power-up collision
         game.powerUps = game.powerUps.filter(powerUp => {
@@ -248,7 +286,8 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         });
 
         // Check level complete
-        if (game.bricks.length === 0) {
+        const remaining = game.bricks.filter(b => !b.destroyed && b.type !== 'indestructible');
+        if (remaining.length === 0) {
           setLevel(l => l + 1);
           soundManager.playPowerUp();
           initBricks();
@@ -267,14 +306,21 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
 
       // Draw bricks
       gameRef.current.bricks.forEach(brick => {
+        if (brick.destroyed) return;
+
         const gradient = ctx.createLinearGradient(brick.x, brick.y, brick.x, brick.y + brick.height);
         gradient.addColorStop(0, brick.color);
         gradient.addColorStop(1, brick.color + '88');
-        
+
         ctx.fillStyle = gradient;
         ctx.fillRect(brick.x, brick.y, brick.width, brick.height);
-        
-        if (brick.hits > 1) {
+
+        if (brick.type === 'indestructible') {
+          ctx.fillStyle = 'white';
+          ctx.font = '12px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('∞', brick.x + brick.width/2, brick.y + brick.height/2 + 4);
+        } else if (brick.hits > 1) {
           ctx.fillStyle = 'white';
           ctx.font = '12px monospace';
           ctx.textAlign = 'center';
