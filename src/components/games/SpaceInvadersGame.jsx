@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
+import { Heart, Play, Pause, RotateCcw, Shield, Zap, Swords } from 'lucide-react';
 import { SoundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 
@@ -13,7 +13,10 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
   const [level, setLevel] = useState(1);
-  const [powerUp, setPowerUp] = useState(null);
+  const [activePowerUps, setActivePowerUps] = useState([]);
+
+  const hasPowerUp = useCallback((type) =>
+    activePowerUps.some(p => p.type === type), [activePowerUps]);
   
   const gameRef = useRef({
     player: { x: 400, y: 500, width: 40, height: 30, speed: 8 },
@@ -28,7 +31,6 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
     alienSpeed: 1,
     fireRate: 0.02,
     playerFireCooldown: 0,
-    powerUpEndTime: 0,
     keys: {},
     mouseX: 0,
     autoFire: false
@@ -171,6 +173,11 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
 
       const deltaTime = timestamp - gameRef.current.lastUpdate;
       gameRef.current.lastUpdate = timestamp;
+      setActivePowerUps(prev =>
+        prev
+          .map(p => ({ ...p, remaining: p.remaining - deltaTime }))
+          .filter(p => p.remaining > 0)
+      );
 
       const game = gameRef.current;
       
@@ -203,9 +210,9 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
 
       // Auto-fire when space/mouse is held
       if (game.autoFire && game.playerFireCooldown <= 0) {
-        const maxBullets = powerUp === 'multishot' ? 6 : 3;
+        const maxBullets = hasPowerUp('multishot') ? 6 : 3;
         if (game.bullets.filter(b => b.isPlayer).length < maxBullets) {
-          if (powerUp === 'multishot') {
+          if (hasPowerUp('multishot')) {
             // Triple shot with enhanced spread
             for (let i = -1; i <= 1; i++) {
               game.bullets.push({
@@ -228,14 +235,11 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
             });
           }
           soundManager.playTone(1200, 30);
-          game.playerFireCooldown = powerUp === 'rapidfire' ? 3 : 8;
+          game.playerFireCooldown = hasPowerUp('rapidfire') ? 3 : 8;
         }
       }
 
-      // Check power-up expiration
-      if (powerUp && timestamp > game.powerUpEndTime) {
-        setPowerUp(null);
-      }
+
 
       // Update bullets
       game.bullets = game.bullets.filter(bullet => {
@@ -344,7 +348,7 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
           
           game.alienBullets.splice(bulletIndex, 1);
           
-          if (powerUp !== 'shield') {
+          if (!hasPowerUp('shield')) {
             setLives(prev => {
               const newLives = prev - 1;
               if (newLives <= 0) {
@@ -415,8 +419,10 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
             powerUpItem.y < game.player.y + game.player.height &&
             powerUpItem.y + powerUpItem.height > game.player.y) {
           
-          setPowerUp(powerUpItem.type);
-          game.powerUpEndTime = timestamp + 10000; // 10 seconds
+          setActivePowerUps(prev => [
+            ...prev,
+            { type: powerUpItem.type, remaining: 10000 }
+          ]);
           soundManager.playPowerUp();
           
           // Create particles
@@ -476,7 +482,7 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
       }
 
       // Draw enhanced starship
-      const playerGlow = powerUp === 'shield' ? '#4ecdc4' : '#00f5ff';
+      const playerGlow = hasPowerUp('shield') ? '#4ecdc4' : '#00f5ff';
       const centerX = game.player.x + game.player.width / 2;
       const centerY = game.player.y + game.player.height / 2;
       
@@ -616,14 +622,14 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
         cancelAnimationFrame(animationId);
       }
     };
-  }, [gameOver, paused, score, powerUp, level, updateHighScore]);
+  }, [gameOver, paused, score, level, updateHighScore]);
 
   const resetGame = () => {
     setScore(0);
     setLives(3);
     setGameOver(false);
     setLevel(1);
-    setPowerUp(null);
+    setActivePowerUps([]);
     const game = gameRef.current;
     game.player.x = 400;
     game.bullets = [];
@@ -656,9 +662,19 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
               <span className="text-sm font-semibold">Level:</span>
               <span className="text-lg font-bold text-blue-400">{level}</span>
             </div>
-            {powerUp && (
-              <div className="flex items-center gap-1 bg-yellow-500 text-black px-2 py-1 rounded text-xs font-bold">
-                {powerUp.toUpperCase()}
+            {activePowerUps.length > 0 && (
+              <div className="flex items-center gap-2">
+                {activePowerUps.map((p, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-1 bg-yellow-500 text-black px-2 py-1 rounded text-xs font-bold"
+                  >
+                    {p.type === 'rapidfire' && <Zap className="w-3 h-3" />}
+                    {p.type === 'multishot' && <Swords className="w-3 h-3" />}
+                    {p.type === 'shield' && <Shield className="w-3 h-3" />}
+                    <span>{Math.ceil(p.remaining / 1000)}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
