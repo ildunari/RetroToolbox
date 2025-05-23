@@ -3,7 +3,14 @@
 # RetroToolbox Startup Script
 # This script sets up and starts the RetroToolbox service for OpenAI Codex integration
 
-PROJECT_DIR="/Users/kostamilovanovic/Documents/ProjectsCode/RetroToolbox"
+# Auto-detect project directory (works in Codex workspace or local)
+if [ -d "/workspace/RetroToolbox" ]; then
+    PROJECT_DIR="/workspace/RetroToolbox"
+elif [ -d "/Users/kostamilovanovic/Documents/ProjectsCode/RetroToolbox" ]; then
+    PROJECT_DIR="/Users/kostamilovanovic/Documents/ProjectsCode/RetroToolbox"
+else
+    PROJECT_DIR="$(pwd)"
+fi
 SERVICE_NAME="com.retro.game-toolbox"
 PLIST_PATH="$HOME/Library/LaunchAgents/$SERVICE_NAME.plist"
 LOG_DIR="$PROJECT_DIR/logs"
