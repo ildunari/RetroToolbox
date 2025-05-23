@@ -2,12 +2,16 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Star, Zap, Shield, Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
+import { FadingCanvas } from "../ui/FadingCanvas";
+import { GameOverBanner } from "../ui/GameOverBanner";
 
 export const SnakeGame = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [scoreFlash, setScoreFlash] = useState(false);
+  const prevScore = useRef(0);
   const [powerUps, setPowerUps] = useState([]);
   const [lives, setLives] = useState(3);
   
@@ -330,11 +334,20 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
     setGameOver(false);
     setPaused(false);
   };
+  useEffect(() => {
+    if (score > prevScore.current) {
+      setScoreFlash(true);
+      const t = setTimeout(() => setScoreFlash(false), 300);
+      prevScore.current = score;
+      return () => clearTimeout(t);
+    }
+  }, [score]);
+
 
   return (
     <div className="flex flex-col items-center p-4">
       <div className="mb-4 flex items-center gap-4 flex-wrap justify-center">
-        <div className="text-white font-bold text-xl">Score: {score}</div>
+        <div className={`text-white font-bold text-xl transition-transform ${scoreFlash ? 'scale-125 text-yellow-400' : ''}`}>Score: {score}</div>
         <div className="flex items-center gap-1">
           {Array.from({ length: lives }).map((_, i) => (
             <Heart key={i} size={20} className="text-red-500 fill-red-500" />
@@ -354,11 +367,14 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
         )}
       </div>
       
-      <canvas
-        ref={canvasRef}
-        onTouchStart={handleTouch}
-        className="border-2 border-green-500 rounded-lg shadow-lg shadow-green-500/50 touch-none"
-      />
+      <FadingCanvas active={!gameOver}>
+        <canvas
+          ref={canvasRef}
+          onTouchStart={handleTouch}
+          className="border-2 border-green-500 rounded-lg shadow-lg shadow-green-500/50 touch-none"
+        />
+      </FadingCanvas>
+      <GameOverBanner show={gameOver} />
       
       <div className="mt-4 flex gap-2">
         <button
@@ -376,14 +392,9 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
           </button>
         )}
       </div>
-      
+
       <div className="mt-4 text-center">
         <p className="text-gray-400 text-sm">Use WASD/Arrows or touch to move</p>
-        {gameOver && (
-          <div className="mt-2 text-red-500 font-bold text-xl animate-pulse">
-            GAME OVER! Final Score: {score}
-          </div>
-        )}
       </div>
     </div>
   );
