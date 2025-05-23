@@ -192,7 +192,8 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
                   x: brick.x + brick.width/2,
                   y: brick.y + brick.height/2,
                   type: brick.powerUp,
-                  vy: 2
+                  vy: 2,
+                  frame: 0
                 });
               }
               
@@ -224,6 +225,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         // Power-up collision
         game.powerUps = game.powerUps.filter(powerUp => {
           powerUp.y += powerUp.vy;
+          powerUp.frame += 0.2;
           
           if (powerUp.y > canvas.height) return false;
           
@@ -301,8 +303,13 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
 
       // Draw power-ups
       gameRef.current.powerUps.forEach(powerUp => {
+        const size = 20 + Math.sin(powerUp.frame) * 4;
+        ctx.save();
+        ctx.translate(powerUp.x, powerUp.y);
+        ctx.rotate(powerUp.frame);
         ctx.fillStyle = '#8b5cf6';
-        ctx.fillRect(powerUp.x - 10, powerUp.y - 10, 20, 20);
+        ctx.fillRect(-size / 2, -size / 2, size, size);
+        ctx.restore();
       });
 
       // Draw particles
