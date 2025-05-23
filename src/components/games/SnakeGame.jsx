@@ -27,6 +27,7 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
     if (!canvas) return;
     
     const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
     let animationId;
     
     const resizeCanvas = () => {
@@ -205,8 +206,8 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Draw grid with subtle lines
-      ctx.strokeStyle = '#1e293b';
-      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1;
       const cellSize = canvas.width / gameRef.current.gridSize;
       
       for (let i = 0; i <= gameRef.current.gridSize; i++) {
@@ -218,6 +219,13 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
         ctx.lineTo(canvas.width, pos);
         ctx.stroke();
       }
+
+      // Optional outer border similar to Pong center line
+      ctx.strokeStyle = '#10b981';
+      ctx.setLineDash([6, 6]);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+      ctx.setLineDash([]);
 
       // Draw snake with gradient
       const snake = gameRef.current.snake;
