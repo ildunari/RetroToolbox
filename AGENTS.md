@@ -1,6 +1,8 @@
 # AGENTS.md - OpenAI Codex Configuration
 
-This file provides guidance to OpenAI Codex agents when working on the RetroToolbox project.
+**🤖 CODEX READS THIS FILE AUTOMATICALLY AT SESSION START**
+
+This file provides comprehensive guidance to OpenAI Codex agents when working on the RetroToolbox project. Keep this file updated as the primary source of truth for AI assistance.
 
 ## Project Overview
 
@@ -172,5 +174,25 @@ When working on this project:
 5. **Use the core systems (SoundManager, InputManager, etc.) properly**
 6. **Maintain responsive design principles**
 7. **Ensure cross-browser compatibility**
+
+## Codex-Specific Instructions
+
+### Task Execution Guidelines
+- **Commit directly to main branch** - avoid creating PRs that may fail
+- **Be specific and focused** - work on one clear task at a time
+- **Test thoroughly** - run build and verify functionality
+- **Follow existing code patterns** - maintain consistency with current implementation
+
+### Common Issues & Solutions
+- **Setup Script**: Always use `./codex-setup.sh` in Codex environment
+- **Working Directory**: Codex clones to `/workspace/RetroToolbox` 
+- **Dependencies**: Use `npm ci` for faster, reliable installs
+- **Build Process**: Always run `npm run build` to verify changes work
+
+### Preferred Task Format Examples
+- "Implement the missing Tetris piece rotation logic in TetrisGame.jsx"
+- "Fix the line clearing bug in Tetris where multiple rows cause visual glitches"
+- "Add touch controls to the Snake game following the existing input pattern"
+- "Optimize the particle system performance in ParticleSystem.ts"
 
 This project is designed to be easily extensible while maintaining high performance and user experience across different devices and input methods.
