@@ -22,14 +22,16 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     paddleX: 350,
     paddleWidth: 100,
     paddleHeight: 10,
-    ballX: 400,
-    ballY: 300,
-    ballVX: 4,
-    ballVY: -4,
+    balls: [
+      { x: 400, y: 300, vx: 4, vy: -4 }
+    ],
     ballSize: 8,
     bricks: [],
     particles: [],
     powerUps: [],
+    lasers: [],
+    laserActive: false,
+    lastLaserTime: 0,
     lastUpdate: 0
   });
 
@@ -120,23 +122,27 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
       if (!paused && !gameOver) {
         const game = gameRef.current;
         
-        // Update ball
-        game.ballX += game.ballVX;
-        game.ballY += game.ballVY;
+        // Update balls
+        game.balls.forEach((ball, i) => {
+          ball.x += ball.vx;
+          ball.y += ball.vy;
 
-        // Ball collision with walls
-        if (game.ballX <= game.ballSize || game.ballX >= canvas.width - game.ballSize) {
-          game.ballVX = -game.ballVX;
-          soundManager.playTone(220, 50);
-        }
-        
-        if (game.ballY <= game.ballSize) {
-          game.ballVY = -game.ballVY;
-          soundManager.playTone(220, 50);
-        }
+          if (ball.x <= game.ballSize || ball.x >= canvas.width - game.ballSize) {
+            ball.vx = -ball.vx;
+            soundManager.playTone(220, 50);
+          }
 
-        // Ball fell off bottom
-        if (game.ballY > canvas.height) {
+          if (ball.y <= game.ballSize) {
+            ball.vy = -ball.vy;
+            soundManager.playTone(220, 50);
+          }
+
+          if (ball.y > canvas.height) {
+            game.balls.splice(i, 1);
+          }
+        });
+
+        if (game.balls.length === 0) {
           setLives(l => {
             const newLives = l - 1;
             if (newLives <= 0) {
@@ -148,76 +154,81 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
             }
             return newLives;
           });
-          
-          // Reset ball
-          game.ballX = canvas.width / 2;
-          game.ballY = canvas.height - 100;
-          game.ballVX = 4;
-          game.ballVY = -4;
+
+          game.balls.push({
+            x: canvas.width / 2,
+            y: canvas.height - 100,
+            vx: 4,
+            vy: -4
+          });
         }
 
-        // Paddle collision
-        if (game.ballY + game.ballSize >= canvas.height - 30 - game.paddleHeight &&
-            game.ballY - game.ballSize <= canvas.height - 30 &&
-            game.ballX >= game.paddleX &&
-            game.ballX <= game.paddleX + game.paddleWidth) {
-          
-          const relativeX = (game.ballX - game.paddleX) / game.paddleWidth;
-          const angle = (relativeX - 0.5) * Math.PI / 3;
-          const speed = Math.sqrt(game.ballVX * game.ballVX + game.ballVY * game.ballVY);
-          
-          game.ballVX = speed * Math.sin(angle);
-          game.ballVY = -speed * Math.cos(angle);
-          
-          soundManager.playCollect();
-          createParticles(game.ballX, canvas.height - 30, '#3b82f6');
-        }
+        // Paddle collision for each ball
+        game.balls.forEach(ball => {
+          if (ball.y + game.ballSize >= canvas.height - 30 - game.paddleHeight &&
+              ball.y - game.ballSize <= canvas.height - 30 &&
+              ball.x >= game.paddleX &&
+              ball.x <= game.paddleX + game.paddleWidth) {
+
+            const relativeX = (ball.x - game.paddleX) / game.paddleWidth;
+            const angle = (relativeX - 0.5) * Math.PI / 3;
+            const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+
+            ball.vx = speed * Math.sin(angle);
+            ball.vy = -speed * Math.cos(angle);
+
+            soundManager.playCollect();
+            createParticles(ball.x, canvas.height - 30, '#3b82f6');
+          }
+        });
 
         // Brick collision
         game.bricks = game.bricks.filter(brick => {
-          if (game.ballX + game.ballSize >= brick.x &&
-              game.ballX - game.ballSize <= brick.x + brick.width &&
-              game.ballY + game.ballSize >= brick.y &&
-              game.ballY - game.ballSize <= brick.y + brick.height) {
-            
-            brick.hits--;
-            
-            if (brick.hits <= 0) {
-              setScore(s => s + (brick.maxHits * 10));
-              soundManager.playCollect();
-              createParticles(brick.x + brick.width/2, brick.y + brick.height/2, brick.color);
-              
-              if (brick.powerUp) {
-                game.powerUps.push({
-                  x: brick.x + brick.width/2,
-                  y: brick.y + brick.height/2,
-                  type: brick.powerUp,
-                  vy: 2
-                });
+          let hit = false;
+          game.balls.forEach(ball => {
+            if (!hit && ball.x + game.ballSize >= brick.x &&
+                ball.x - game.ballSize <= brick.x + brick.width &&
+                ball.y + game.ballSize >= brick.y &&
+                ball.y - game.ballSize <= brick.y + brick.height) {
+
+              brick.hits--;
+
+              if (brick.hits <= 0) {
+                setScore(s => s + (brick.maxHits * 10));
+                soundManager.playCollect();
+                createParticles(brick.x + brick.width/2, brick.y + brick.height/2, brick.color);
+
+                if (brick.powerUp) {
+                  game.powerUps.push({
+                    x: brick.x + brick.width/2,
+                    y: brick.y + brick.height/2,
+                    type: brick.powerUp,
+                    vy: 2
+                  });
+                }
+
+                hit = true;
+              } else {
+                soundManager.playTone(440, 50);
               }
-              
-              return false;
-            } else {
-              soundManager.playTone(440, 50);
+
+              const ballCenterX = ball.x;
+              const ballCenterY = ball.y;
+              const brickCenterX = brick.x + brick.width / 2;
+              const brickCenterY = brick.y + brick.height / 2;
+
+              const dx = Math.abs(ballCenterX - brickCenterX);
+              const dy = Math.abs(ballCenterY - brickCenterY);
+
+              if (dx / brick.width > dy / brick.height) {
+                ball.vx = -ball.vx;
+              } else {
+                ball.vy = -ball.vy;
+              }
             }
-            
-            // Bounce ball
-            const ballCenterX = game.ballX;
-            const ballCenterY = game.ballY;
-            const brickCenterX = brick.x + brick.width / 2;
-            const brickCenterY = brick.y + brick.height / 2;
-            
-            const dx = Math.abs(ballCenterX - brickCenterX);
-            const dy = Math.abs(ballCenterY - brickCenterY);
-            
-            if (dx / brick.width > dy / brick.height) {
-              game.ballVX = -game.ballVX;
-            } else {
-              game.ballVY = -game.ballVY;
-            }
-            
-            return true;
-          }
+          });
+
+          if (hit && brick.hits <= 0) return false;
           return true;
         });
 
@@ -239,10 +250,59 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
                 game.paddleWidth = Math.min(200, game.paddleWidth + 20);
                 setTimeout(() => game.paddleWidth = 100, 10000);
                 break;
-              // Additional power-ups can be implemented here
+              case 'multiball':
+                game.balls = game.balls.concat(game.balls.map(b => ({ x: b.x, y: b.y, vx: -b.vx, vy: b.vy })));
+                break;
+              case 'laser':
+                game.laserActive = true;
+                setTimeout(() => game.laserActive = false, 5000);
+                break;
+              default:
+                break;
             }
             
             return false;
+          }
+          return true;
+        });
+
+        if (game.laserActive && timestamp - game.lastLaserTime > 300) {
+          game.lasers.push(
+            { x: game.paddleX + 5, y: canvas.height - 30, vy: -8 },
+            { x: game.paddleX + game.paddleWidth - 5, y: canvas.height - 30, vy: -8 }
+          );
+          game.lastLaserTime = timestamp;
+          soundManager.playTone(880, 50);
+        }
+
+        // Update lasers and check brick collisions
+        game.lasers = game.lasers.filter(laser => {
+          laser.y += laser.vy;
+          if (laser.y < 0) return false;
+
+          for (let i = 0; i < game.bricks.length; i++) {
+            const brick = game.bricks[i];
+            if (laser.x >= brick.x && laser.x <= brick.x + brick.width &&
+                laser.y <= brick.y + brick.height && laser.y >= brick.y) {
+              brick.hits--;
+              if (brick.hits <= 0) {
+                setScore(s => s + (brick.maxHits * 10));
+                soundManager.playCollect();
+                createParticles(brick.x + brick.width/2, brick.y + brick.height/2, brick.color);
+                if (brick.powerUp) {
+                  game.powerUps.push({
+                    x: brick.x + brick.width/2,
+                    y: brick.y + brick.height/2,
+                    type: brick.powerUp,
+                    vy: 2
+                  });
+                }
+                game.bricks.splice(i,1);
+              } else {
+                soundManager.playTone(440, 50);
+              }
+              return false;
+            }
           }
           return true;
         });
@@ -290,14 +350,22 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
       ctx.fillStyle = paddleGradient;
       ctx.fillRect(gameRef.current.paddleX, canvas.height - 30, gameRef.current.paddleWidth, gameRef.current.paddleHeight);
 
-      // Draw ball
+      // Draw balls
       ctx.shadowBlur = 10;
       ctx.shadowColor = '#fbbf24';
       ctx.fillStyle = '#fbbf24';
-      ctx.beginPath();
-      ctx.arc(gameRef.current.ballX, gameRef.current.ballY, gameRef.current.ballSize, 0, Math.PI * 2);
-      ctx.fill();
+      gameRef.current.balls.forEach(ball => {
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, gameRef.current.ballSize, 0, Math.PI * 2);
+        ctx.fill();
+      });
       ctx.shadowBlur = 0;
+
+      // Draw lasers
+      ctx.fillStyle = '#f87171';
+      gameRef.current.lasers.forEach(laser => {
+        ctx.fillRect(laser.x - 2, laser.y - 10, 4, 10);
+      });
 
       // Draw power-ups
       gameRef.current.powerUps.forEach(powerUp => {
@@ -323,10 +391,9 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
   }, [paused, gameOver, score, level, initBricks, updateHighScore]);
 
   const restart = () => {
-    gameRef.current.ballX = 400;
-    gameRef.current.ballY = 300;
-    gameRef.current.ballVX = 4;
-    gameRef.current.ballVY = -4;
+    gameRef.current.balls = [{ x: 400, y: 300, vx: 4, vy: -4 }];
+    gameRef.current.lasers = [];
+    gameRef.current.laserActive = false;
     gameRef.current.paddleWidth = 100;
     gameRef.current.powerUps = [];
     setScore(0);
