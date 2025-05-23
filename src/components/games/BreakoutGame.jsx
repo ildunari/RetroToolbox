@@ -361,12 +361,15 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     }
   }, [score]);
 
+  const remaining = gameRef.current.bricks.length;
+
   return (
 
     <div className="flex flex-col items-center p-4">
       <div className="mb-4 flex items-center gap-4 flex-wrap justify-center">
         <div className={`text-white font-bold text-xl transition-transform ${scoreFlash ? 'scale-125 text-yellow-400' : ''}`}>Score: {score}</div>
         <div className="text-white font-bold text-xl">Level: {level}</div>
+        <div className="text-white font-bold text-xl">Bricks Left: {remaining}</div>
         <div className="flex items-center gap-1">
           {Array.from({ length: lives }).map((_, i) => (
             <Heart key={i} size={20} className="text-red-500 fill-red-500" />
