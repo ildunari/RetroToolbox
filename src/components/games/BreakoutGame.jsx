@@ -8,15 +8,41 @@ import { GameOverBanner } from "../ui/GameOverBanner";
 // Create sound manager instance
 const soundManager = new SoundManager();
 
+// Key used for persisting progress
+const PROGRESS_KEY = 'breakoutProgress';
+
 export const BreakoutGame = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
-  const [score, setScore] = useState(0);
-  const [lives, setLives] = useState(3);
+
+  const savedProgress = (() => {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      return JSON.parse(localStorage.getItem(PROGRESS_KEY));
+    } catch {
+      return null;
+    }
+  })();
+
+  const [score, setScore] = useState(savedProgress?.score ?? 0);
+  const [lives, setLives] = useState(savedProgress?.lives ?? 3);
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [level, setLevel] = useState(1);
+  const [level, setLevel] = useState(savedProgress?.level ?? 1);
   const [scoreFlash, setScoreFlash] = useState(false);
   const prevScore = useRef(0);
+
+  const saveProgress = useCallback((lv = level, sc = score, li = lives) => {
+    try {
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify({ level: lv, score: sc, lives: li }));
+    } catch {}
+  }, [level, score, lives]);
+
+  // Save progress when component unmounts
+  useEffect(() => {
+    return () => {
+      saveProgress();
+    };
+  }, [saveProgress]);
   
   const gameRef = useRef({
     paddleX: 350,
@@ -143,6 +169,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
               setGameOver(true);
               soundManager.playGameOver();
               updateHighScore('breakout', score);
+              localStorage.removeItem(PROGRESS_KEY);
             } else {
               soundManager.playHit();
             }
@@ -249,7 +276,11 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
 
         // Check level complete
         if (game.bricks.length === 0) {
-          setLevel(l => l + 1);
+          setLevel(l => {
+            const next = l + 1;
+            saveProgress(next, score, lives);
+            return next;
+          });
           soundManager.playPowerUp();
           initBricks();
         }
@@ -323,6 +354,7 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
   }, [paused, gameOver, score, level, initBricks, updateHighScore]);
 
   const restart = () => {
+    localStorage.removeItem(PROGRESS_KEY);
     gameRef.current.ballX = 400;
     gameRef.current.ballY = 300;
     gameRef.current.ballVX = 4;
