@@ -230,12 +230,17 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
         blockData: [...game.board[lineY]]
       }));
       
-      // IMMEDIATELY remove completed lines from bottom to top
+      // Remove completed lines from the board first, then
+      // insert the empty rows afterwards to avoid index issues
       completedLines.sort((a, b) => b - a);
       completedLines.forEach(lineY => {
         game.board.splice(lineY, 1);
-        game.board.unshift(Array(BOARD_WIDTH).fill(0));
       });
+
+      // Now prepend the appropriate number of empty rows
+      for (let i = 0; i < completedLines.length; i++) {
+        game.board.unshift(Array(BOARD_WIDTH).fill(0));
+      }
       
       // Then queue explosions with the stored data
       explosionData.forEach((data, index) => {
