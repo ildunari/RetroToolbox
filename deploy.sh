@@ -2,6 +2,14 @@
 
 # RetroToolbox Unified Deployment Script
 # Handles local, codex, and production environments with automatic detection
+#
+# Usage:
+#   ./deploy.sh                    # Auto-detect environment
+#   ./deploy.sh dev                # Quick development (no service)
+#   ./deploy.sh codex              # Codex deployment
+#   ./deploy.sh prod               # Production deployment
+#   ./deploy.sh service <command>  # Service management
+#   ./deploy.sh --help             # Show help
 
 set -e  # Exit on any error
 
@@ -27,6 +35,91 @@ detect_environment() {
     else
         echo "local"
     fi
+}
+
+# Show help
+show_help() {
+    echo "RetroToolbox Deployment Script"
+    echo ""
+    echo "Usage:"
+    echo "  ./deploy.sh                    # Auto-detect environment"
+    echo "  ./deploy.sh dev                # Quick development (no service)"
+    echo "  ./deploy.sh codex              # Codex deployment"
+    echo "  ./deploy.sh prod               # Production deployment"
+    echo "  ./deploy.sh service <command>  # Service management"
+    echo ""
+    echo "Service commands:"
+    echo "  service start                  # Start the service"
+    echo "  service stop                   # Stop the service"
+    echo "  service restart                # Restart the service"
+    echo "  service status                 # Check service status"
+    echo "  service logs                   # View service logs"
+    echo "  service url                    # Get the service URL"
+    echo ""
+    echo "Options:"
+    echo "  --env <environment>            # Force specific environment"
+    echo "  --skip-deps                    # Skip dependency installation"
+    echo "  --skip-build                   # Skip build process"
+    echo "  --no-service                   # Don't start service (local only)"
+    echo "  --help, -h                     # Show this help"
+}
+
+# Handle service commands
+handle_service_command() {
+    local SERVICE_NAME="com.retro.game-toolbox"
+    local PLIST_PATH="$HOME/Library/LaunchAgents/$SERVICE_NAME.plist"
+    local LOG_PATH="$HOME/Library/Logs/RetroGameToolbox"
+    
+    case "$1" in
+        start)
+            log_info "Starting RetroToolbox service..."
+            launchctl load "$PLIST_PATH" 2>/dev/null || log_warning "Service already running"
+            sleep 2
+            if launchctl list | grep -q "$SERVICE_NAME"; then
+                log_success "Service started successfully"
+                PORT=$(launchctl list | grep "$SERVICE_NAME" | awk '{print $3}')
+                log_info "Service URL: http://localhost:${PORT:-3004}"
+            else
+                log_error "Failed to start service"
+            fi
+            ;;
+        stop)
+            log_info "Stopping RetroToolbox service..."
+            launchctl unload "$PLIST_PATH" 2>/dev/null || log_warning "Service not running"
+            log_success "Service stopped"
+            ;;
+        restart)
+            handle_service_command stop
+            sleep 1
+            handle_service_command start
+            ;;
+        status)
+            if launchctl list | grep -q "$SERVICE_NAME"; then
+                log_success "Service is running"
+                PORT=$(cat "$LOG_PATH/port.txt" 2>/dev/null || echo "3004")
+                log_info "Service URL: http://localhost:$PORT"
+            else
+                log_warning "Service is not running"
+            fi
+            ;;
+        logs)
+            log_info "Showing service logs..."
+            tail -f "$LOG_PATH/service.log"
+            ;;
+        url)
+            if [ -f "$LOG_PATH/port.txt" ]; then
+                PORT=$(cat "$LOG_PATH/port.txt")
+                echo "http://localhost:$PORT"
+            else
+                echo "Service not running or port file not found"
+            fi
+            ;;
+        *)
+            log_error "Unknown service command: $1"
+            echo "Valid commands: start, stop, restart, status, logs, url"
+            exit 1
+            ;;
+    esac
 }
 
 # Project directory detection
@@ -73,7 +166,33 @@ main() {
     local SKIP_BUILD=false
     local START_SERVICE=true
     
-    # Parse command line arguments
+    # Handle shortcut commands
+    case "$1" in
+        dev)
+            ENVIRONMENT="local"
+            START_SERVICE=false
+            shift
+            ;;
+        codex)
+            ENVIRONMENT="codex"
+            shift
+            ;;
+        prod|production)
+            ENVIRONMENT="production"
+            shift
+            ;;
+        service)
+            shift
+            handle_service_command "$@"
+            exit 0
+            ;;
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+    esac
+    
+    # Parse remaining command line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             --skip-deps)
@@ -409,30 +528,7 @@ verify_deployment() {
     log_success "Deployment verification passed"
 }
 
-# Show help
-show_help() {
-    echo "🎮 RetroToolbox Unified Deployment Script"
-    echo ""
-    echo "Usage: $0 [OPTIONS]"
-    echo ""
-    echo "Options:"
-    echo "  --skip-deps      Skip dependency installation"
-    echo "  --skip-build     Skip build process"
-    echo "  --no-service     Don't start service (local env only)"
-    echo "  --env ENV        Force specific environment (local|codex|production)"
-    echo "  --help, -h       Show this help message"
-    echo ""
-    echo "Environments:"
-    echo "  local        - Local development with service management"
-    echo "  codex        - OpenAI Codex cloud environment"
-    echo "  production   - Production deployment"
-    echo ""
-    echo "Examples:"
-    echo "  $0                    # Auto-detect environment and deploy"
-    echo "  $0 --skip-deps       # Deploy without installing dependencies"
-    echo "  $0 --env production  # Force production deployment"
-    echo "  $0 --no-service      # Build only, don't start service"
-}
+
 
 # Run main function with all arguments
 main "$@"

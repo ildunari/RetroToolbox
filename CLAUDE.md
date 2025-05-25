@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Static Socket Configuration
+
+**CRITICAL**: RetroToolbox MUST use port 3004 exclusively:
+- **Tailscale Access**: http://100.x.x.x:3004 (replace x.x.x with your Tailscale IP)
+- **NEVER use `serve` command or dynamic ports**
+- **Always use `npm run dev` which runs on port 3004**
+
 ## Project Overview
 
 This is a React-based retro arcade game collection featuring multiple classic games with modern enhancements. The application uses a fully modular architecture with individual game components and optimized core systems.

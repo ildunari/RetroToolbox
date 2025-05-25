@@ -1,16 +1,9 @@
 #!/bin/bash
 
-# Codex Setup Script - Wrapper for unified deployment script
-# Optimized for OpenAI Codex cloud environment
-
-echo "🎮 RetroToolbox Codex Setup"
-echo "================================"
-echo "Using unified deployment script for Codex environment..."
+# DEPRECATED: This script is deprecated and will be removed in a future version
+echo "⚠️  DEPRECATED: Use './deploy.sh codex' instead"
+echo "   This wrapper will be removed in a future version"
 echo ""
 
-# Get script directory for relative path to deploy.sh
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
-# Call unified deploy script with Codex environment settings
-exec "./deploy.sh" --env codex
+# Call the new command for backwards compatibility
+exec "./deploy.sh" codex "$@"

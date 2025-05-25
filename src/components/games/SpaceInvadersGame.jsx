@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
-import { SoundManager } from '../../core/SoundManager';
+import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 
 

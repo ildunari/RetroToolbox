@@ -4,11 +4,10 @@
   "type": "module",
   "description": "A collection of retro arcade games with modern enhancements",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 3004",
     "build": "vite build",
-    "preview": "vite preview",
-    "start": "node server/server.js",
-    "serve": "npm run build && npm run start"
+    "preview": "vite preview --port 3004",
+    "start": "node server/server.js"
   },
   "dependencies": {
     "@playwright/mcp": "^0.0.26",

@@ -41,6 +41,7 @@ export default defineConfig({
     port: 8940, // Static port for RetroToolbox
     host: true,
     strictPort: true, // Fail if port is taken instead of auto-picking
+    allowedHosts: ['brown-hjpx4qch.tailf7342a.ts.net'],
     // Security improvements for dev server
     cors: true,
     headers: {

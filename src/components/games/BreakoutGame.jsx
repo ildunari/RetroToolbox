@@ -191,6 +191,15 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
           game.ballY = nextY;
         }
 
+        // Apply speed cap to prevent extreme velocities
+        const maxSpeed = 15;
+        const currentSpeed = Math.sqrt(game.ballVX * game.ballVX + game.ballVY * game.ballVY);
+        if (currentSpeed > maxSpeed) {
+          const scale = maxSpeed / currentSpeed;
+          game.ballVX *= scale;
+          game.ballVY *= scale;
+        }
+
         // Ball fell off bottom
         if (game.ballY > canvas.height) {
           setLives(l => {
