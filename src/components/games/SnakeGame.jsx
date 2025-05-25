@@ -19,6 +19,7 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
     snake: [{ x: 10, y: 10 }],
     direction: { x: 1, y: 0 },
     nextDirection: { x: 1, y: 0 },
+    inputBuffer: [],
     food: { x: 15, y: 15 },
     particles: [],
     speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
@@ -34,6 +35,8 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
     let animationId;
     
     const resizeCanvas = () => {
+      const devicePixelRatio = window.devicePixelRatio || 1;
+      
       // Get full viewport dimensions
       const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
       const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
@@ -44,14 +47,15 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       
       // Square canvas - use the smaller dimension but at least 80% of available space
       const maxSize = Math.min(availableWidth, availableHeight);
-      const size = Math.max(maxSize * 0.85, Math.min(300, maxSize));
+      const displaySize = Math.max(maxSize * 0.85, Math.min(300, maxSize));
+      const size = Math.floor(displaySize);
       
-      canvas.width = Math.floor(size);
-      canvas.height = Math.floor(size);
-      canvas.style.width = `${Math.floor(size)}px`;
-      canvas.style.height = `${Math.floor(size)}px`;
+      canvas.width = size * devicePixelRatio;
+      canvas.height = size * devicePixelRatio;
+      canvas.style.width = `${size}px`;
+      canvas.style.height = `${size}px`;
       
-      console.log(`Snake canvas resized to: ${Math.floor(size)}x${Math.floor(size)}`);
+      ctx.scale(devicePixelRatio, devicePixelRatio);
     };
     
     resizeCanvas();
@@ -78,32 +82,39 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       if (gameOver) return;
       
       const game = gameRef.current;
+      let newDirection = null;
+      
       switch(e.key) {
         case 'ArrowUp':
         case 'w':
           e.preventDefault();
-          if (game.direction.y === 0) game.nextDirection = { x: 0, y: -1 };
+          if (game.direction.y === 0) newDirection = { x: 0, y: -1 };
           break;
         case 'ArrowDown':
         case 's':
           e.preventDefault();
-          if (game.direction.y === 0) game.nextDirection = { x: 0, y: 1 };
+          if (game.direction.y === 0) newDirection = { x: 0, y: 1 };
           break;
         case 'ArrowLeft':
         case 'a':
           e.preventDefault();
-          if (game.direction.x === 0) game.nextDirection = { x: -1, y: 0 };
+          if (game.direction.x === 0) newDirection = { x: -1, y: 0 };
           break;
         case 'ArrowRight':
         case 'd':
           e.preventDefault();
-          if (game.direction.x === 0) game.nextDirection = { x: 1, y: 0 };
+          if (game.direction.x === 0) newDirection = { x: 1, y: 0 };
           break;
         case ' ':
         case 'Escape':
           e.preventDefault();
           setPaused(p => !p);
           break;
+      }
+      
+      // Add to input buffer if valid direction (max 2 inputs buffered)
+      if (newDirection && game.inputBuffer.length < 2) {
+        game.inputBuffer.push(newDirection);
       }
     };
 
@@ -186,8 +197,15 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
           const game = gameRef.current;
           const snake = game.snake;
           
-          // Update direction
-          game.direction = game.nextDirection;
+          // Update direction from input buffer
+          if (game.inputBuffer.length > 0) {
+            const bufferedDirection = game.inputBuffer.shift();
+            // Validate buffered direction is still valid
+            if ((bufferedDirection.x !== 0 && game.direction.x === 0) || 
+                (bufferedDirection.y !== 0 && game.direction.y === 0)) {
+              game.direction = bufferedDirection;
+            }
+          }
           
           // Calculate new head position
           const head = { ...snake[0] };
@@ -224,6 +242,9 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
               setScore(s => s + 10);
               soundManager.playCollect();
               createParticles(game.food.x, game.food.y, '#10b981', 15);
+              
+              // Brief pause for food collection feedback
+              game.lastUpdate = timestamp + 50; // 50ms pause
               
               // Spawn new food
               do {
@@ -274,11 +295,16 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
         }
       }
 
-      // Update particles
+      // Update particles with memory leak prevention
       gameRef.current.particles = gameRef.current.particles.filter(p => {
         p.update(0.016);
         return p.life > 0;
       });
+      
+      // Prevent memory leak - limit max particles
+      if (gameRef.current.particles.length > 100) {
+        gameRef.current.particles = gameRef.current.particles.slice(-50);
+      }
 
       // Draw
       ctx.fillStyle = '#0f172a';
@@ -485,6 +511,7 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       snake: [{ x: 10, y: 10 }],
       direction: { x: 1, y: 0 },
       nextDirection: { x: 1, y: 0 },
+      inputBuffer: [],
       food: { x: 15, y: 15 },
       particles: [],
       speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,

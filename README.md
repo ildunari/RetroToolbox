@@ -4,13 +4,14 @@ A modular collection of retro arcade games with modern enhancements, built with 
 
 ## Features
 
-- 🎮 **Multiple Games**: Snake++, Neon Pong, Brick Breaker, and more
+- 🎮 **Complete Games**: Snake++, Neon Pong, Brick Breaker, Tetris Remix, Space Defense, Pac-Man
 - 🎵 **Sound System**: Web Audio API-powered sound effects  
 - 🎯 **Input Support**: Keyboard, mouse, touch, and gamepad controls
 - ✨ **Visual Effects**: Particle systems and animations
 - 📱 **Responsive Design**: Works on desktop and mobile devices
 - 🌐 **Network Access**: Random port assignment for Tailscale compatibility
 - 🤖 **AI Integration**: OpenAI Codex ready with AGENTS.md configuration
+- 🏗️ **Modular Architecture**: Individual game components with optimized core systems
 
 ## Quick Start
 
@@ -22,11 +23,10 @@ npm run dev
 
 ### Production Deployment
 ```bash
-npm run serve
-```
+# Full deployment with service management
+./deploy.sh
 
-Or use the automatic startup script:
-```bash
+# Quick local development
 ./startup.sh
 ```
 
@@ -45,32 +45,47 @@ Or use the automatic startup script:
 
 ## Architecture
 
-The project follows a modular architecture:
+The project follows a fully modular architecture with extracted game components:
 
 ```
 /src
   /components
-    /games       # Individual game components
-    /ui          # UI components (menus, modals)
-  /core
-    - SoundManager.ts     # Audio system
-    - InputManager.ts     # Input handling
-    - ParticleSystem.ts   # Visual effects
-    - GameTypes.ts        # Type definitions
+    /games       # Fully implemented individual game components
+      - SnakeGame.jsx       # Snake++ with power-ups and lives
+      - PongGame.jsx        # Neon Pong with AI opponent
+      - BreakoutGame.jsx    # Brick Breaker with multi-hit bricks
+      - TetrisGame.jsx      # Tetris Remix with enhanced mechanics
+      - SpaceInvadersGame.jsx # Space Defense with waves
+      - PacManGame.jsx      # Pac-Man with mobile touch controls
+    /ui          # UI components (menus, modals, effects)
+      - GameMenu.jsx        # Game selection interface
+      - SettingsModal.jsx   # Settings management
+      - FadingCanvas.jsx    # Visual transition effects
+      - GameOverBanner.jsx  # Game over animations
+  /core          # Optimized core systems
+    - SoundManager.ts     # Web Audio API sound engine
+    - InputManager.ts     # Unified input handling system
+    - ParticleSystem.ts   # High-performance visual effects
+    - GameTypes.ts        # TypeScript interfaces
   /hooks         # React hooks for state management
-  - App.tsx      # Main application
+    - useSettings.js      # Persistent settings management
+    - useStats.js         # Statistics and high score tracking
+  - App.tsx      # Main modular application
   - main.tsx     # Entry point
 /server
-  - server.js    # Express server with random port
+  - server.js    # Express server with random port assignment
 ```
 
 ## Games
 
-1. **Snake++**: Enhanced snake game with power-ups and lives system
-2. **Neon Pong**: AI opponent with visual effects
-3. **Brick Breaker**: Breakout clone with multi-hit bricks
-4. **Tetris Remix**: Coming soon
-5. **Space Defense**: Coming soon
+All games are fully implemented as modular components with modern enhancements:
+
+1. **Snake++** (`SnakeGame.jsx`): Enhanced snake game with power-ups, lives system, and particle effects
+2. **Neon Pong** (`PongGame.jsx`): AI opponent with difficulty scaling and visual effects
+3. **Brick Breaker** (`BreakoutGame.jsx`): Breakout clone with multi-hit bricks and power-ups
+4. **Tetris Remix** (`TetrisGame.jsx`): Classic Tetris with enhanced mechanics and animations
+5. **Space Defense** (`SpaceInvadersGame.jsx`): Space Invaders with progressive waves and upgrades
+6. **Pac-Man** (`PacManGame.jsx`): Classic maze game with touch controls and power pellets
 
 ## Network Access
 
@@ -120,9 +135,64 @@ See [CODEX_INTEGRATION.md](CODEX_INTEGRATION.md) for detailed setup instructions
 
 ## Development
 
-- `npm run dev`: Start development server
-- `npm run build`: Build for production
-- `npm run preview`: Preview production build
+### Development Commands
+- `npm run dev`: Start development server with hot reload
+- `npm run build`: Build optimized production bundle
+- `npm run preview`: Preview production build locally
 - `npm start`: Start production server
-- `./startup.sh`: Complete setup and service start
-- `./toolbox-service.sh`: Service management
+
+### Deployment & Service Management
+
+**Which Script to Use When:**
+- **`./deploy.sh`**: Full production deployment with service management (recommended)
+- **`./startup.sh`**: Quick local development and testing
+- **`./codex-setup.sh`**: Automated setup for OpenAI Codex environment only
+
+**Service Management:**
+- `./toolbox-service.sh start|stop|restart`: Service management
+- `./toolbox-service.sh status|logs|url`: Service monitoring
+
+### Migration Guide for Existing Users
+If upgrading from the old monolithic version (prior to modular architecture):
+1. Pull latest changes: `git pull origin main`
+2. Install dependencies: `npm install` 
+3. Rebuild: `npm run build`
+4. Restart service: `./toolbox-service.sh restart`
+
+**Architecture Changes:**
+- ❌ **Old**: All games in single `RetroGameToolbox.jsx` file (monolithic)
+- ✅ **New**: Individual game components in `src/components/games/` (modular)
+- ❌ **Old**: Duplicate core systems in each game
+- ✅ **New**: Optimized shared systems in `src/core/`
+- ❌ **Old**: Mixed state management
+- ✅ **New**: Clean TypeScript hooks in `src/hooks/`
+
+**Note**: Game functionality remains identical but architecture is now modular for better maintainability and performance.
+
+### Troubleshooting Common Issues
+
+**Games not loading:**
+- Check browser console for import errors
+- Verify all dependencies installed: `npm install`
+- Rebuild the project: `npm run build`
+
+**Sound not working:**
+- Check browser allows audio (user interaction required)
+- Verify SoundManager import in game components
+- Check settings modal for audio enable/disable
+
+**Service startup issues:**
+- Verify port availability: `./toolbox-service.sh status`
+- Check logs: `./toolbox-service.sh logs`
+- Restart service: `./toolbox-service.sh restart`
+
+**Touch controls not responsive:**
+- Ensure proper viewport meta tag in `index.html`
+- Check mobile-specific CSS in individual game components
+- Verify touch event handlers in `src/core/InputManager.ts`
+- Test on actual mobile device (not just browser dev tools)
+
+**Mobile scaling issues:**
+- Verify responsive canvas sizing in game components
+- Check Tailwind CSS responsive classes
+- Test landscape/portrait orientation changes

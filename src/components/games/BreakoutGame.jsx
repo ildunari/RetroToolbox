@@ -1,12 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
-import { SoundManager } from '../../core/SoundManager';
+import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
-
-// Create sound manager instance
-const soundManager = new SoundManager();
 
 export const BreakoutGame = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
@@ -88,12 +85,12 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
         width = (height * 4) / 3;
       }
       
-      canvas.width = Math.floor(width);
-      canvas.height = Math.floor(height);
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
       canvas.style.width = `${Math.floor(width)}px`;
       canvas.style.height = `${Math.floor(height)}px`;
-      
-      console.log(`Breakout canvas resized to: ${Math.floor(width)}x${Math.floor(height)}`);
+      ctx.scale(dpr, dpr);
     };
     
     resizeCanvas();
@@ -160,19 +157,38 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
       if (!paused && !gameOver && !transitioning) {
         const game = gameRef.current;
         
-        // Update ball
-        game.ballX += game.ballVX;
-        game.ballY += game.ballVY;
+        // Continuous collision detection
+        const prevX = game.ballX;
+        const prevY = game.ballY;
+        const nextX = game.ballX + game.ballVX;
+        const nextY = game.ballY + game.ballVY;
+        
+        let collisionDetected = false;
 
-        // Ball collision with walls
-        if (game.ballX <= game.ballSize || game.ballX >= canvas.width - game.ballSize) {
-          game.ballVX = -game.ballVX;
+        // Wall collision with continuous detection
+        if (nextX <= game.ballSize) {
+          game.ballX = game.ballSize;
+          game.ballVX = Math.abs(game.ballVX);
           soundManager.playTone(220, 50);
+          collisionDetected = true;
+        } else if (nextX >= canvas.width - game.ballSize) {
+          game.ballX = canvas.width - game.ballSize;
+          game.ballVX = -Math.abs(game.ballVX);
+          soundManager.playTone(220, 50);
+          collisionDetected = true;
         }
         
-        if (game.ballY <= game.ballSize) {
-          game.ballVY = -game.ballVY;
+        if (nextY <= game.ballSize) {
+          game.ballY = game.ballSize;
+          game.ballVY = Math.abs(game.ballVY);
           soundManager.playTone(220, 50);
+          collisionDetected = true;
+        }
+
+        // Update position if no collision
+        if (!collisionDetected) {
+          game.ballX = nextX;
+          game.ballY = nextY;
         }
 
         // Ball fell off bottom
@@ -241,19 +257,23 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
               soundManager.playTone(440, 50);
             }
             
-            // Bounce ball
+            // Improved brick collision response
             const ballCenterX = game.ballX;
             const ballCenterY = game.ballY;
             const brickCenterX = brick.x + brick.width / 2;
             const brickCenterY = brick.y + brick.height / 2;
             
-            const dx = Math.abs(ballCenterX - brickCenterX);
-            const dy = Math.abs(ballCenterY - brickCenterY);
+            // Calculate which side of the brick was hit
+            const overlapX = (brick.width / 2 + game.ballSize) - Math.abs(ballCenterX - brickCenterX);
+            const overlapY = (brick.height / 2 + game.ballSize) - Math.abs(ballCenterY - brickCenterY);
             
-            if (dx / brick.width > dy / brick.height) {
-              game.ballVX = -game.ballVX;
+            // Determine collision direction based on smallest overlap
+            if (overlapX < overlapY) {
+              // Hit from left or right
+              game.ballVX = ballCenterX < brickCenterX ? -Math.abs(game.ballVX) : Math.abs(game.ballVX);
             } else {
-              game.ballVY = -game.ballVY;
+              // Hit from top or bottom
+              game.ballVY = ballCenterY < brickCenterY ? -Math.abs(game.ballVY) : Math.abs(game.ballVY);
             }
             
             return true;

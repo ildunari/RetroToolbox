@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Play, Pause, RotateCcw } from 'lucide-react';
-import { SoundManager } from '../../core/SoundManager';
+import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
-const soundManager = new SoundManager();
 
 export const PongGame = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
@@ -61,8 +60,12 @@ export const PongGame = ({ settings, updateHighScore }) => {
         width = height * 2;
       }
       
-      canvas.width = Math.floor(width);
-      canvas.height = Math.floor(height);
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = Math.floor(width) + 'px';
+      canvas.style.height = Math.floor(height) + 'px';
+      ctx.scale(dpr, dpr);
       canvas.style.width = `${Math.floor(width)}px`;
       canvas.style.height = `${Math.floor(height)}px`;
       
@@ -136,55 +139,90 @@ export const PongGame = ({ settings, updateHighScore }) => {
         
         const game = gameRef.current;
         
-        // Update ball position
-        game.ballX += game.ballVX;
-        game.ballY += game.ballVY;
+        // Continuous collision detection - ray casting
+        const prevX = game.ballX;
+        const prevY = game.ballY;
+        const nextX = game.ballX + game.ballVX;
+        const nextY = game.ballY + game.ballVY;
+        
+        // Speed cap to prevent impossible physics
+        const maxSpeed = 20;
+        if (Math.abs(game.ballVX) > maxSpeed || Math.abs(game.ballVY) > maxSpeed) {
+          const speed = Math.sqrt(game.ballVX * game.ballVX + game.ballVY * game.ballVY);
+          game.ballVX = (game.ballVX / speed) * maxSpeed;
+          game.ballVY = (game.ballVY / speed) * maxSpeed;
+        }
+
+        // Check for collisions along the ray
+        let collisionDetected = false;
+        
+        // Top/bottom wall collision
+        if (nextY <= game.ballSize) {
+          game.ballY = game.ballSize;
+          game.ballVY = Math.abs(game.ballVY);
+          soundManager.playTone(440, 50);
+          collisionDetected = true;
+        } else if (nextY >= canvas.height - game.ballSize) {
+          game.ballY = canvas.height - game.ballSize;
+          game.ballVY = -Math.abs(game.ballVY);
+          soundManager.playTone(440, 50);
+          collisionDetected = true;
+        }
+
+        // Paddle collision helper
+        const checkPaddleCollision = (paddleX, paddleY, isPlayer) => {
+          const paddleLeft = paddleX - game.paddleWidth / 2;
+          const paddleRight = paddleX + game.paddleWidth / 2;
+          const paddleTop = paddleY - game.paddleHeight / 2;
+          const paddleBottom = paddleY + game.paddleHeight / 2;
+          
+          // Ray-paddle intersection
+          const rayDir = { x: game.ballVX, y: game.ballVY };
+          const rayLength = Math.sqrt(rayDir.x * rayDir.x + rayDir.y * rayDir.y);
+          
+          // Check if ball will intersect paddle on this frame
+          const ballWillHit = nextX + game.ballSize >= paddleLeft && 
+                             nextX - game.ballSize <= paddleRight &&
+                             nextY + game.ballSize >= paddleTop && 
+                             nextY - game.ballSize <= paddleBottom;
+                             
+          if (ballWillHit && !collisionDetected) {
+            // Calculate exact collision point
+            const relativeIntersectY = (paddleY - nextY) / (game.paddleHeight / 2);
+            const bounceAngle = relativeIntersectY * Math.PI / 4;
+            
+            game.ballSpeed = Math.min(game.ballSpeed * 1.05, 15);
+            game.ballVX = game.ballSpeed * Math.cos(isPlayer ? -bounceAngle : Math.PI + bounceAngle);
+            game.ballVY = game.ballSpeed * Math.sin(isPlayer ? -bounceAngle : Math.PI + bounceAngle);
+            
+            // Position ball just outside paddle
+            game.ballX = isPlayer ? paddleRight + game.ballSize : paddleLeft - game.ballSize;
+            
+            soundManager.playCollect();
+            createParticles(paddleX, paddleY, 100, isPlayer ? '#3b82f6' : '#ef4444');
+            return true;
+          }
+          return false;
+        };
+
+        // Check paddle collisions
+        if (!collisionDetected) {
+          if (checkPaddleCollision(game.paddleWidth / 2, game.playerY, true)) {
+            collisionDetected = true;
+          } else if (checkPaddleCollision(canvas.width - game.paddleWidth / 2, game.aiY, false)) {
+            collisionDetected = true;
+          }
+        }
+
+        // Update ball position if no collision
+        if (!collisionDetected) {
+          game.ballX = nextX;
+          game.ballY = nextY;
+        }
 
         // Record trail
         game.ballTrail.push({ x: game.ballX, y: game.ballY });
         if (game.ballTrail.length > 15) game.ballTrail.shift();
-
-        // Ball collision with top/bottom
-        if (game.ballY <= game.ballSize || game.ballY >= canvas.height - game.ballSize) {
-          game.ballVY = -game.ballVY;
-          soundManager.playTone(440, 50);
-        }
-
-        // Ball collision with paddles
-        const paddleHit = (paddleY) => {
-          return game.ballY >= paddleY - game.paddleHeight/2 && 
-                 game.ballY <= paddleY + game.paddleHeight/2;
-        };
-
-        // Player paddle collision
-        if (game.ballX <= game.paddleWidth + game.ballSize && 
-            game.ballX > game.paddleWidth &&
-            paddleHit(game.playerY)) {
-          const relativeIntersectY = (game.playerY - game.ballY) / (game.paddleHeight / 2);
-          const bounceAngle = relativeIntersectY * Math.PI / 4;
-          
-          game.ballSpeed = Math.min(game.ballSpeed * 1.05, 15);
-          game.ballVX = game.ballSpeed * Math.cos(-bounceAngle);
-          game.ballVY = game.ballSpeed * Math.sin(-bounceAngle);
-          
-          soundManager.playCollect();
-          createParticles(game.paddleWidth, game.ballY, 100, '#3b82f6');
-        }
-
-        // AI paddle collision
-        if (game.ballX >= canvas.width - game.paddleWidth - game.ballSize && 
-            game.ballX < canvas.width - game.paddleWidth &&
-            paddleHit(game.aiY)) {
-          const relativeIntersectY = (game.aiY - game.ballY) / (game.paddleHeight / 2);
-          const bounceAngle = relativeIntersectY * Math.PI / 4;
-          
-          game.ballSpeed = Math.min(game.ballSpeed * 1.05, 15);
-          game.ballVX = -game.ballSpeed * Math.cos(-bounceAngle);
-          game.ballVY = game.ballSpeed * Math.sin(-bounceAngle);
-          
-          soundManager.playCollect();
-          createParticles(canvas.width - game.paddleWidth, game.ballY, -100, '#ef4444');
-        }
 
         // Score
         if (game.ballX < -game.ballSize) {

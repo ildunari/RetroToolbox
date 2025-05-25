@@ -3,8 +3,7 @@ import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { SoundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 
-// Create sound manager instance
-const soundManager = new SoundManager();
+
 
 export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
@@ -91,8 +90,16 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
     let animationId;
     
     const resizeCanvas = () => {
-      canvas.width = Math.min(window.innerWidth - 32, 800);
-      canvas.height = 600;
+      const devicePixelRatio = window.devicePixelRatio || 1;
+      const displayWidth = Math.min(window.innerWidth - 32, 800);
+      const displayHeight = 600;
+      
+      canvas.width = displayWidth * devicePixelRatio;
+      canvas.height = displayHeight * devicePixelRatio;
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
+      
+      ctx.scale(devicePixelRatio, devicePixelRatio);
     };
     
     resizeCanvas();
@@ -340,6 +347,38 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
         });
       });
 
+      // Update power-ups FIRST - moved before alien bullet collision
+      game.powerUps = game.powerUps.filter(powerUpItem => {
+        powerUpItem.y += powerUpItem.speed;
+        
+        // Check collision with player
+        if (powerUpItem.x < game.player.x + game.player.width &&
+            powerUpItem.x + powerUpItem.width > game.player.x &&
+            powerUpItem.y < game.player.y + game.player.height &&
+            powerUpItem.y + powerUpItem.height > game.player.y) {
+          
+          setPowerUp(powerUpItem.type);
+          game.powerUpEndTime = timestamp + 10000; // 10 seconds
+          soundManager.playPowerUp();
+          
+          // Create particles
+          for (let i = 0; i < 10; i++) {
+            game.particles.push(new Particle(
+              powerUpItem.x + powerUpItem.width / 2,
+              powerUpItem.y + powerUpItem.height / 2,
+              Math.random() * 6 - 3,
+              Math.random() * 6 - 3,
+              '#ffd93d',
+              30
+            ));
+          }
+          
+          return false;
+        }
+        
+        return powerUpItem.y < canvas.height;
+      });
+
       // Collision detection - Alien bullets vs player
       game.alienBullets.forEach((bullet, bulletIndex) => {
         if (bullet.x < game.player.x + game.player.width &&
@@ -349,6 +388,7 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
           
           game.alienBullets.splice(bulletIndex, 1);
           
+          // Shield power-up prevents damage on same frame it's collected
           if (powerUp !== 'shield') {
             setLives(prev => {
               const newLives = prev - 1;
@@ -408,38 +448,6 @@ export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
             }
           }
         });
-      });
-
-      // Update power-ups
-      game.powerUps = game.powerUps.filter(powerUpItem => {
-        powerUpItem.y += powerUpItem.speed;
-        
-        // Check collision with player
-        if (powerUpItem.x < game.player.x + game.player.width &&
-            powerUpItem.x + powerUpItem.width > game.player.x &&
-            powerUpItem.y < game.player.y + game.player.height &&
-            powerUpItem.y + powerUpItem.height > game.player.y) {
-          
-          setPowerUp(powerUpItem.type);
-          game.powerUpEndTime = timestamp + 10000; // 10 seconds
-          soundManager.playPowerUp();
-          
-          // Create particles
-          for (let i = 0; i < 10; i++) {
-            game.particles.push(new Particle(
-              powerUpItem.x + powerUpItem.width / 2,
-              powerUpItem.y + powerUpItem.height / 2,
-              Math.random() * 6 - 3,
-              Math.random() * 6 - 3,
-              '#ffd93d',
-              30
-            ));
-          }
-          
-          return false;
-        }
-        
-        return powerUpItem.y < canvas.height;
       });
 
       // Update particles

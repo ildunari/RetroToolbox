@@ -1,10 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
-import { SoundManager } from '../../core/SoundManager';
+import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
-
-// Create sound manager instance
-const soundManager = new SoundManager();
 
 // Tetromino shapes
 const TETROMINOES = {
@@ -124,14 +121,12 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
     lastUpdate: 0,
     keys: {},
     softDropTimer: 0,
+    isPlacing: false,
   });
 
   const getRandomPiece = useCallback(() => {
-    // Temporarily return only O pieces (squares) for easier debugging
-    return 'O';
-    
-    // const pieces = Object.keys(TETROMINOES);
-    // return pieces[Math.floor(Math.random() * pieces.length)];
+    const pieces = Object.keys(TETROMINOES);
+    return pieces[Math.floor(Math.random() * pieces.length)];
   }, []);
 
   const spawnPiece = useCallback(() => {
@@ -149,9 +144,11 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
     
     // Check if game over
     if (isCollision(game.currentPiece, game.currentPosition, game.currentRotation, game.board)) {
-      setGameOver(true);
-      updateHighScore('tetris', score);
-      soundManager.playGameOver();
+      if (!gameOver) { // Prevent double-triggering
+        setGameOver(true);
+        updateHighScore('tetris', score);
+        soundManager.playGameOver();
+      }
     }
   }, [getRandomPiece, score, updateHighScore]);
 
@@ -179,8 +176,10 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
   };
 
   const placePiece = useCallback(() => {
-    console.log('🔴 PLACE PIECE CALLED');
     const game = gameRef.current;
+    if (game.isPlacing) return; // Prevent race condition
+    game.isPlacing = true;
+    
     const shape = TETROMINOES[game.currentPiece][game.currentRotation];
     
     // Place piece on board
@@ -219,8 +218,6 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
     }
     
     if (completedLines.length > 0) {
-      console.log('🎯 LINES DETECTED:', completedLines, 'Total:', completedLines.length);
-      
       // Queue serialized explosions - start from bottom line and work up
       completedLines.sort((a, b) => b - a); // Sort descending (bottom to top)
       
@@ -257,8 +254,6 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
       const newScore = score + linePoints * level;
       const newLines = lines + completedLines.length;
       
-      console.log(`📊 SCORING: Cleared ${completedLines.length} lines, Points: ${linePoints}, New Score: ${newScore}, New Lines: ${newLines}`);
-      
       setScore(newScore);
       setLines(newLines);
       
@@ -275,6 +270,7 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
     }
     
     spawnPiece();
+    game.isPlacing = false; // Release placement lock
   }, [score, lines, level, spawnPiece, updateHighScore]);
 
   const movePiece = useCallback((dx, dy, newRotation = null) => {
@@ -360,7 +356,6 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
     }
     
     setScore(prev => prev + dropDistance * 2);
-    console.log('🟡 HARD DROP calling placePiece');
     placePiece();
   }, [movePiece, placePiece]);
 
@@ -379,8 +374,16 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
     let animationId;
     
     const resizeCanvas = () => {
-      canvas.width = BOARD_WIDTH * CELL_SIZE + 200; // Extra space for UI
-      canvas.height = BOARD_HEIGHT * CELL_SIZE;
+      const dpr = window.devicePixelRatio || 1;
+      const displayWidth = BOARD_WIDTH * CELL_SIZE + 200; // Extra space for UI
+      const displayHeight = BOARD_HEIGHT * CELL_SIZE;
+      
+      canvas.width = displayWidth * dpr;
+      canvas.height = displayHeight * dpr;
+      canvas.style.width = displayWidth + 'px';
+      canvas.style.height = displayHeight + 'px';
+      
+      ctx.scale(dpr, dpr);
     };
     
     resizeCanvas();
@@ -460,7 +463,6 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
             setScore(prev => prev + 1);
             game.dropTimer = 0;
           } else {
-            console.log('🔵 SOFT DROP calling placePiece');
             placePiece();
           }
           game.softDropTimer = 0;
@@ -471,7 +473,6 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
       game.dropTimer += deltaTime;
       if (game.dropTimer >= game.dropInterval) {
         if (!movePiece(0, 1)) {
-          console.log('🟢 NORMAL DROP calling placePiece');
           placePiece();
         }
         game.dropTimer = 0;
@@ -813,6 +814,7 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
     setLines(0);
     setLevel(1);
     setGameOver(false);
+    setPaused(false);
     const game = gameRef.current;
     game.board = Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0));
     game.currentPiece = null;
@@ -822,6 +824,12 @@ export const TetrisGame = ({ settings, updateHighScore }) => {
     game.dropTimer = 0;
     game.dropInterval = 1000;
     game.particles = [];
+    game.shockwaves = [];
+    game.trailPositions = [];
+    game.explosionQueue = [];
+    game.isPlacing = false;
+    game.softDropTimer = 0;
+    game.keys = {};
     spawnPiece();
   };
 

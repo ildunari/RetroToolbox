@@ -79,18 +79,23 @@ The `AGENTS.md` file in this repository provides Codex with:
 
 ### Key Project Context for Codex
 
-**Current Architecture:**
-- Monolithic React component in `src/RetroGameToolbox.jsx`
-- Working games: Snake++, Neon Pong, Brick Breaker
-- Placeholder games: Tetris Remix, Space Defense
-- Core systems: SoundManager, InputManager, ParticleSystem
+**Current Architecture (Post-Migration):**
+- ✅ Fully modular React architecture migrated from monolithic `RetroGameToolbox.jsx`
+- ✅ Individual game components in `src/components/games/` (Snake++, Neon Pong, Brick Breaker, Tetris Remix, Space Defense, Pac-Man)
+- ✅ Optimized core systems extracted to `src/core/` (SoundManager, InputManager, ParticleSystem, GameTypes)
+- ✅ TypeScript state management hooks in `src/hooks/` (migrated from JavaScript)
+- ✅ Enhanced UI components in `src/components/ui/`
+- ✅ Clean main app in `src/App.tsx` with game routing
 
-**Priority Tasks for Codex:**
-1. Implement missing Tetris and Space Invaders games
-2. Extract games from monolithic file to modular components
-3. Add comprehensive testing
-4. Optimize performance and mobile experience
-5. Enhance accessibility features
+**Priority Tasks for Codex (Post-Migration):**
+1. Add multiplayer functionality to individual game components
+2. Implement achievement system using the `useStats.ts` hook
+3. Add comprehensive testing for modular components
+4. Enhance mobile experience in `InputManager.ts` and individual components
+5. Add new game variants in `src/components/games/` following established patterns
+6. Implement background music system in `SoundManager.ts`
+7. Further optimize core systems in `src/core/`
+8. Add TypeScript support to any remaining JavaScript files
 
 ### Codex Setup Script
 
@@ -107,28 +112,34 @@ The `AGENTS.md` file in this repository provides Codex with:
 
 ### Recommended Codex Commands
 
-**For Development:**
+**For Development (Modular Architecture):**
 ```
-"Implement the Tetris game following the pattern of existing games"
-"Extract the Snake game from RetroGameToolbox.jsx to a separate component"
-"Add comprehensive error handling to all game components"
-"Create unit tests for the core systems"
-```
-
-**For Analysis:**
-```
-"Review the codebase and suggest performance improvements"
-"Analyze the current architecture and recommend refactoring steps"
-"Find any potential bugs or security issues"
-"Check TypeScript configuration and fix any type errors"
+"Add multiplayer support to the PongGame.jsx component"
+"Implement achievement system using the useStats.ts hook across all game components"
+"Add comprehensive error handling to all individual game components in src/components/games/"
+"Create unit tests for the core systems in src/core/ (SoundManager.ts, InputManager.ts, ParticleSystem.ts)"
+"Add background music system to the SoundManager.ts core module with volume controls"
 ```
 
-**For Enhancement:**
+**For Analysis (Post-Migration):**
 ```
-"Add keyboard shortcuts for all games"
-"Implement save/load functionality for game progress"
-"Add analytics tracking for game usage"
-"Create a responsive design system"
+"Review the migrated modular codebase and suggest performance improvements"
+"Analyze the current architecture migration results and recommend further optimizations"
+"Find any potential bugs or accessibility issues in migrated game components"
+"Check TypeScript configuration and complete migration of any remaining JavaScript files"
+"Audit the extracted core systems in src/core/ for memory leaks and optimization opportunities"
+"Verify that all games maintain identical functionality after migration from monolithic structure"
+```
+
+**For Enhancement (Modular Components):**
+```
+"Add customizable keyboard shortcuts using the InputManager.ts core system"
+"Implement save/load functionality using the useSettings.ts and useStats.ts hooks"
+"Add analytics tracking to the useStats.ts hook for game usage and high scores"
+"Create enhanced visual effects in the ParticleSystem.ts core module"
+"Add new game difficulty modes to individual game components in src/components/games/"
+"Implement touch gesture improvements in the InputManager.ts for mobile gaming"
+"Create new game components following the established modular pattern"
 ```
 
 ## Best Practices

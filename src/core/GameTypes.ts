@@ -60,3 +60,42 @@ export interface Brick {
   maxHits: number;
   powerUp?: string | null;
 }
+
+// Core System Interfaces
+export interface CoreSystemsConfig {
+  soundManager: {
+    poolSize: number;
+    volume: number;
+    enabled: boolean;
+  };
+  particleSystem: {
+    maxParticles: number;
+    poolSize: number;
+    enableLayers: boolean;
+  };
+  inputManager: {
+    bufferTime: number;
+    gamepadDeadzone: number;
+    gestureThreshold: number;
+  };
+}
+
+export interface AudioContextState {
+  initialized: boolean;
+  suspended: boolean;
+  sampleRate: number;
+}
+
+export interface ParticleStats {
+  active: number;
+  pooled: number;
+  total: number;
+  layerCounts: Record<number, number>;
+}
+
+export interface InputState {
+  keyboard: Record<string, boolean>;
+  mouse: { x: number; y: number; buttons: boolean[] };
+  touch: { active: boolean; gestureType?: string };
+  gamepad: { connected: boolean; index?: number };
+}
