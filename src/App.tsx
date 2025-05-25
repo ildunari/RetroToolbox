@@ -128,6 +128,7 @@ function App() {
         </div>
       ) : (
         <GameMenu 
+          games={games}
           stats={stats}
           onGameSelect={handleGameSelect}
           onShowSettings={() => setShowSettings(true)}
