@@ -495,6 +495,7 @@ export const PacManGame = ({ settings, updateHighScore }) => {
 
       // Only consider direction changes at valid intersections or when forced
       if (canChangeDirection && (isAtValidIntersection(ghost) || forceDirectionChange)) {
+
         // Get target based on current mode
         let target;
         if (ghost.mode === 'frightened') {
@@ -813,7 +814,7 @@ export const PacManGame = ({ settings, updateHighScore }) => {
       particle.draw(ctx);
     });
     
-  }, [gameOver, paused, isWalkable, wrapPosition, getGhostTarget, initializeGame, settings.sound, score, updateHighScore]);
+  }, [gameOver, paused, isWalkable, wrapPosition, getGhostTarget, resetMazeToOriginal, settings.sound, score, updateHighScore, level, checkCollisionWithRadius, isAtValidIntersection]);
 
   // Input handling
   const handleInput = useCallback((direction) => {
