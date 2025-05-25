@@ -48,9 +48,9 @@ const getLocalIPs = () => {
   return results;
 };
 
-// Start server with random port
+// Start server with fixed port
 const startServer = async () => {
-  const port = await findAvailablePort();
+  const port = process.env.PORT || 3000;
   const ips = getLocalIPs();
   
   app.listen(port, '0.0.0.0', () => {

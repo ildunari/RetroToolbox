@@ -71,12 +71,34 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     let animationId;
     
     const resizeCanvas = () => {
-      canvas.width = Math.min(window.innerWidth - 32, 800);
-      canvas.height = 600;
+      // Get full viewport dimensions
+      const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+      const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
+      
+      // Use much more of the screen
+      const availableWidth = vw - 16;
+      const availableHeight = vh - 80;
+      
+      // Maintain 4:3 aspect ratio for Breakout, use at least 85% of available space
+      let width = availableWidth * 0.95;
+      let height = (width * 3) / 4;
+      
+      if (height > availableHeight * 0.9) {
+        height = availableHeight * 0.9;
+        width = (height * 4) / 3;
+      }
+      
+      canvas.width = Math.floor(width);
+      canvas.height = Math.floor(height);
+      canvas.style.width = `${Math.floor(width)}px`;
+      canvas.style.height = `${Math.floor(height)}px`;
+      
+      console.log(`Breakout canvas resized to: ${Math.floor(width)}x${Math.floor(height)}`);
     };
     
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', resizeCanvas);
 
     const handleBlur = () => setPaused(true);
     const handleFocus = () => setPaused(false);
@@ -88,10 +110,20 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
       gameRef.current.paddleX = e.clientX - rect.left - gameRef.current.paddleWidth / 2;
     };
 
+    const handleTouchStart = (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      gameRef.current.paddleX = e.touches[0].clientX - rect.left - gameRef.current.paddleWidth / 2;
+    };
+
     const handleTouchMove = (e) => {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       gameRef.current.paddleX = e.touches[0].clientX - rect.left - gameRef.current.paddleWidth / 2;
+    };
+
+    const handleTouchEnd = (e) => {
+      e.preventDefault();
     };
 
     const handleKeyboard = (e) => {
@@ -107,7 +139,9 @@ export const BreakoutGame = ({ settings, updateHighScore }) => {
     };
 
     canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+    canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
     window.addEventListener('keydown', handleKeyboard);
 
     const createParticles = (x, y, color) => {

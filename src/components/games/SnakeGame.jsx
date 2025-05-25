@@ -34,13 +34,40 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
     let animationId;
     
     const resizeCanvas = () => {
-      const size = Math.min(window.innerWidth - 32, 400);
-      canvas.width = size;
-      canvas.height = size;
+      // Get full viewport dimensions
+      const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+      const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
+      
+      // Use much more of the screen - only leave 80px for header and minimal padding
+      const availableWidth = vw - 16;
+      const availableHeight = vh - 80;
+      
+      // Square canvas - use the smaller dimension but at least 80% of available space
+      const maxSize = Math.min(availableWidth, availableHeight);
+      const size = Math.max(maxSize * 0.85, Math.min(300, maxSize));
+      
+      canvas.width = Math.floor(size);
+      canvas.height = Math.floor(size);
+      canvas.style.width = `${Math.floor(size)}px`;
+      canvas.style.height = `${Math.floor(size)}px`;
+      
+      console.log(`Snake canvas resized to: ${Math.floor(size)}x${Math.floor(size)}`);
     };
     
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', resizeCanvas);
+
+    // Prevent scrolling when in game
+    const preventScroll = (e) => {
+      if (e.target === canvas || canvas.contains(e.target)) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('touchstart', preventScroll, { passive: false });
+    document.addEventListener('touchend', preventScroll, { passive: false });
+    document.addEventListener('touchmove', preventScroll, { passive: false });
 
     const handleBlur = () => setPaused(true);
     const handleFocus = () => setPaused(false);
@@ -54,18 +81,22 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       switch(e.key) {
         case 'ArrowUp':
         case 'w':
+          e.preventDefault();
           if (game.direction.y === 0) game.nextDirection = { x: 0, y: -1 };
           break;
         case 'ArrowDown':
         case 's':
+          e.preventDefault();
           if (game.direction.y === 0) game.nextDirection = { x: 0, y: 1 };
           break;
         case 'ArrowLeft':
         case 'a':
+          e.preventDefault();
           if (game.direction.x === 0) game.nextDirection = { x: -1, y: 0 };
           break;
         case 'ArrowRight':
         case 'd':
+          e.preventDefault();
           if (game.direction.x === 0) game.nextDirection = { x: 1, y: 0 };
           break;
         case ' ':
@@ -76,7 +107,47 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       }
     };
 
+    const handleTouch = (e) => {
+      if (gameOver) return;
+      
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches[0] || e.changedTouches[0];
+      const x = touch.clientX - rect.left;
+      const y = touch.clientY - rect.top;
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      
+      const dx = x - centerX;
+      const dy = y - centerY;
+      
+      // Require minimum distance to avoid accidental inputs
+      const minDistance = 30;
+      if (Math.abs(dx) < minDistance && Math.abs(dy) < minDistance) return;
+      
+      const game = gameRef.current;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        // Horizontal movement
+        if (dx > 0 && game.direction.x === 0) {
+          game.nextDirection = { x: 1, y: 0 }; // Right
+        } else if (dx < 0 && game.direction.x === 0) {
+          game.nextDirection = { x: -1, y: 0 }; // Left
+        }
+      } else {
+        // Vertical movement
+        if (dy > 0 && game.direction.y === 0) {
+          game.nextDirection = { x: 0, y: 1 }; // Down
+        } else if (dy < 0 && game.direction.y === 0) {
+          game.nextDirection = { x: 0, y: -1 }; // Up
+        }
+      }
+    };
+
     window.addEventListener('keydown', handleInput);
+    canvas.addEventListener('touchstart', handleTouch, { passive: false });
+    canvas.addEventListener('touchend', handleTouch, { passive: false });
 
     const spawnPowerUp = () => {
       if (Math.random() < 0.3 && powerUps.length < 2) {
@@ -305,29 +376,108 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('keydown', handleInput);
       window.removeEventListener('resize', resizeCanvas);
+      window.removeEventListener('orientationchange', resizeCanvas);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
+      canvas.removeEventListener('touchstart', handleTouch);
+      canvas.removeEventListener('touchend', handleTouch);
+      document.removeEventListener('touchstart', preventScroll);
+      document.removeEventListener('touchend', preventScroll);
+      document.removeEventListener('touchmove', preventScroll);
     };
   }, [paused, gameOver, lives, score, powerUps, settings.difficulty, updateHighScore]);
 
-  const handleTouch = useCallback((e) => {
+  // Touch and swipe handling
+  const touchStartRef = useRef(null);
+  const touchRef = useRef({ isDown: false, startX: 0, startY: 0, currentX: 0, currentY: 0 });
+
+  const handleTouchStart = useCallback((e) => {
+    e.preventDefault();
     if (gameOver) return;
     
     const touch = e.touches[0];
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
+    touchRef.current = {
+      isDown: true,
+      startX: touch.clientX - rect.left,
+      startY: touch.clientY - rect.top,
+      currentX: touch.clientX - rect.left,
+      currentY: touch.clientY - rect.top
+    };
+    touchStartRef.current = Date.now();
+  }, [gameOver]);
+
+  const handleTouchMove = useCallback((e) => {
+    e.preventDefault();
+    if (gameOver || !touchRef.current.isDown) return;
     
-    const dx = x - centerX;
-    const dy = y - centerY;
+    const touch = e.touches[0];
+    const rect = canvasRef.current.getBoundingClientRect();
+    touchRef.current.currentX = touch.clientX - rect.left;
+    touchRef.current.currentY = touch.clientY - rect.top;
     
-    if (Math.abs(dx) > Math.abs(dy)) {
-      gameRef.current.nextDirection = dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 };
-    } else {
-      gameRef.current.nextDirection = dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 };
+    // Real-time direction change for held touch
+    const dx = touchRef.current.currentX - touchRef.current.startX;
+    const dy = touchRef.current.currentY - touchRef.current.startY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // Only change direction if moved a minimum distance
+    if (distance > 20) {
+      const game = gameRef.current;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        // Horizontal movement
+        if (dx > 0 && game.direction.x !== -1) {
+          game.nextDirection = { x: 1, y: 0 };
+        } else if (dx < 0 && game.direction.x !== 1) {
+          game.nextDirection = { x: -1, y: 0 };
+        }
+      } else {
+        // Vertical movement
+        if (dy > 0 && game.direction.y !== -1) {
+          game.nextDirection = { x: 0, y: 1 };
+        } else if (dy < 0 && game.direction.y !== 1) {
+          game.nextDirection = { x: 0, y: -1 };
+        }
+      }
+      // Reset start position to current for continuous movement
+      touchRef.current.startX = touchRef.current.currentX;
+      touchRef.current.startY = touchRef.current.currentY;
     }
+  }, [gameOver]);
+
+  const handleTouchEnd = useCallback((e) => {
+    e.preventDefault();
+    if (gameOver || !touchRef.current.isDown) return;
+    
+    const touchDuration = Date.now() - touchStartRef.current;
+    const dx = touchRef.current.currentX - touchRef.current.startX;
+    const dy = touchRef.current.currentY - touchRef.current.startY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // Quick tap/swipe detection
+    if (touchDuration < 300 && distance > 10) {
+      const game = gameRef.current;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        // Horizontal swipe
+        if (dx > 0 && game.direction.x !== -1) {
+          game.nextDirection = { x: 1, y: 0 };
+        } else if (dx < 0 && game.direction.x !== 1) {
+          game.nextDirection = { x: -1, y: 0 };
+        }
+      } else {
+        // Vertical swipe
+        if (dy > 0 && game.direction.y !== -1) {
+          game.nextDirection = { x: 0, y: 1 };
+        } else if (dy < 0 && game.direction.y !== 1) {
+          game.nextDirection = { x: 0, y: -1 };
+        }
+      }
+    } else if (touchDuration < 200 && distance < 10) {
+      // Quick tap to pause/resume
+      setPaused(p => !p);
+    }
+    
+    touchRef.current.isDown = false;
   }, [gameOver]);
 
   const restart = () => {
@@ -383,7 +533,9 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       <FadingCanvas active={!gameOver}>
         <canvas
           ref={canvasRef}
-          onTouchStart={handleTouch}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
           className="border-2 border-green-500 rounded-lg shadow-lg shadow-green-500/50 touch-none"
         />
       </FadingCanvas>
@@ -407,7 +559,8 @@ export const SnakeGame = ({ settings, updateHighScore }) => {
       </div>
 
       <div className="mt-4 text-center">
-        <p className="text-gray-400 text-sm">Use WASD/Arrows or touch to move</p>
+        <p className="text-gray-400 text-sm">Use WASD/Arrows, swipe, or hold & drag to move</p>
+        <p className="text-gray-400 text-xs">Quick tap to pause</p>
       </div>
     </div>
   );

@@ -5,6 +5,8 @@ import { PongGame } from './components/games/PongGame';
 import { BreakoutGame } from './components/games/BreakoutGame';
 import { TetrisGame } from './components/games/TetrisGame';
 import { SpaceInvadersGame } from './components/games/SpaceInvadersGame';
+import { StellarDriftGame } from './components/games/StellarDriftGame';
+import { PacManGame } from './components/games/PacManGame';
 
 // Audio Context for sound effects
 const AudioContext = window.AudioContext || window.AudioContext;
@@ -88,7 +90,9 @@ const RetroGameToolbox = () => {
         pong: 0,
         breakout: 0,
         tetris: 0,
-        spaceInvaders: 0
+        spaceInvaders: 0,
+        'stellar-drift': 0,
+        'pac-man': 0
       },
       gamesPlayed: {
         snake: 0,
@@ -96,6 +100,8 @@ const RetroGameToolbox = () => {
         breakout: 0,
         tetris: 0,
         spaceInvaders: 0,
+        'stellar-drift': 0,
+        'pac-man': 0,
         total: 0
       },
       totalScore: 0,
@@ -121,6 +127,8 @@ const RetroGameToolbox = () => {
     { id: 'snake', name: 'SNAKE++', icon: '🐍', color: 'from-green-400 to-green-600', description: 'Classic snake with power-ups' },
     { id: 'pong', name: 'NEON PONG', icon: '🏓', color: 'from-blue-400 to-blue-600', description: 'Enhanced pong with AI' },
     { id: 'breakout', name: 'BRICK BREAKER', icon: '🧱', color: 'from-red-400 to-red-600', description: 'Destroy all bricks!' },
+    { id: 'pac-man', name: 'PAC-MAN NEON', icon: '🟡', color: 'from-yellow-400 to-orange-600', description: 'Modern take on the classic!' },
+    { id: 'stellar-drift', name: 'STELLAR DRIFT', icon: '🚀', color: 'from-cyan-400 to-purple-600', description: 'Endless tunnel survival' },
     { id: 'tetris', name: 'TETRIS REMIX', icon: '🔲', color: 'from-purple-400 to-purple-600', description: 'Fall block puzzle' },
     { id: 'spaceInvaders', name: 'SPACE DEFENSE', icon: '👾', color: 'from-yellow-400 to-yellow-600', description: 'Defend Earth!' }
   ];
@@ -364,14 +372,53 @@ const RetroGameToolbox = () => {
     snake: SnakeGame,
     pong: PongGame,
     breakout: BreakoutGame,
+    'pac-man': PacManGame,
+    'stellar-drift': StellarDriftGame,
     tetris: TetrisGame,
     spaceInvaders: SpaceInvadersGame
   };
 
   const GameComponent = selectedGame ? gameComponents[selectedGame] : null;
 
+  // Handle mobile viewport and scrolling when in game mode
+  useEffect(() => {
+    if (selectedGame) {
+      // Prevent scrolling when in game
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.body.style.height = '100%';
+      document.body.style.touchAction = 'none';
+      
+      // Set viewport meta tag for better mobile experience
+      let viewport = document.querySelector('meta[name=viewport]');
+      if (!viewport) {
+        viewport = document.createElement('meta');
+        viewport.name = 'viewport';
+        document.head.appendChild(viewport);
+      }
+      viewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+    } else {
+      // Restore scrolling when back to menu
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.height = '';
+      document.body.style.touchAction = '';
+    }
+    
+    return () => {
+      // Cleanup on unmount
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.height = '';
+      document.body.style.touchAction = '';
+    };
+  }, [selectedGame]);
+
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div className={`min-h-screen bg-gray-900 ${selectedGame ? 'game-container' : ''}`}>
       <style>{`
         @keyframes blob {
           0% { transform: translate(0px, 0px) scale(1); }
@@ -391,11 +438,11 @@ const RetroGameToolbox = () => {
       {showScoreboard && <ScoreboardModal />}
       
       {selectedGame ? (
-        <div>
-          <div className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 flex items-center justify-between">
+        <div className="flex flex-col h-full">
+          <div className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 flex items-center justify-between flex-shrink-0">
             <button
               onClick={() => setSelectedGame(null)}
-              className="flex items-center gap-2 text-white hover:text-gray-300 transition-colors"
+              className="flex items-center gap-2 text-white hover:text-gray-300 transition-colors touch-manipulation"
             >
               <ChevronLeft size={24} />
               <span className="hidden sm:inline">Back to Menu</span>
@@ -406,12 +453,14 @@ const RetroGameToolbox = () => {
             </h2>
             <button
               onClick={() => setShowSettings(true)}
-              className="text-white hover:text-gray-300 transition-colors"
+              className="text-white hover:text-gray-300 transition-colors touch-manipulation"
             >
               <Settings size={24} />
             </button>
           </div>
-          <GameComponent settings={settings} updateHighScore={updateHighScore} />
+          <div className="flex-1 flex items-center justify-center overflow-hidden">
+            <GameComponent settings={settings} updateHighScore={updateHighScore} />
+          </div>
         </div>
       ) : (
         <GameMenu />

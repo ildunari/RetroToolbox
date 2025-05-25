@@ -1,0 +1,15 @@
+{
+  "name": "retro-toolbox",
+  "displayName": "Retro Game Toolbox",
+  "type": "game",
+  "icon": "🎮",
+  "description": "Collection of retro arcade games with modern enhancements",
+  "startupCommand": "npm run serve",
+  "expectedPort": 3000,
+  "healthEndpoint": "/health",
+  "environment": {
+    "NODE_ENV": "production"
+  },
+  "tags": ["games", "react", "canvas", "retro", "arcade"],
+  "category": "entertainment"
+}
