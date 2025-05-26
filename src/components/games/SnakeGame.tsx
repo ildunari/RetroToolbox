@@ -78,7 +78,13 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       canvas.style.width = `${size}px`;
       canvas.style.height = `${size}px`;
       
-      ctx.scale(devicePixelRatio, devicePixelRatio);
+      // Reset any existing transforms to avoid cumulative scaling on resize
+      if ('setTransform' in ctx) {
+        ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+      } else {
+        ctx.resetTransform();
+        ctx.scale(devicePixelRatio, devicePixelRatio);
+      }
     };
     
     resizeCanvas();
