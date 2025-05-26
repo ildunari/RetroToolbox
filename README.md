@@ -2,6 +2,19 @@
 
 A modular collection of retro arcade games with modern enhancements, built with React and deployed on a random port for Tailscale accessibility. Optimized for OpenAI Codex integration and AI-assisted development.
 
+## Recent Fixes (v1.0.1 - 2025-05-25)
+
+### ✅ All Critical Issues Resolved
+- **Fixed Pong**: Resolved full screen display and AI paddle initialization issues
+- **Fixed Breakout**: Corrected paddle visibility and brick centering problems  
+- **Fixed Pac-Man**: Eliminated React hook violations and improved performance
+- **Fixed Stellar Drift**: Fixed canvas sizing and tunnel width calculations
+- **Added Canvas Utilities**: New responsive design helpers for consistent game scaling
+- **Added Testing Framework**: Comprehensive game testing utilities
+- **Verified Snake Game**: Confirmed working correctly with all features
+
+All games are now fully functional with proper rendering, controls, and performance.
+
 ## Features
 
 - 🎮 **Complete Games**: Snake++, Neon Pong, Brick Breaker, Tetris Remix, Space Defense, Pac-Man, Stellar Drift
