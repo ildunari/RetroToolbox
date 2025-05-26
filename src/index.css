@@ -55,6 +55,17 @@ code {
   animation: game-over-pop 0.6s ease-out forwards;
 }
 
+@keyframes canvas-shake {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-4px, 0); }
+  50% { transform: translate(4px, 0); }
+  75% { transform: translate(0, -4px); }
+}
+
+.shake {
+  animation: canvas-shake 0.3s;
+}
+
 /* Fix mobile touch scrolling - disable hover effects on touch devices */
 @media (hover: none) and (pointer: coarse) {
   .hover\:scale-105:hover {

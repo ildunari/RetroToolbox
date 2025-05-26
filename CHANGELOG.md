@@ -5,6 +5,37 @@ All notable changes to the Retro Game Toolbox project will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2025-05-26
+
+### Summary
+Merged multiple bug fixes from PR reviews, implemented feature enhancements, and improved code stability with React hooks optimizations.
+
+### Added
+- Canvas shake effect animation for visual feedback in BreakoutGame
+- CSS animation support for game effects
+- Comprehensive project dependencies documentation in AGENTS.md
+
+### Fixed
+- **Snake Game**
+  - Fixed stale closure issues in event handlers by using refs for mutable state
+  - Improved event listener management to prevent memory leaks
+  - Fixed difficulty settings not updating properly in callbacks
+  
+- **Build System**
+  - Fixed build paths for production deployment
+  - Fixed high score display issues
+  - Fixed multiple crash scenarios across games
+
+### Changed
+- Updated SnakeGame to use refs pattern for better React performance
+- Improved particle system error handling across all games
+- Enhanced mobile touch controls reliability
+
+### Technical Improvements
+- Removed dependencies from useEffect hooks to prevent re-renders
+- Optimized event handler closures for better performance
+- Improved TypeScript type safety in game components
+
 ## [1.0.1] - 2025-05-25
 
 ### Summary

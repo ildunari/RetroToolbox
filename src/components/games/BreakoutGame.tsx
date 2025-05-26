@@ -201,6 +201,9 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
           gameRef.current.particles.push(particle);
         }
       }
+      // Add shake effect
+      canvas.classList.add('shake');
+      setTimeout(() => canvas.classList.remove('shake'), 300);
     };
 
     const gameLoop = (timestamp) => {

@@ -38,6 +38,23 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
   const [powerUps, setPowerUps] = useState<PowerUp[]>([]);
   const [lives, setLives] = useState(3);
   const lastFrameRef = useRef(0);
+
+  // Refs for mutable state used inside event callbacks
+  const pausedRef = useRef(paused);
+  const gameOverRef = useRef(gameOver);
+  const scoreRef = useRef(score);
+  const powerUpsRef = useRef(powerUps);
+  const livesRef = useRef(lives);
+  const updateHighScoreRef = useRef(updateHighScore);
+  const difficultyRef = useRef(settings.difficulty);
+
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => { gameOverRef.current = gameOver; }, [gameOver]);
+  useEffect(() => { scoreRef.current = score; }, [score]);
+  useEffect(() => { powerUpsRef.current = powerUps; }, [powerUps]);
+  useEffect(() => { livesRef.current = lives; }, [lives]);
+  useEffect(() => { updateHighScoreRef.current = updateHighScore; }, [updateHighScore]);
+  useEffect(() => { difficultyRef.current = settings.difficulty; }, [settings.difficulty]);
   
   const gameRef = useRef<GameRef>({
     snake: [{ x: 10, y: 10 }],
@@ -109,7 +126,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
     window.addEventListener('focus', handleFocus);
 
     const handleInput = (e) => {
-      if (gameOver) return;
+      if (gameOverRef.current) return;
       
       const game = gameRef.current;
       let newDirection = null;
@@ -149,7 +166,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
     };
 
     const handleTouch = (e) => {
-      if (gameOver) return;
+      if (gameOverRef.current) return;
       
       e.preventDefault();
       e.stopPropagation();
@@ -234,7 +251,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
           .filter(p => p.lifetime > 0)
       );
 
-      if (!paused && !gameOver) {
+      if (!pausedRef.current && !gameOverRef.current) {
         const deltaTime = timestamp - gameRef.current.lastUpdate;
         
         if (deltaTime >= gameRef.current.speed) {
@@ -294,7 +311,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
 
           // Check self collision after potential tail removal
           if (snake.slice(1).some(segment => segment.x === head.x && segment.y === head.y)) {
-            if (lives > 1) {
+            if (livesRef.current > 1) {
               setLives(l => l - 1);
               soundManager.playHit();
               createParticles(head.x, head.y, '#ef4444', 20);
@@ -305,7 +322,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
             } else {
               setGameOver(true);
               soundManager.playGameOver();
-              updateHighScore('snake', score);
+              updateHighScoreRef.current('snake', scoreRef.current);
               return;
             }
           }
@@ -461,7 +478,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       document.removeEventListener('touchend', preventScroll);
       document.removeEventListener('touchmove', preventScroll);
     };
-  }, [paused, gameOver, lives, score, powerUps, settings.difficulty, updateHighScore]);
+  }, []);
 
   // Touch and swipe handling
   const touchStartRef = useRef(null);
@@ -469,7 +486,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
 
   const handleTouchStart = useCallback((e) => {
     e.preventDefault();
-    if (gameOver) return;
+    if (gameOverRef.current) return;
     
     const touch = e.touches[0];
     const rect = canvasRef.current.getBoundingClientRect();
@@ -481,11 +498,11 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       currentY: touch.clientY - rect.top
     };
     touchStartRef.current = Date.now();
-  }, [gameOver]);
+  }, []);
 
   const handleTouchMove = useCallback((e) => {
     e.preventDefault();
-    if (gameOver || !touchRef.current.isDown) return;
+    if (gameOverRef.current || !touchRef.current.isDown) return;
     
     const touch = e.touches[0];
     const rect = canvasRef.current.getBoundingClientRect();
@@ -519,11 +536,11 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       touchRef.current.startX = touchRef.current.currentX;
       touchRef.current.startY = touchRef.current.currentY;
     }
-  }, [gameOver]);
+  }, []);
 
   const handleTouchEnd = useCallback((e) => {
     e.preventDefault();
-    if (gameOver || !touchRef.current.isDown) return;
+    if (gameOverRef.current || !touchRef.current.isDown) return;
     
     const touchDuration = Date.now() - touchStartRef.current;
     const dx = touchRef.current.currentX - touchRef.current.startX;
@@ -554,7 +571,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
     }
     
     touchRef.current.isDown = false;
-  }, [gameOver]);
+  }, []);
 
   const restart = () => {
     gameRef.current = {
@@ -564,7 +581,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       inputBuffer: [],
       food: { x: 15, y: 15 },
       particles: [],
-      speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
+      speed: difficultyRef.current === 'easy' ? 150 : difficultyRef.current === 'hard' ? 80 : 100,
       lastUpdate: 0,
       gridSize: 20
     };

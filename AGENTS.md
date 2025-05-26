@@ -44,6 +44,28 @@ npm run preview
 - `npm run lint` - Run ESLint (if configured)
 - `npm run test` - Run tests (if configured)
 
+### Project Dependencies
+
+**Runtime Dependencies:**
+- `react` (^18.2.0) - UI framework for building interactive components
+- `react-dom` (^18.2.0) - React DOM renderer for web applications
+- `lucide-react` (^0.294.0) - Modern icon library for UI elements
+- `express` (^4.18.2) - Web server framework for backend services
+- `cors` (^2.8.5) - CORS middleware for cross-origin requests
+- `helmet` (^8.1.0) - Security headers middleware
+- `express-rate-limit` (^7.5.0) - Rate limiting middleware for API protection
+
+**Development Dependencies:**
+- `typescript` (^5.2.2) - TypeScript compiler for type-safe development
+- `vite` (^5.0.8) - Fast build tool and development server
+- `@vitejs/plugin-react` (^4.2.1) - React plugin for Vite
+- `tailwindcss` (^3.3.6) - Utility-first CSS framework
+- `autoprefixer` (^10.4.16) - CSS vendor prefixing
+- `postcss` (^8.4.32) - CSS processing tool
+- `@types/*` - TypeScript type definitions for libraries
+- `@playwright/mcp` (^0.0.26) - Playwright MCP integration for testing
+- `terser` (^5.39.2) - JavaScript minifier for production builds
+
 ## Project Structure
 
 ```
