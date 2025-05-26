@@ -71,9 +71,10 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
     activeChunkIndex: 0,
     
     // Tunnel generation
-    tunnelAmplitude: 60, // Reduced for better mobile experience
-    tunnelFrequency: 0.003,
+    tunnelAmplitude: 120, // Increased for better mobile experience
+    tunnelFrequency: 0.002, // Gentler curves
     noiseOffset: 0,
+    minTunnelGap: 140, // Minimum gap for mobile comfort
     
     // Game state
     particles: [],
@@ -354,8 +355,8 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
     // Increase difficulty over time
     game.difficultyTimer += deltaTime * 1000;
     if (game.difficultyTimer >= 30000) { // Every 30 seconds
-      game.scrollSpeed *= 1.06; // Reduced increment
-      game.tunnelAmplitude *= 1.02; // Reduced increment
+      game.scrollSpeed *= 1.03; // Slower speed increase
+      game.tunnelAmplitude *= 1.01; // Slower narrowing
       game.difficultyTimer = 0;
     }
 
@@ -750,9 +751,9 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
     if (!canvas) return;
 
     const resizeCanvas = () => {
-      // Better mobile-responsive sizing
-      const maxWidth = Math.min(window.innerWidth - 16, 800);
-      const maxHeight = Math.min(window.innerHeight - 200, 500);
+      // Use full screen dimensions
+      const maxWidth = window.innerWidth - 32; // Just padding
+      const maxHeight = window.innerHeight - 120; // Header + controls
       
       // Maintain aspect ratio while fitting screen
       const aspectRatio = 16 / 10;

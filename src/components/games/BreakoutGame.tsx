@@ -30,6 +30,9 @@ interface GameRef {
   powerUps: any[];
 }
 
+// Constants for paddle positioning
+const PADDLE_Y_OFFSET = 40; // Distance from bottom of screen
+
 export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
@@ -42,7 +45,7 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
   const prevScore = useRef(0);
   
   const gameRef = useRef({
-    paddleX: 350,
+    paddleX: 0, // Will be initialized in useEffect
     paddleWidth: 100,
     paddleHeight: 10,
     ballX: 400,
@@ -57,6 +60,9 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
   });
 
   const initBricks = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
     const bricks = [];
     const rows = 4 + level;
     const cols = 10;
@@ -64,10 +70,14 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
     const brickHeight = 20;
     const padding = 5;
     
+    // Calculate total width of all bricks including padding
+    const totalBrickWidth = cols * brickWidth + (cols - 1) * padding;
+    const startX = (canvas.width - totalBrickWidth) / 2;
+    
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         bricks.push({
-          x: c * (brickWidth + padding) + 35,
+          x: startX + c * (brickWidth + padding),
           y: r * (brickHeight + padding) + 60,
           width: brickWidth,
           height: brickHeight,
@@ -121,6 +131,9 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     window.addEventListener('orientationchange', resizeCanvas);
+    
+    // Initialize paddle position centered on screen
+    gameRef.current.paddleX = (canvas.width - gameRef.current.paddleWidth) / 2;
 
     const handleBlur = () => setPaused(true);
     const handleFocus = () => setPaused(false);
@@ -129,19 +142,25 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
 
     const handleMouseMove = (e) => {
       const rect = canvas.getBoundingClientRect();
-      gameRef.current.paddleX = e.clientX - rect.left - gameRef.current.paddleWidth / 2;
+      const x = e.clientX - rect.left - gameRef.current.paddleWidth / 2;
+      const maxX = canvas.width - gameRef.current.paddleWidth;
+      gameRef.current.paddleX = Math.max(0, Math.min(maxX, x));
     };
 
     const handleTouchStart = (e) => {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
-      gameRef.current.paddleX = e.touches[0].clientX - rect.left - gameRef.current.paddleWidth / 2;
+      const x = e.touches[0].clientX - rect.left - gameRef.current.paddleWidth / 2;
+      const maxX = canvas.width - gameRef.current.paddleWidth;
+      gameRef.current.paddleX = Math.max(0, Math.min(maxX, x));
     };
 
     const handleTouchMove = (e) => {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
-      gameRef.current.paddleX = e.touches[0].clientX - rect.left - gameRef.current.paddleWidth / 2;
+      const x = e.touches[0].clientX - rect.left - gameRef.current.paddleWidth / 2;
+      const maxX = canvas.width - gameRef.current.paddleWidth;
+      gameRef.current.paddleX = Math.max(0, Math.min(maxX, x));
     };
 
     const handleTouchEnd = (e) => {
@@ -150,10 +169,11 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
 
     const handleKeyboard = (e) => {
       const speed = 20;
+      const maxX = canvas.width - gameRef.current.paddleWidth;
       if (e.key === 'ArrowLeft' || e.key === 'a') {
         gameRef.current.paddleX = Math.max(0, gameRef.current.paddleX - speed);
       } else if (e.key === 'ArrowRight' || e.key === 'd') {
-        gameRef.current.paddleX = Math.min(canvas.width - gameRef.current.paddleWidth, gameRef.current.paddleX + speed);
+        gameRef.current.paddleX = Math.min(maxX, gameRef.current.paddleX + speed);
       } else if (e.key === ' ' || e.key === 'Escape') {
         e.preventDefault();
         setPaused(p => !p);
@@ -252,8 +272,9 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
         }
 
         // Paddle collision
-        if (game.ballY + game.ballSize >= canvas.height - 30 - game.paddleHeight &&
-            game.ballY - game.ballSize <= canvas.height - 30 &&
+        const paddleY = canvas.height - PADDLE_Y_OFFSET;
+        if (game.ballY + game.ballSize >= paddleY - game.paddleHeight &&
+            game.ballY - game.ballSize <= paddleY &&
             game.ballX >= game.paddleX &&
             game.ballX <= game.paddleX + game.paddleWidth) {
           
@@ -265,7 +286,7 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
           game.ballVY = -speed * Math.cos(angle);
           
           soundManager.playCollect();
-          createParticles(game.ballX, canvas.height - 30, '#3b82f6');
+          createParticles(game.ballX, paddleY, '#3b82f6');
         }
 
         // Brick collision
@@ -326,7 +347,8 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
           
           if (powerUp.y > canvas.height) return false;
           
-          if (powerUp.y >= canvas.height - 30 - game.paddleHeight &&
+          const paddleY = canvas.height - PADDLE_Y_OFFSET;
+          if (powerUp.y >= paddleY - game.paddleHeight &&
               powerUp.x >= game.paddleX &&
               powerUp.x <= game.paddleX + game.paddleWidth) {
             
@@ -389,12 +411,13 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
       });
 
       // Draw paddle
-      const paddleGradient = ctx.createLinearGradient(0, canvas.height - 30, 0, canvas.height - 20);
+      const paddleY = canvas.height - PADDLE_Y_OFFSET;
+      const paddleGradient = ctx.createLinearGradient(0, paddleY, 0, paddleY + gameRef.current.paddleHeight);
       paddleGradient.addColorStop(0, '#3b82f6');
       paddleGradient.addColorStop(1, '#2563eb');
       
       ctx.fillStyle = paddleGradient;
-      ctx.fillRect(gameRef.current.paddleX, canvas.height - 30, gameRef.current.paddleWidth, gameRef.current.paddleHeight);
+      ctx.fillRect(gameRef.current.paddleX, paddleY, gameRef.current.paddleWidth, gameRef.current.paddleHeight);
 
       // Draw ball
       ctx.shadowBlur = 10;
@@ -431,8 +454,15 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
   }, [paused, gameOver, score, level, initBricks, updateHighScore]);
 
   const restart = () => {
-    gameRef.current.ballX = 400;
-    gameRef.current.ballY = 300;
+    const canvas = canvasRef.current;
+    if (canvas) {
+      gameRef.current.ballX = canvas.width / 2;
+      gameRef.current.ballY = canvas.height / 2;
+      gameRef.current.paddleX = (canvas.width - gameRef.current.paddleWidth) / 2;
+    } else {
+      gameRef.current.ballX = 400;
+      gameRef.current.ballY = 300;
+    }
     gameRef.current.ballVX = 4;
     gameRef.current.ballVY = -4;
     gameRef.current.paddleWidth = 100;
@@ -485,6 +515,13 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
           className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
         >
           {paused ? <Play size={20} /> : <Pause size={20} />}
+        </button>
+        <button
+          onClick={restart}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+        >
+          <RotateCcw size={20} />
+          Restart
         </button>
       </div>
       

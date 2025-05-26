@@ -54,7 +54,8 @@ export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => 
     paddleWidth: 10,
     ballSize: 10,
     ballTrail: [],
-    lastUpdate: 0
+    lastUpdate: 0,
+    initialized: false
   });
 
   useEffect(() => {
@@ -69,16 +70,16 @@ export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => 
       const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
       const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
       
-      // Use much more of the screen
+      // Use full screen space
       const availableWidth = vw - 16;
       const availableHeight = vh - 80;
       
-      // Maintain 2:1 aspect ratio for Pong, use at least 80% of available space
-      let width = availableWidth * 0.95;
+      // Maintain 2:1 aspect ratio for Pong, use full available space
+      let width = availableWidth;
       let height = width / 2;
       
-      if (height > availableHeight * 0.9) {
-        height = availableHeight * 0.9;
+      if (height > availableHeight) {
+        height = availableHeight;
         width = height * 2;
       }
       
@@ -90,6 +91,15 @@ export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => 
       ctx.scale(dpr, dpr);
       canvas.style.width = `${Math.floor(width)}px`;
       canvas.style.height = `${Math.floor(height)}px`;
+      
+      // Initialize paddle positions based on canvas size
+      if (!gameRef.current.initialized) {
+        gameRef.current.playerY = height / 2;
+        gameRef.current.aiY = height / 2;
+        gameRef.current.ballX = width / 2;
+        gameRef.current.ballY = height / 2;
+        gameRef.current.initialized = true;
+      }
       
       console.log(`Pong canvas resized to: ${Math.floor(width)}x${Math.floor(height)}`);
     };
@@ -398,8 +408,14 @@ export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => 
   }, [playerScore, aiScore]);
 
   const restart = () => {
-    gameRef.current.ballX = 400;
-    gameRef.current.ballY = 200;
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const rect = canvas.getBoundingClientRect();
+      gameRef.current.ballX = rect.width / 2;
+      gameRef.current.ballY = rect.height / 2;
+      gameRef.current.playerY = rect.height / 2;
+      gameRef.current.aiY = rect.height / 2;
+    }
     gameRef.current.ballVX = 5;
     gameRef.current.ballVY = 3;
     gameRef.current.ballSpeed = 5;
