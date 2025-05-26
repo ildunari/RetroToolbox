@@ -867,6 +867,174 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     gameRef.current.pacman.nextDirection = direction;
   }, [gameOver, paused]);
 
+  // Touch event handlers - moved outside useEffect to avoid React hook violations
+  const handleTouchStart = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (gameOver || !canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+
+    // Initialize touch tracking
+    touchStateRef.current = {
+      ...touchStateRef.current,
+      startX: touchX,
+      startY: touchY,
+      currentX: touchX,
+      currentY: touchY,
+      startTime: performance.now(),
+      isTracking: true,
+      velocity: { x: 0, y: 0 }
+    };
+
+    // Show touch feedback
+    setTouchState(prev => ({
+      ...prev,
+      isActive: true,
+      startPoint: { x: touchX, y: touchY },
+      currentPoint: { x: touchX, y: touchY },
+      startTime: performance.now(),
+      showTouchFeedback: true,
+      feedbackPosition: { x: touchX, y: touchY }
+    }));
+
+    console.log('Touch started at:', touchX, touchY);
+  }, [gameOver]);
+
+  const handleTouchMove = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!touchStateRef.current.isTracking || gameOver || !canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+
+    // Update current position and calculate velocity
+    const deltaTime = performance.now() - touchStateRef.current.startTime;
+    if (deltaTime > 0) {
+      touchStateRef.current.velocity = {
+        x: (touchX - touchStateRef.current.startX) / deltaTime,
+        y: (touchY - touchStateRef.current.startY) / deltaTime
+      };
+    }
+
+    touchStateRef.current.currentX = touchX;
+    touchStateRef.current.currentY = touchY;
+
+    // Update visual feedback
+    setTouchState(prev => ({
+      ...prev,
+      currentPoint: { x: touchX, y: touchY }
+    }));
+  }, [gameOver]);
+
+  const handleTouchEnd = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!touchStateRef.current.isTracking || gameOver || !canvasRef.current) return;
+
+    const touchData = touchStateRef.current;
+    const swipeDistance = Math.sqrt(
+      Math.pow(touchData.currentX - touchData.startX, 2) +
+      Math.pow(touchData.currentY - touchData.startY, 2)
+    );
+    const swipeTime = performance.now() - touchData.startTime;
+
+    // Determine gesture type and direction
+    let direction = null;
+    let gestureType = 'none';
+
+    if (swipeDistance < touchData.tapThreshold) {
+      // Handle tap gesture - change direction toward tap location
+      gestureType = 'tap';
+      const canvas = canvasRef.current;
+      const cellSize = canvas.width / 26;
+      const pacman = gameRef.current.pacman;
+
+      // Convert touch position to game coordinates
+      const gameX = touchData.currentX / cellSize;
+      const gameY = touchData.currentY / cellSize;
+
+      // Calculate direction from Pac-Man to tap location
+      const dx = gameX - pacman.x;
+      const dy = gameY - pacman.y;
+
+      if (Math.abs(dx) > Math.abs(dy)) {
+        direction = dx > 0 ? 0 : 2; // Right or Left
+      } else {
+        direction = dy > 0 ? 3 : 1; // Down or Up
+      }
+
+    } else if (swipeDistance >= touchData.minSwipeDistance && swipeTime <= touchData.maxSwipeTime) {
+      // Handle swipe gesture
+      gestureType = 'swipe';
+      const dx = touchData.currentX - touchData.startX;
+      const dy = touchData.currentY - touchData.startY;
+
+      // Determine primary swipe direction
+      if (Math.abs(dx) > Math.abs(dy)) {
+        direction = dx > 0 ? 0 : 2; // Right or Left
+      } else {
+        direction = dy > 0 ? 3 : 1; // Down or Up
+      }
+
+      // Validate swipe velocity (prevent accidental slow drags)
+      const velocityThreshold = 0.1; // pixels per ms
+      const currentVelocity = Math.sqrt(
+        touchData.velocity.x * touchData.velocity.x +
+        touchData.velocity.y * touchData.velocity.y
+      );
+
+      if (currentVelocity < velocityThreshold) {
+        direction = null; // Too slow, ignore
+        gestureType = 'drag';
+      }
+    }
+
+    // Apply direction change if valid
+    if (direction !== null) {
+      handleInput(direction);
+
+      // Show direction feedback
+      const directionNames = ['Right', 'Up', 'Left', 'Down'];
+      console.log(`${gestureType} detected: ${directionNames[direction]} (distance: ${swipeDistance.toFixed(1)}px, time: ${swipeTime.toFixed(1)}ms)`);
+
+      // Visual feedback for successful gesture
+      setTouchState(prev => ({
+        ...prev,
+        direction: direction,
+        showTouchFeedback: true
+      }));
+
+      // Play feedback sound
+      if (settings.sound) {
+        soundManager.playTone(800, 50);
+      }
+    }
+
+    // Clear touch tracking
+    touchStateRef.current.isTracking = false;
+
+    // Hide feedback after delay
+    setTimeout(() => {
+      setTouchState(prev => ({
+        ...prev,
+        isActive: false,
+        showTouchFeedback: false,
+        direction: null
+      }));
+    }, 200);
+
+  }, [gameOver, handleInput, settings.sound]);
+
   // Set up game loop and input
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -974,173 +1142,6 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       }
     };
 
-    const handleTouchStart = useCallback((e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (gameOver) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      const touchX = touch.clientX - rect.left;
-      const touchY = touch.clientY - rect.top;
-
-      // Initialize touch tracking
-      touchStateRef.current = {
-        ...touchStateRef.current,
-        startX: touchX,
-        startY: touchY,
-        currentX: touchX,
-        currentY: touchY,
-        startTime: performance.now(),
-        isTracking: true,
-        velocity: { x: 0, y: 0 }
-      };
-
-      // Show touch feedback
-      setTouchState(prev => ({
-        ...prev,
-        isActive: true,
-        startPoint: { x: touchX, y: touchY },
-        currentPoint: { x: touchX, y: touchY },
-        startTime: performance.now(),
-        showTouchFeedback: true,
-        feedbackPosition: { x: touchX, y: touchY }
-      }));
-
-      console.log('Touch started at:', touchX, touchY);
-    }, [gameOver]);
-
-    const handleTouchMove = useCallback((e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (!touchStateRef.current.isTracking || gameOver) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      const touchX = touch.clientX - rect.left;
-      const touchY = touch.clientY - rect.top;
-
-      // Update current position and calculate velocity
-      const deltaTime = performance.now() - touchStateRef.current.startTime;
-      if (deltaTime > 0) {
-        touchStateRef.current.velocity = {
-          x: (touchX - touchStateRef.current.startX) / deltaTime,
-          y: (touchY - touchStateRef.current.startY) / deltaTime
-        };
-      }
-
-      touchStateRef.current.currentX = touchX;
-      touchStateRef.current.currentY = touchY;
-
-      // Update visual feedback
-      setTouchState(prev => ({
-        ...prev,
-        currentPoint: { x: touchX, y: touchY }
-      }));
-    }, [gameOver]);
-
-    const handleTouchEnd = useCallback((e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (!touchStateRef.current.isTracking || gameOver) return;
-
-      const touchData = touchStateRef.current;
-      const swipeDistance = Math.sqrt(
-        Math.pow(touchData.currentX - touchData.startX, 2) +
-        Math.pow(touchData.currentY - touchData.startY, 2)
-      );
-      const swipeTime = performance.now() - touchData.startTime;
-
-      // Determine gesture type and direction
-      let direction = null;
-      let gestureType = 'none';
-
-      if (swipeDistance < touchData.tapThreshold) {
-        // Handle tap gesture - change direction toward tap location
-        gestureType = 'tap';
-        const canvas = canvasRef.current;
-        const cellSize = canvas.width / 26;
-        const pacman = gameRef.current.pacman;
-
-        // Convert touch position to game coordinates
-        const gameX = touchData.currentX / cellSize;
-        const gameY = touchData.currentY / cellSize;
-
-        // Calculate direction from Pac-Man to tap location
-        const dx = gameX - pacman.x;
-        const dy = gameY - pacman.y;
-
-        if (Math.abs(dx) > Math.abs(dy)) {
-          direction = dx > 0 ? 0 : 2; // Right or Left
-        } else {
-          direction = dy > 0 ? 3 : 1; // Down or Up
-        }
-
-      } else if (swipeDistance >= touchData.minSwipeDistance && swipeTime <= touchData.maxSwipeTime) {
-        // Handle swipe gesture
-        gestureType = 'swipe';
-        const dx = touchData.currentX - touchData.startX;
-        const dy = touchData.currentY - touchData.startY;
-
-        // Determine primary swipe direction
-        if (Math.abs(dx) > Math.abs(dy)) {
-          direction = dx > 0 ? 0 : 2; // Right or Left
-        } else {
-          direction = dy > 0 ? 3 : 1; // Down or Up
-        }
-
-        // Validate swipe velocity (prevent accidental slow drags)
-        const velocityThreshold = 0.1; // pixels per ms
-        const currentVelocity = Math.sqrt(
-          touchData.velocity.x * touchData.velocity.x +
-          touchData.velocity.y * touchData.velocity.y
-        );
-
-        if (currentVelocity < velocityThreshold) {
-          direction = null; // Too slow, ignore
-          gestureType = 'drag';
-        }
-      }
-
-      // Apply direction change if valid
-      if (direction !== null) {
-        handleInput(direction);
-
-        // Show direction feedback
-        const directionNames = ['Right', 'Up', 'Left', 'Down'];
-        console.log(`${gestureType} detected: ${directionNames[direction]} (distance: ${swipeDistance.toFixed(1)}px, time: ${swipeTime.toFixed(1)}ms)`);
-
-        // Visual feedback for successful gesture
-        setTouchState(prev => ({
-          ...prev,
-          direction: direction,
-          showTouchFeedback: true
-        }));
-
-        // Play feedback sound
-        if (settings.sound) {
-          soundManager.playTone(800, 50);
-        }
-      }
-
-      // Clear touch tracking
-      touchStateRef.current.isTracking = false;
-
-      // Hide feedback after delay
-      setTimeout(() => {
-        setTouchState(prev => ({
-          ...prev,
-          isActive: false,
-          showTouchFeedback: false,
-          direction: null
-        }));
-      }, 200);
-
-    }, [gameOver, handleInput, settings.sound]);
-
     window.addEventListener('keydown', handleKeyDown);
     canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
@@ -1199,7 +1200,7 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
         cancelAnimationFrame(animationId);
       }
     };
-  }, [gameLoop, handleInput, gameOver, paused]);
+  }, [gameLoop, handleInput, gameOver, paused, handleTouchStart, handleTouchMove, handleTouchEnd]);
 
   const resetGame = useCallback(() => {
     console.log('Starting complete game reset...');
