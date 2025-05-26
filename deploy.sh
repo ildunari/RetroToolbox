@@ -126,8 +126,8 @@ handle_service_command() {
 detect_project_dir() {
     if [ -d "/workspace/RetroToolbox" ]; then
         echo "/workspace/RetroToolbox"
-    elif [ -d "/Users/kostamilovanovic/Documents/ProjectsCode/RetroToolbox" ]; then
-        echo "/Users/kostamilovanovic/Documents/ProjectsCode/RetroToolbox"
+    elif [ -d "$HOME/Documents/ProjectsCode/RetroToolbox" ]; then
+        echo "$HOME/Documents/ProjectsCode/RetroToolbox"
     else
         echo "$(pwd)"
     fi
@@ -331,7 +331,7 @@ deploy_codex() {
     
     # Start server in background for testing
     log_info "Starting server for verification..."
-    PORT=3001 npm start &
+    PORT=3004 npm start &
     SERVER_PID=$!
     
     # Wait for server to start
@@ -356,7 +356,7 @@ deploy_production() {
     
     # Set production environment variables
     export NODE_ENV=production
-    export PORT=${PORT:-3001}
+    export PORT=${PORT:-3004}
     
     # Create necessary directories
     mkdir -p logs
@@ -459,7 +459,7 @@ create_service_plist() {
         <key>NODE_ENV</key>
         <string>production</string>
         <key>PORT</key>
-        <string>3001</string>
+        <string>3004</string>
         <key>PROJECT_ROOT</key>
         <string>$PROJECT_DIR</string>
     </dict>
@@ -483,7 +483,7 @@ show_access_info() {
         log_success "🌐 Access URLs:"
         echo "   Local:     http://localhost:$PORT"
         echo "   Health:    http://localhost:$PORT/health"
-        echo "   Tailscale: http://100.96.99.2:$PORT"
+        echo "   Tailscale: http://\$(tailscale ip -4 2>/dev/null || echo '100.x.x.x'):$PORT"
         echo ""
         log_info "📊 Management commands:"
         echo "   ./toolbox-service.sh status   - Check service status"

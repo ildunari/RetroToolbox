@@ -26,21 +26,22 @@ case "$1" in
         launchctl list | grep retro
         echo ""
         echo "📋 Recent logs:"
-        tail -10 ~/Documents/ProjectsCode/RetroToolbox/logs/output.log
+        tail -10 "$HOME/Documents/ProjectsCode/RetroToolbox/logs/output.log"
         ;;
     logs)
         echo "📄 Live logs (Ctrl+C to exit):"
-        tail -f ~/Documents/ProjectsCode/RetroToolbox/logs/output.log
+        tail -f "$HOME/Documents/ProjectsCode/RetroToolbox/logs/output.log"
         ;;
     url)
         echo "🌐 Finding current Tailscale URL..."
         PORT=$(ps aux | grep "node server/server.js" | grep -v grep | awk '{for(i=1;i<=NF;i++) if($i~/port/) print $(i+1)}' | head -1)
         if [ -z "$PORT" ]; then
             # Extract port from logs if ps doesn't work
-            PORT=$(grep "localhost:" ~/Documents/ProjectsCode/RetroToolbox/logs/output.log | tail -1 | sed 's/.*localhost:\([0-9]*\).*/\1/')
+            PORT=$(grep "localhost:" "$HOME/Documents/ProjectsCode/RetroToolbox/logs/output.log" | tail -1 | sed 's/.*localhost:\([0-9]*\).*/\1/')
         fi
         if [ ! -z "$PORT" ]; then
-            echo "📱 Tailscale URL: http://100.96.99.2:$PORT"
+            TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo "100.x.x.x")
+            echo "📱 Tailscale URL: http://$TAILSCALE_IP:$PORT"
         else
             echo "❌ Service not running or port not found"
         fi

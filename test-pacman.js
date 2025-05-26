@@ -19,8 +19,8 @@ import { chromium } from 'playwright';
   page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
   
   try {
-    console.log('Navigating to localhost:4000...');
-    await page.goto('http://localhost:4000', { waitUntil: 'networkidle' });
+    console.log('Navigating to localhost:3004...');
+    await page.goto('http://localhost:3004', { waitUntil: 'networkidle' });
     
     console.log('Taking screenshot of main page...');
     await page.screenshot({ path: 'main-page.png', fullPage: true });

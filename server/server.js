@@ -48,21 +48,15 @@ app.use(helmet({
 
 // Security: CORS configuration with whitelist
 const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:3001', 
-  'http://localhost:8940',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:3001',
-  'http://127.0.0.1:8940',
+  'http://localhost:3004',
+  'http://127.0.0.1:3004',
   ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [])
 ];
 
 // Add Tailscale and local network IPs to allowed origins
 const localIPs = getLocalIPs();
 localIPs.forEach(ip => {
-  allowedOrigins.push(`http://${ip}:3000`);
-  allowedOrigins.push(`http://${ip}:3001`);
-  allowedOrigins.push(`http://${ip}:8940`);
+  allowedOrigins.push(`http://${ip}:3004`);
 });
 
 app.use(cors({
@@ -184,7 +178,7 @@ process.on('SIGINT', () => {
 
 // Start server
 const startServer = async () => {
-  const port = process.env.PORT || 3001;
+  const port = process.env.PORT || 3004;
   const ips = getLocalIPs();
   
   const server = app.listen(port, '0.0.0.0', () => {
