@@ -251,8 +251,32 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
           if (head.y < 0) head.y = game.gridSize - 1;
           if (head.y >= game.gridSize) head.y = 0;
 
-          // Check self collision
-          if (snake.some(segment => segment.x === head.x && segment.y === head.y)) {
+          snake.unshift(head);
+
+          // Check food collision
+          if (head.x === game.food.x && head.y === game.food.y) {
+            setScore(s => s + 10);
+            soundManager.playCollect();
+            createParticles(game.food.x, game.food.y, '#10b981', 15);
+
+            // Brief pause for food collection feedback
+            game.lastUpdate = timestamp + 50; // 50ms pause
+
+            // Spawn new food
+            do {
+              game.food = {
+                x: Math.floor(Math.random() * game.gridSize),
+                y: Math.floor(Math.random() * game.gridSize)
+              };
+            } while (snake.some(s => s.x === game.food.x && s.y === game.food.y));
+
+            spawnPowerUp();
+          } else {
+            snake.pop();
+          }
+
+          // Check self collision after potential tail removal
+          if (snake.slice(1).some(segment => segment.x === head.x && segment.y === head.y)) {
             if (lives > 1) {
               setLives(l => l - 1);
               soundManager.playHit();
@@ -267,62 +291,38 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
               updateHighScore('snake', score);
               return;
             }
-          } else {
-            snake.unshift(head);
-
-            // Check food collision
-            if (head.x === game.food.x && head.y === game.food.y) {
-              setScore(s => s + 10);
-              soundManager.playCollect();
-              createParticles(game.food.x, game.food.y, '#10b981', 15);
-              
-              // Brief pause for food collection feedback
-              game.lastUpdate = timestamp + 50; // 50ms pause
-              
-              // Spawn new food
-              do {
-                game.food = {
-                  x: Math.floor(Math.random() * game.gridSize),
-                  y: Math.floor(Math.random() * game.gridSize)
-                };
-              } while (snake.some(s => s.x === game.food.x && s.y === game.food.y));
-              
-              spawnPowerUp();
-            } else {
-              snake.pop();
-            }
-
-            // Check power-up collision
-            setPowerUps(prev => {
-              const collected = prev.filter(p => {
-                if (head.x === p.x && head.y === p.y) {
-                  soundManager.playPowerUp();
-                  createParticles(p.x, p.y, '#f59e0b', 20);
-                  
-                  switch(p.type) {
-                    case 'points':
-                      setScore(s => s + 50);
-                      break;
-                    case 'speed':
-                      game.speed = Math.max(50, game.speed - 20);
-                      setTimeout(() => game.speed = settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100, 5000);
-                      break;
-                    case 'shield':
-                      setLives(l => Math.min(5, l + 1));
-                      break;
-                    case 'shrink':
-                      if (snake.length > 3) {
-                        snake.splice(-2);
-                      }
-                      break;
-                  }
-                  return false;
-                }
-                return true;
-              });
-              return collected;
-            });
           }
+
+          // Check power-up collision
+          setPowerUps(prev => {
+            const collected = prev.filter(p => {
+              if (head.x === p.x && head.y === p.y) {
+                soundManager.playPowerUp();
+                createParticles(p.x, p.y, '#f59e0b', 20);
+
+                switch(p.type) {
+                  case 'points':
+                    setScore(s => s + 50);
+                    break;
+                  case 'speed':
+                    game.speed = Math.max(50, game.speed - 20);
+                    setTimeout(() => game.speed = settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100, 5000);
+                    break;
+                  case 'shield':
+                    setLives(l => Math.min(5, l + 1));
+                    break;
+                  case 'shrink':
+                    if (snake.length > 3) {
+                      snake.splice(-2);
+                    }
+                    break;
+                }
+                return false;
+              }
+              return true;
+            });
+            return collected;
+          });
           
           gameRef.current.lastUpdate = timestamp;
         }
