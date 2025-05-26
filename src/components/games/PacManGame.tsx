@@ -17,12 +17,16 @@ interface Ghost extends Position {
   targetX: number;
   targetY: number;
   speed: number;
+  lastDirectionChange: number;
+  directionChangeTimeout: number;
+  stuckCounter: number;
+  previousPosition: Position;
+  targetHistory: number[];
 }
 
 interface GameRef {
-  pacman: Position & { direction: Position; nextDirection: Position };
+  pacman: Position & { direction: number; nextDirection: number; speed: number };
   ghosts: Ghost[];
-  dots: boolean[][];
   powerPellets: Position[];
   score: number;
   particles: Particle[];
