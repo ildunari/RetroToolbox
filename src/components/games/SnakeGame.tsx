@@ -12,7 +12,7 @@ interface Position {
 }
 
 interface PowerUp extends Position {
-  type: 'speed' | 'slow' | 'shield' | 'points' | 'life';
+  type: 'speed' | 'points' | 'shield' | 'shrink';
   lifetime: number;
 }
 
@@ -37,6 +37,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
   const prevScore = useRef(0);
   const [powerUps, setPowerUps] = useState<PowerUp[]>([]);
   const [lives, setLives] = useState(3);
+  const lastFrameRef = useRef(0);
   
   const gameRef = useRef<GameRef>({
     snake: [{ x: 10, y: 10 }],
@@ -191,7 +192,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
           x: Math.floor(Math.random() * gameRef.current.gridSize),
           y: Math.floor(Math.random() * gameRef.current.gridSize),
           type,
-          lifeTime: 10000
+          lifetime: 10000
         };
         setPowerUps(prev => [...prev, powerUp]);
       }
@@ -217,6 +218,16 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
     };
 
     const gameLoop = (timestamp) => {
+      const frameDelta = timestamp - lastFrameRef.current;
+      lastFrameRef.current = timestamp;
+
+      // Decrease lifetime of power-ups and remove expired ones
+      setPowerUps(prev =>
+        prev
+          .map(p => ({ ...p, lifetime: p.lifetime - frameDelta }))
+          .filter(p => p.lifetime > 0)
+      );
+
       if (!paused && !gameOver) {
         const deltaTime = timestamp - gameRef.current.lastUpdate;
         
