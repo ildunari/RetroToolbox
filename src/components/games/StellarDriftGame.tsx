@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Shield } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle } from '../../core/ParticleSystem';
+import { particleManager } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 import { GameProps } from '../../core/GameTypes';
@@ -36,7 +36,6 @@ interface GameRef {
   bullets: any[];
   powerUps: any[];
   stars: any[];
-  particles: Particle[];
   lastShot: number;
   animationFrame?: number;
 }
@@ -77,7 +76,6 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
     minTunnelGap: 140, // Minimum gap for mobile comfort
     
     // Game state
-    particles: [],
     obstacles: [],
     comets: [],
     lastUpdate: 0,
@@ -287,7 +285,7 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
 
     // Add explosion particles
     for (let i = 0; i < 10; i++) {
-      const particle = particleManager.addParticle({
+      particleManager.addParticle({
         x: game.pod.x + game.pod.width / 2,
         y: game.pod.y + game.pod.height / 2,
         vx: (Math.random() - 0.5) * 200,
@@ -296,9 +294,6 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
         life: 1000 + Math.random() * 500,
         size: 2
       });
-      if (particle) {
-        game.particles.push(particle);
-      }
     }
   }, [settings.sound, score, updateHighScore]);
 
@@ -428,10 +423,7 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
     });
 
     // Update particles
-    game.particles = game.particles.filter(particle => {
-      particle.update(deltaTime);
-      return particle.life > 0;
-    });
+    particleManager.getParticleSystem().update(deltaTime);
 
     // Collision detection
     const podRect = {
@@ -685,7 +677,7 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
       
       // Thrust particles when active
       if (game.thrustActive && Math.random() < 0.7) {
-        const particle = particleManager.addParticle({
+        particleManager.addParticle({
           x: shipX - 8 + Math.random() * 4,
           y: shipY + (Math.random() - 0.5) * 4,
           vx: -100 - Math.random() * 50,
@@ -694,9 +686,6 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
           life: 200 + Math.random() * 200,
           size: 2
         });
-        if (particle) {
-          game.particles.push(particle);
-        }
       }
       
       // Wing details
@@ -711,13 +700,9 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
     drawPlayerShip();
 
     // Draw particles with glow
-    game.particles.forEach(particle => {
-      ctx.save();
-      ctx.shadowColor = particle.color;
-      ctx.shadowBlur = 8;
-      particle.draw(ctx);
-      ctx.restore();
-    });
+    ctx.save();
+    particleManager.getParticleSystem().draw(ctx);
+    ctx.restore();
 
     // Enhanced speed lines with glow
     if (game.scrollSpeed > 150) {
@@ -864,7 +849,6 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
     game.scrollSpeed = 120;
     game.worldX = 0;
     game.chunks = [];
-    game.particles = [];
     game.obstacles = [];
     game.comets = [];
     game.invulnerabilityTime = 0;
