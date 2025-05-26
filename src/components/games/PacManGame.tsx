@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle, particleManager } from '../../core/ParticleSystem';
-import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 import { GameProps } from '../../core/GameTypes';
 
