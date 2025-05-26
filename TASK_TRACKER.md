@@ -1,12 +1,12 @@
 # RetroToolbox Fix Progress Tracker
-Last Updated: 2025-01-25T12:30:00
+Last Updated: 2025-01-25T12:40:00
 
 ## Agent Status
 - [x] Agent 1: Port & Config Standardization (completed: 2025-01-25T12:10:00)
 - [x] Agent 2: Mobile Input System (completed: 2025-01-25T12:20:00)
 - [x] Agent 3: Canvas & Viewport Fixes (completed: 2025-01-25T12:20:00)
 - [x] Agent 4: TypeScript Migration (completed: 2025-01-25T12:30:00)
-- [ ] Agent 5: Core Bug Fixes
+- [x] Agent 5: Core Bug Fixes (completed: 2025-01-25T12:40:00)
 - [ ] Agent 6: Performance & Memory
 - [x] Agent 7: Documentation & Cleanup (completed: 2025-01-25T12:20:00)
 
@@ -15,7 +15,7 @@ Last Updated: 2025-01-25T12:30:00
 - [x] Checkpoint 2: Input system unified (2025-01-25T12:20:00)
 - [x] Checkpoint 3: Mobile experience fixed (2025-01-25T12:20:00)
 - [x] Checkpoint 4: TypeScript migration done (2025-01-25T12:30:00)
-- [ ] Checkpoint 5: All bugs resolved
+- [x] Checkpoint 5: All bugs resolved (2025-01-25T12:40:00)
 - [ ] Checkpoint 6: Performance optimized
 - [x] Checkpoint 7: Documentation updated (2025-01-25T12:20:00)
 
@@ -38,3 +38,9 @@ Last Updated: 2025-01-25T12:30:00
   - Updated GameTypes.ts with GameProps and GameState interfaces
   - Removed stub SnakeGame.tsx and replaced with real implementation
   - All games now have proper type safety
+- Agent 5 Completed: 2025-01-25T12:40:00
+  - Fixed Snake game to read nextDirection before inputBuffer
+  - Added particle limit (100 max, keep last 50) to Pac-Man to prevent memory leak
+  - Wrapped Tetris isPlacing flag in try/finally block for race condition safety
+  - Fixed Breakout to only show hit count on damaged bricks (hits > 1 && hits < maxHits)
+  - Moved StellarDrift inputState from canvas DOM to gameRef for proper state management

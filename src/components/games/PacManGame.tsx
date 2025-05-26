@@ -710,11 +710,16 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       console.log(`Level ${level + 1} initialized with increased difficulty`);
     }
 
-    // Update particles
+    // Update particles with limit to prevent memory leak
     game.particles = game.particles.filter(particle => {
       particle.update(deltaTime);
       return particle.life > 0;
     });
+    
+    // Limit particle count to prevent memory issues
+    if (game.particles.length > 100) {
+      game.particles = game.particles.slice(-50);
+    }
 
     // Render
     const canvas = canvasRef.current;

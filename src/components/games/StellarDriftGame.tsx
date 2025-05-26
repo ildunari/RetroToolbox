@@ -94,6 +94,11 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
     airResistance: 0.994,   // Velocity damping factor (higher = less drag)
     thrustActive: false,    // Whether thrust is currently being applied
     
+    // Input state
+    inputState: {
+      thrust: false
+    },
+    
     // Colors (enhanced neon palette)
     colors: {
       magenta: '#ff00ff',
@@ -315,14 +320,11 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
     let netAcceleration = game.gravity; // Always pull down
     
     // Check for thrust input
-    const currentCanvas = canvasRef.current;
-    if (currentCanvas && currentCanvas.inputState) {
-      const inputState = currentCanvas.inputState;
-      game.thrustActive = inputState.thrust;
-      
-      if (game.thrustActive) {
-        netAcceleration -= game.thrustPower; // Subtract thrust (upward)
-      }
+    const inputState = game.inputState;
+    game.thrustActive = inputState.thrust;
+    
+    if (game.thrustActive) {
+      netAcceleration -= game.thrustPower; // Subtract thrust (upward)
     }
     
     // Update velocity with acceleration and air resistance
@@ -731,10 +733,8 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
   const handleThrust = useCallback((active) => {
     if (gameOver || paused) return;
     
-    const canvas = canvasRef.current;
-    if (canvas && canvas.inputState) {
-      canvas.inputState.thrust = active;
-    }
+    const game = gameRef.current;
+    game.inputState.thrust = active;
   }, [gameOver, paused]);
 
   useEffect(() => {
@@ -767,8 +767,7 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
     const handleBlur = () => setPaused(true);
     window.addEventListener('blur', handleBlur);
 
-    // Store input state on canvas for access in game loop
-    canvas.inputState = canvas.inputState || { thrust: false };
+    // Input state is now stored in gameRef
     
     const handleKeyDown = (e) => {
       switch(e.key) {

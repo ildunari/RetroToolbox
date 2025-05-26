@@ -374,11 +374,12 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
         ctx.fillStyle = gradient;
         ctx.fillRect(brick.x, brick.y, brick.width, brick.height);
         
-        if (brick.hits > 1) {
+        // Only show hit count on damaged bricks
+        if (brick.hits > 1 && brick.hits < brick.maxHits) {
           ctx.fillStyle = 'white';
           ctx.font = '12px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(brick.hits, brick.x + brick.width/2, brick.y + brick.height/2 + 4);
+          ctx.fillText(brick.hits.toString(), brick.x + brick.width/2, brick.y + brick.height/2 + 4);
         }
       });
 

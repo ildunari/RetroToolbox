@@ -220,8 +220,14 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
           const game = gameRef.current;
           const snake = game.snake;
           
-          // Update direction from input buffer
-          if (game.inputBuffer.length > 0) {
+          // First check nextDirection, then fall back to input buffer
+          if (game.nextDirection.x !== game.direction.x || game.nextDirection.y !== game.direction.y) {
+            // Validate nextDirection is valid (not opposite to current)
+            if ((game.nextDirection.x !== 0 && game.direction.x === 0) || 
+                (game.nextDirection.y !== 0 && game.direction.y === 0)) {
+              game.direction = game.nextDirection;
+            }
+          } else if (game.inputBuffer.length > 0) {
             const bufferedDirection = game.inputBuffer.shift();
             // Validate buffered direction is still valid
             if ((bufferedDirection.x !== 0 && game.direction.x === 0) || 

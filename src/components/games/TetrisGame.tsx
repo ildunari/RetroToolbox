@@ -199,14 +199,15 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     if (game.isPlacing) return; // Prevent race condition
     game.isPlacing = true;
     
-    const shape = TETROMINOES[game.currentPiece][game.currentRotation];
-    
-    // Place piece on board
-    for (let y = 0; y < shape.length; y++) {
-      for (let x = 0; x < shape[y].length; x++) {
-        if (shape[y][x]) {
-          const boardX = game.currentPosition.x + x;
-          const boardY = game.currentPosition.y + y;
+    try {
+      const shape = TETROMINOES[game.currentPiece][game.currentRotation];
+      
+      // Place piece on board
+      for (let y = 0; y < shape.length; y++) {
+        for (let x = 0; x < shape[y].length; x++) {
+          if (shape[y][x]) {
+            const boardX = game.currentPosition.x + x;
+            const boardY = game.currentPosition.y + y;
           
           if (boardY >= 0) {
             game.board[boardY][boardX] = game.currentPiece;
@@ -288,8 +289,10 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       soundManager.playPowerUp();
     }
     
-    spawnPiece();
-    game.isPlacing = false; // Release placement lock
+      spawnPiece();
+    } finally {
+      game.isPlacing = false; // Always release placement lock
+    }
   }, [score, lines, level, spawnPiece, updateHighScore]);
 
   const movePiece = useCallback((dx, dy, newRotation = null) => {
