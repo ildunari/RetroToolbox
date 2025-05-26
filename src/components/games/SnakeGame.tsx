@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Star, Zap, Shield, Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle } from '../../core/ParticleSystem';
+import { Particle, particleManager } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 import { GameProps } from '../../core/GameTypes';
@@ -201,14 +201,18 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       const particles = gameRef.current.particles;
       for (let i = 0; i < count; i++) {
         const angle = (Math.PI * 2 * i) / count;
-        particles.push(new Particle(
-          x * (canvas.width / gameRef.current.gridSize) + 10,
-          y * (canvas.height / gameRef.current.gridSize) + 10,
-          Math.cos(angle) * 100,
-          Math.sin(angle) * 100,
-          color,
-          0.5
-        ));
+        const particle = particleManager.addParticle({
+          x: x * (canvas.width / gameRef.current.gridSize) + 10,
+          y: y * (canvas.height / gameRef.current.gridSize) + 10,
+          vx: Math.cos(angle) * 100,
+          vy: Math.sin(angle) * 100,
+          color: color,
+          life: 0.5,
+          size: 2
+        });
+        if (particle) {
+          particles.push(particle);
+        }
       }
     };
 

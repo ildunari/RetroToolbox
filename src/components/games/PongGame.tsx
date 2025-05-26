@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle } from '../../core/ParticleSystem';
+import { Particle, particleManager } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 import { GameProps } from '../../core/GameTypes';
@@ -144,13 +144,18 @@ export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => 
 
     const createParticles = (x, y, vx, color) => {
       for (let i = 0; i < 20; i++) {
-        gameRef.current.particles.push(new Particle(
-          x, y,
-          vx + (Math.random() - 0.5) * 200,
-          (Math.random() - 0.5) * 200,
-          color,
-          0.5
-        ));
+        const particle = particleManager.addParticle({
+          x: x,
+          y: y,
+          vx: vx + (Math.random() - 0.5) * 200,
+          vy: (Math.random() - 0.5) * 200,
+          color: color,
+          life: 0.5,
+          size: 2
+        });
+        if (particle) {
+          gameRef.current.particles.push(particle);
+        }
       }
     };
 

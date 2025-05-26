@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle } from '../../core/ParticleSystem';
+import { Particle, particleManager } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 import { GameProps } from '../../core/GameTypes';
@@ -445,13 +445,18 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       
       // Dot collection particles
       for (let i = 0; i < 3; i++) {
-        game.particles.push(new Particle(
-          pacman.x * 20, pacman.y * 20,
-          (Math.random() - 0.5) * 50,
-          (Math.random() - 0.5) * 50,
-          game.colors.dot,
-          300
-        ));
+        const particle = particleManager.addParticle({
+          x: pacman.x * 20,
+          y: pacman.y * 20,
+          vx: (Math.random() - 0.5) * 50,
+          vy: (Math.random() - 0.5) * 50,
+          color: game.colors.dot,
+          life: 300,
+          size: 2
+        });
+        if (particle) {
+          game.particles.push(particle);
+        }
       }
       
       if (settings.sound) {
@@ -474,13 +479,18 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       
       // Power pellet particles
       for (let i = 0; i < 10; i++) {
-        game.particles.push(new Particle(
-          pacman.x * 20, pacman.y * 20,
-          (Math.random() - 0.5) * 100,
-          (Math.random() - 0.5) * 100,
-          game.colors.powerPellet,
-          800
-        ));
+        const particle = particleManager.addParticle({
+          x: pacman.x * 20,
+          y: pacman.y * 20,
+          vx: (Math.random() - 0.5) * 100,
+          vy: (Math.random() - 0.5) * 100,
+          color: game.colors.powerPellet,
+          life: 800,
+          size: 3
+        });
+        if (particle) {
+          game.particles.push(particle);
+        }
       }
       
       if (settings.sound) {
@@ -623,13 +633,18 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
           
           // Ghost eaten particles
           for (let i = 0; i < 8; i++) {
-            game.particles.push(new Particle(
-              ghost.x * 20, ghost.y * 20,
-              (Math.random() - 0.5) * 80,
-              (Math.random() - 0.5) * 80,
-              '#ffffff',
-              500
-            ));
+            const particle = particleManager.addParticle({
+              x: ghost.x * 20,
+              y: ghost.y * 20,
+              vx: (Math.random() - 0.5) * 80,
+              vy: (Math.random() - 0.5) * 80,
+              color: '#ffffff',
+              life: 500,
+              size: 3
+            });
+            if (particle) {
+              game.particles.push(particle);
+            }
           }
           
           if (settings.sound) {

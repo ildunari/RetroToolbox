@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle } from '../../core/ParticleSystem';
+import { Particle, particleManager } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 import { GameProps, Brick } from '../../core/GameTypes';
@@ -168,13 +168,18 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
 
     const createParticles = (x, y, color) => {
       for (let i = 0; i < 15; i++) {
-        gameRef.current.particles.push(new Particle(
-          x, y,
-          (Math.random() - 0.5) * 200,
-          (Math.random() - 0.5) * 200,
-          color,
-          0.8
-        ));
+        const particle = particleManager.addParticle({
+          x: x,
+          y: y,
+          vx: (Math.random() - 0.5) * 200,
+          vy: (Math.random() - 0.5) * 200,
+          color: color,
+          life: 0.8,
+          size: 2
+        });
+        if (particle) {
+          gameRef.current.particles.push(particle);
+        }
       }
     };
 

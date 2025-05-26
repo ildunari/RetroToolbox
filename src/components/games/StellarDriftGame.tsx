@@ -286,14 +286,18 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
 
     // Add explosion particles
     for (let i = 0; i < 10; i++) {
-      game.particles.push(new Particle(
-        game.pod.x + game.pod.width / 2,
-        game.pod.y + game.pod.height / 2,
-        (Math.random() - 0.5) * 200,
-        (Math.random() - 0.5) * 200,
-        game.colors.magenta,
-        1000 + Math.random() * 500
-      ));
+      const particle = particleManager.addParticle({
+        x: game.pod.x + game.pod.width / 2,
+        y: game.pod.y + game.pod.height / 2,
+        vx: (Math.random() - 0.5) * 200,
+        vy: (Math.random() - 0.5) * 200,
+        color: game.colors.magenta,
+        life: 1000 + Math.random() * 500,
+        size: 2
+      });
+      if (particle) {
+        game.particles.push(particle);
+      }
     }
   }, [settings.sound, score, updateHighScore]);
 
@@ -680,14 +684,18 @@ export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScor
       
       // Thrust particles when active
       if (game.thrustActive && Math.random() < 0.7) {
-        game.particles.push(new Particle(
-          shipX - 8 + Math.random() * 4,
-          shipY + (Math.random() - 0.5) * 4,
-          -100 - Math.random() * 50,
-          (Math.random() - 0.5) * 30,
-          game.colors.cyan,
-          200 + Math.random() * 200
-        ));
+        const particle = particleManager.addParticle({
+          x: shipX - 8 + Math.random() * 4,
+          y: shipY + (Math.random() - 0.5) * 4,
+          vx: -100 - Math.random() * 50,
+          vy: (Math.random() - 0.5) * 30,
+          color: game.colors.cyan,
+          life: 200 + Math.random() * 200,
+          size: 2
+        });
+        if (particle) {
+          game.particles.push(particle);
+        }
       }
       
       // Wing details

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle } from '../../core/ParticleSystem';
+import { Particle, particleManager } from '../../core/ParticleSystem';
 import { GameProps } from '../../core/GameTypes';
 
 interface Enemy {
@@ -347,14 +347,18 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
             
             // Create enhanced particles
             for (let i = 0; i < 15; i++) {
-              game.particles.push(new Particle(
-                alien.x + alien.width / 2,
-                alien.y + alien.height / 2,
-                Math.random() * 8 - 4,
-                Math.random() * 8 - 4,
-                `hsl(${alien.type * 60 + 180}, 90%, ${60 + Math.random() * 30}%)`,
-                60
-              ));
+              const particle = particleManager.addParticle({
+                x: alien.x + alien.width / 2,
+                y: alien.y + alien.height / 2,
+                vx: Math.random() * 8 - 4,
+                vy: Math.random() * 8 - 4,
+                color: `hsl(${alien.type * 60 + 180}, 90%, ${60 + Math.random() * 30}%)`,
+                life: 60,
+                size: 2
+              });
+              if (particle) {
+                game.particles.push(particle);
+              }
             }
             
             soundManager.playHit();
@@ -391,14 +395,18 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
           
           // Create particles
           for (let i = 0; i < 10; i++) {
-            game.particles.push(new Particle(
-              powerUpItem.x + powerUpItem.width / 2,
-              powerUpItem.y + powerUpItem.height / 2,
-              Math.random() * 6 - 3,
-              Math.random() * 6 - 3,
-              '#ffd93d',
-              30
-            ));
+            const particle = particleManager.addParticle({
+              x: powerUpItem.x + powerUpItem.width / 2,
+              y: powerUpItem.y + powerUpItem.height / 2,
+              vx: Math.random() * 6 - 3,
+              vy: Math.random() * 6 - 3,
+              color: '#ffd93d',
+              life: 30,
+              size: 2
+            });
+            if (particle) {
+              game.particles.push(particle);
+            }
           }
           
           return false;
@@ -434,14 +442,18 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
             
             // Create particles
             for (let i = 0; i < 12; i++) {
-              game.particles.push(new Particle(
-                game.player.x + game.player.width / 2,
-                game.player.y + game.player.height / 2,
-                Math.random() * 6 - 3,
-                Math.random() * 6 - 3,
-                '#ff6b6b',
-                40
-              ));
+              const particle = particleManager.addParticle({
+                x: game.player.x + game.player.width / 2,
+                y: game.player.y + game.player.height / 2,
+                vx: Math.random() * 6 - 3,
+                vy: Math.random() * 6 - 3,
+                color: '#ff6b6b',
+                life: 40,
+                size: 2
+              });
+              if (particle) {
+                game.particles.push(particle);
+              }
             }
           }
         }
@@ -465,14 +477,18 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
             
             // Create particles
             for (let i = 0; i < 4; i++) {
-              game.particles.push(new Particle(
-                bullet.x,
-                bullet.y,
-                Math.random() * 4 - 2,
-                Math.random() * 4 - 2,
-                '#4ecdc4',
-                20
-              ));
+              const particle = particleManager.addParticle({
+                x: bullet.x,
+                y: bullet.y,
+                vx: Math.random() * 4 - 2,
+                vy: Math.random() * 4 - 2,
+                color: '#4ecdc4',
+                life: 20,
+                size: 2
+              });
+              if (particle) {
+                game.particles.push(particle);
+              }
             }
           }
         });
