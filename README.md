@@ -4,7 +4,7 @@ A modular collection of retro arcade games with modern enhancements, built with 
 
 ## Features
 
-- 🎮 **Complete Games**: Snake++, Neon Pong, Brick Breaker, Tetris Remix, Space Defense, Pac-Man
+- 🎮 **Complete Games**: Snake++, Neon Pong, Brick Breaker, Tetris Remix, Space Defense, Pac-Man, Stellar Drift
 - 🎵 **Sound System**: Web Audio API-powered sound effects  
 - 🎯 **Input Support**: Keyboard, mouse, touch, and gamepad controls
 - ✨ **Visual Effects**: Particle systems and animations
@@ -18,7 +18,7 @@ A modular collection of retro arcade games with modern enhancements, built with 
 ### Development
 ```bash
 npm install
-npm run dev
+npm run dev   # Runs on port 3004
 ```
 
 ### Production Deployment
@@ -57,6 +57,7 @@ The project follows a fully modular architecture with extracted game components:
       - TetrisGame.jsx      # Tetris Remix with enhanced mechanics
       - SpaceInvadersGame.jsx # Space Defense with waves
       - PacManGame.jsx      # Pac-Man with mobile touch controls
+      - StellarDriftGame.jsx # Stellar Drift space adventure
     /ui          # UI components (menus, modals, effects)
       - GameMenu.jsx        # Game selection interface
       - SettingsModal.jsx   # Settings management
@@ -86,28 +87,36 @@ All games are fully implemented as modular components with modern enhancements:
 4. **Tetris Remix** (`TetrisGame.jsx`): Classic Tetris with enhanced mechanics and animations
 5. **Space Defense** (`SpaceInvadersGame.jsx`): Space Invaders with progressive waves and upgrades
 6. **Pac-Man** (`PacManGame.jsx`): Classic maze game with touch controls and power pellets
+7. **Stellar Drift** (`StellarDriftGame.jsx`): Space exploration with asteroids and power-ups
 
 ## Network Access
 
-The server automatically:
-- Selects a random available port
+The server runs on port 3004 by default:
+- Fixed port for consistent access
 - Displays local and network URLs
 - Shows Tailscale configuration info
 
 Example output:
 ```
 🎮 Retro Game Toolbox Server Started!
-🌐 Local: http://localhost:63951
-🔗 Network: http://192.168.1.36:63951
-📱 Tailscale: Use your Tailscale IP with port 63951
+🌐 Local: http://localhost:3004
+🔗 Network: http://192.168.1.36:3004
+📱 Tailscale: Use your Tailscale IP with port 3004
 ```
 
 ## Controls
 
+### Desktop
 - **WASD/Arrow Keys**: Movement
 - **Space**: Pause/Action
-- **Mouse/Touch**: Touch controls supported
+- **Mouse**: Click and drag supported
 - **Gamepad**: Automatic detection and support
+
+### Mobile
+- **Touch**: Tap, swipe, and hold gestures
+- **Virtual Controls**: On-screen buttons for specific games
+- **Swipe Gestures**: Direction-based movement
+- **Pinch**: Zoom controls (where applicable)
 
 ## Technologies
 
@@ -196,3 +205,16 @@ If upgrading from the old monolithic version (prior to modular architecture):
 - Verify responsive canvas sizing in game components
 - Check Tailwind CSS responsive classes
 - Test landscape/portrait orientation changes
+- Use ResponsiveCanvas component for consistent scaling
+- Check viewport meta tag configuration
+
+**Port conflicts:**
+- Default port is 3004, change in vite.config.ts if needed
+- Check if port is already in use: `lsof -i :3004`
+- Kill process using port: `kill -9 $(lsof -t -i:3004)`
+
+**Deployment issues:**
+- Ensure all dependencies installed: `npm ci`
+- Clear dist folder: `rm -rf dist && npm run build`
+- Check Node.js version compatibility (16+ required)
+- Verify file permissions for shell scripts: `chmod +x *.sh`

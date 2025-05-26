@@ -1,0 +1,42 @@
+.game-menu-container {
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
+  height: 100vh;
+  position: relative;
+}
+
+/* Prevent scroll bouncing on iOS */
+.game-menu-container {
+  overscroll-behavior: contain;
+}
+
+/* Ensure proper scrolling on mobile */
+@media (max-width: 768px) {
+  .game-menu-container {
+    height: calc(100vh - env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Fix for mobile browser chrome hiding */
+.game-menu-container {
+  min-height: -webkit-fill-available;
+}
+
+/* Smooth scrolling */
+.game-menu-container {
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbar on mobile for cleaner look */
+@media (max-width: 768px) {
+  .game-menu-container::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .game-menu-container {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

@@ -15,6 +15,8 @@ export interface TouchGesture {
   startTime: number;
   duration: number;
   distance: number;
+  velocity: { x: number; y: number };
+  direction?: 'up' | 'down' | 'left' | 'right';
 }
 
 export interface InputBuffer {
@@ -103,7 +105,7 @@ export class InputManager {
       }
       
       this.emit('touchstart', { touches: this.touches, event: e });
-    });
+    }, { passive: false });
 
     window.addEventListener('touchmove', (e) => {
       this.touches = Array.from(e.touches);
@@ -168,6 +170,26 @@ export class InputManager {
       };
       const distance = Math.sqrt(deltaPos.x ** 2 + deltaPos.y ** 2);
       const duration = Date.now() - this.touchStartTime;
+      
+      // Calculate velocity
+      const timeDelta = duration / 1000; // Convert to seconds
+      const velocity = {
+        x: timeDelta > 0 ? deltaPos.x / timeDelta : 0,
+        y: timeDelta > 0 ? deltaPos.y / timeDelta : 0
+      };
+      
+      // Determine direction for swipes
+      let direction: 'up' | 'down' | 'left' | 'right' | undefined;
+      if (distance > 20) {
+        const absX = Math.abs(deltaPos.x);
+        const absY = Math.abs(deltaPos.y);
+        
+        if (absX > absY) {
+          direction = deltaPos.x > 0 ? 'right' : 'left';
+        } else {
+          direction = deltaPos.y > 0 ? 'down' : 'up';
+        }
+      }
 
       this.currentGesture = {
         type: distance > 20 ? 'swipe' : duration > 500 ? 'hold' : 'tap',
@@ -176,7 +198,31 @@ export class InputManager {
         deltaPos,
         startTime: this.touchStartTime,
         duration,
-        distance
+        distance,
+        velocity,
+        direction
+      };
+    } else if (this.touches.length === 2) {
+      // Handle pinch gestures
+      const touch1 = this.touches[0];
+      const touch2 = this.touches[1];
+      const currentDistance = Math.sqrt(
+        Math.pow(touch2.clientX - touch1.clientX, 2) +
+        Math.pow(touch2.clientY - touch1.clientY, 2)
+      );
+      
+      this.currentGesture = {
+        type: 'pinch',
+        startPos: this.touchStartPos,
+        currentPos: { 
+          x: (touch1.clientX + touch2.clientX) / 2, 
+          y: (touch1.clientY + touch2.clientY) / 2 
+        },
+        deltaPos: { x: 0, y: 0 },
+        startTime: this.touchStartTime,
+        duration: Date.now() - this.touchStartTime,
+        distance: currentDistance,
+        velocity: { x: 0, y: 0 }
       };
     }
   }
