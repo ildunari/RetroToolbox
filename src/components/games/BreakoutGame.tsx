@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle, particleManager } from '../../core/ParticleSystem';
+import { particleManager } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 import { GameProps, Brick } from '../../core/GameTypes';
@@ -26,7 +26,6 @@ interface GameRef {
   ball: Ball;
   paddle: Paddle;
   bricks: Brick[];
-  particles: Particle[];
   powerUps: any[];
 }
 
@@ -54,7 +53,6 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
     ballVY: -4,
     ballSize: 8,
     bricks: [],
-    particles: [],
     powerUps: [],
     lastUpdate: 0
   });
@@ -188,7 +186,7 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
 
     const createParticles = (x, y, color) => {
       for (let i = 0; i < 15; i++) {
-        const particle = particleManager.addParticle({
+        particleManager.getParticleSystem().addParticle({
           x: x,
           y: y,
           vx: (Math.random() - 0.5) * 200,
@@ -197,9 +195,6 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
           life: 0.8,
           size: 2
         });
-        if (particle) {
-          gameRef.current.particles.push(particle);
-        }
       }
     };
 
@@ -383,10 +378,7 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
       }
 
       // Update particles
-      gameRef.current.particles = gameRef.current.particles.filter(p => {
-        p.update(0.016);
-        return p.life > 0;
-      });
+      particleManager.update(0.016);
 
       // Draw
       ctx.fillStyle = '#0f172a';
@@ -435,7 +427,7 @@ export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore })
       });
 
       // Draw particles
-      gameRef.current.particles.forEach(p => p.draw(ctx));
+      particleManager.draw(ctx);
 
       animationId = requestAnimationFrame(gameLoop);
     };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle, particleManager } from '../../core/ParticleSystem';
+import { particleManager } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 import { GameProps } from '../../core/GameTypes';
@@ -25,7 +25,6 @@ interface GameRef {
   playerPaddle: Paddle;
   aiPaddle: Paddle;
   ball: Ball;
-  particles: Particle[];
 }
 
 export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
@@ -49,7 +48,6 @@ export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => 
     ballSpeed: 5,
     aiSpeed: settings.difficulty === 'easy' ? 3 : settings.difficulty === 'hard' ? 6 : 4,
     aiReactionTime: settings.difficulty === 'easy' ? 0.8 : settings.difficulty === 'hard' ? 0.95 : 0.9,
-    particles: [],
     paddleHeight: 80,
     paddleWidth: 10,
     ballSize: 10,
@@ -154,7 +152,7 @@ export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => 
 
     const createParticles = (x, y, vx, color) => {
       for (let i = 0; i < 20; i++) {
-        const particle = particleManager.addParticle({
+        particleManager.getParticleSystem().addParticle({
           x: x,
           y: y,
           vx: vx + (Math.random() - 0.5) * 200,
@@ -163,9 +161,6 @@ export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => 
           life: 0.5,
           size: 2
         });
-        if (particle) {
-          gameRef.current.particles.push(particle);
-        }
       }
     };
 
@@ -299,10 +294,7 @@ export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => 
       }
 
       // Update particles
-      gameRef.current.particles = gameRef.current.particles.filter(p => {
-        p.update(0.016);
-        return p.life > 0;
-      });
+      particleManager.update(0.016);
 
       // Draw
       ctx.fillStyle = '#0f172a';
@@ -354,7 +346,7 @@ export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => 
       ctx.shadowBlur = 0;
 
       // Draw particles
-      gameRef.current.particles.forEach(p => p.draw(ctx));
+      particleManager.draw(ctx);
 
       // Draw scores
       ctx.font = 'bold 48px monospace';

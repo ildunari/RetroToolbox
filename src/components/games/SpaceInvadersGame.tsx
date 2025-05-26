@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle, particleManager } from '../../core/ParticleSystem';
+import { particleManager } from '../../core/ParticleSystem';
 import { GameProps } from '../../core/GameTypes';
 
 interface Enemy {
@@ -27,7 +27,6 @@ interface GameRef {
   aliens: Enemy[];
   barriers: any[];
   powerUps: any[];
-  particles: Particle[];
   alienDirection: number;
   lastShot: number;
   alienShootTimer: number;
@@ -49,7 +48,6 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
     aliens: [],
     barriers: [],
     powerUps: [],
-    particles: [],
     lastUpdate: 0,
     alienDirection: 1,
     alienSpeed: 1,
@@ -347,19 +345,16 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
             
             // Create enhanced particles
             for (let i = 0; i < 15; i++) {
-              const particle = particleManager.addParticle({
-                x: alien.x + alien.width / 2,
-                y: alien.y + alien.height / 2,
-                vx: Math.random() * 8 - 4,
-                vy: Math.random() * 8 - 4,
-                color: `hsl(${alien.type * 60 + 180}, 90%, ${60 + Math.random() * 30}%)`,
-                life: 60,
-                size: 2
-              });
-              if (particle) {
-                game.particles.push(particle);
-              }
-            }
+            particleManager.getParticleSystem().addParticle({
+              x: alien.x + alien.width / 2,
+              y: alien.y + alien.height / 2,
+              vx: Math.random() * 8 - 4,
+              vy: Math.random() * 8 - 4,
+              color: `hsl(${alien.type * 60 + 180}, 90%, ${60 + Math.random() * 30}%)`,
+              life: 60,
+              size: 2
+            });
+          }
             
             soundManager.playHit();
             
@@ -395,7 +390,7 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
           
           // Create particles
           for (let i = 0; i < 10; i++) {
-            const particle = particleManager.addParticle({
+            particleManager.getParticleSystem().addParticle({
               x: powerUpItem.x + powerUpItem.width / 2,
               y: powerUpItem.y + powerUpItem.height / 2,
               vx: Math.random() * 6 - 3,
@@ -404,9 +399,6 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
               life: 30,
               size: 2
             });
-            if (particle) {
-              game.particles.push(particle);
-            }
           }
           
           return false;
@@ -442,7 +434,7 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
             
             // Create particles
             for (let i = 0; i < 12; i++) {
-              const particle = particleManager.addParticle({
+              particleManager.getParticleSystem().addParticle({
                 x: game.player.x + game.player.width / 2,
                 y: game.player.y + game.player.height / 2,
                 vx: Math.random() * 6 - 3,
@@ -451,9 +443,6 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
                 life: 40,
                 size: 2
               });
-              if (particle) {
-                game.particles.push(particle);
-              }
             }
           }
         }
@@ -477,7 +466,7 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
             
             // Create particles
             for (let i = 0; i < 4; i++) {
-              const particle = particleManager.addParticle({
+              particleManager.getParticleSystem().addParticle({
                 x: bullet.x,
                 y: bullet.y,
                 vx: Math.random() * 4 - 2,
@@ -486,19 +475,13 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
                 life: 20,
                 size: 2
               });
-              if (particle) {
-                game.particles.push(particle);
-              }
             }
           }
         });
       });
 
       // Update particles
-      game.particles = game.particles.filter(particle => {
-        particle.update();
-        return particle.life > 0;
-      });
+      particleManager.update(0.016);
 
       // Check win condition
       if (aliveAliens.length === 0) {
@@ -650,9 +633,7 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
       });
 
       // Draw particles
-      game.particles.forEach(particle => {
-        particle.render(ctx);
-      });
+      particleManager.draw(ctx);
 
       animationId = requestAnimationFrame(gameLoop);
     };
@@ -687,7 +668,6 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
     game.player.x = 400;
     game.bullets = [];
     game.alienBullets = [];
-    game.particles = [];
     game.powerUps = [];
     game.alienDirection = 1;
     game.alienSpeed = 1;

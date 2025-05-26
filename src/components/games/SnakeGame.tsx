@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Star, Zap, Shield, Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle, particleManager } from '../../core/ParticleSystem';
+import { particleManager } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 import { GameProps } from '../../core/GameTypes';
@@ -22,7 +22,6 @@ interface GameRef {
   nextDirection: Position;
   inputBuffer: Position[];
   food: Position;
-  particles: Particle[];
   speed: number;
   lastUpdate: number;
   gridSize: number;
@@ -44,7 +43,6 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
     nextDirection: { x: 1, y: 0 },
     inputBuffer: [],
     food: { x: 15, y: 15 },
-    particles: [],
     speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
     lastUpdate: 0,
     gridSize: 20
@@ -198,10 +196,9 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
     };
 
     const createParticles = (x, y, color, count = 10) => {
-      const particles = gameRef.current.particles;
       for (let i = 0; i < count; i++) {
         const angle = (Math.PI * 2 * i) / count;
-        const particle = particleManager.addParticle({
+        particleManager.getParticleSystem().addParticle({
           x: x * (canvas.width / gameRef.current.gridSize) + 10,
           y: y * (canvas.height / gameRef.current.gridSize) + 10,
           vx: Math.cos(angle) * 100,
@@ -210,9 +207,6 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
           life: 0.5,
           size: 2
         });
-        if (particle) {
-          particles.push(particle);
-        }
       }
     };
 
@@ -328,16 +322,8 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
         }
       }
 
-      // Update particles with memory leak prevention
-      gameRef.current.particles = gameRef.current.particles.filter(p => {
-        p.update(0.016);
-        return p.life > 0;
-      });
-      
-      // Prevent memory leak - limit max particles
-      if (gameRef.current.particles.length > 100) {
-        gameRef.current.particles = gameRef.current.particles.slice(-50);
-      }
+      // Update global particles
+      particleManager.update(0.016);
 
       // Draw
       ctx.fillStyle = '#0f172a';
@@ -424,7 +410,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       });
 
       // Draw particles
-      gameRef.current.particles.forEach(p => p.draw(ctx));
+      particleManager.draw(ctx);
 
       animationId = requestAnimationFrame(gameLoop);
     };
@@ -546,7 +532,6 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       nextDirection: { x: 1, y: 0 },
       inputBuffer: [],
       food: { x: 15, y: 15 },
-      particles: [],
       speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
       lastUpdate: 0,
       gridSize: 20

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle, particleManager } from '../../core/ParticleSystem';
+import { particleManager } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
 import { GameProps } from '../../core/GameTypes';
@@ -25,7 +25,6 @@ interface GameRef {
   dots: boolean[][];
   powerPellets: Position[];
   score: number;
-  particles: Particle[];
   frightenedTimer: number;
   level: number;
 }
@@ -131,7 +130,6 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     
     // Game mechanics
     lastUpdate: 0,
-    particles: [],
     powerPellets: [],
     dotsRemaining: 0,
     modeTimer: 0,
@@ -445,7 +443,7 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       
       // Dot collection particles
       for (let i = 0; i < 3; i++) {
-        const particle = particleManager.addParticle({
+        particleManager.getParticleSystem().addParticle({
           x: pacman.x * 20,
           y: pacman.y * 20,
           vx: (Math.random() - 0.5) * 50,
@@ -454,9 +452,6 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
           life: 300,
           size: 2
         });
-        if (particle) {
-          game.particles.push(particle);
-        }
       }
       
       if (settings.sound) {
@@ -479,7 +474,7 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       
       // Power pellet particles
       for (let i = 0; i < 10; i++) {
-        const particle = particleManager.addParticle({
+        particleManager.getParticleSystem().addParticle({
           x: pacman.x * 20,
           y: pacman.y * 20,
           vx: (Math.random() - 0.5) * 100,
@@ -488,9 +483,6 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
           life: 800,
           size: 3
         });
-        if (particle) {
-          game.particles.push(particle);
-        }
       }
       
       if (settings.sound) {
@@ -633,7 +625,7 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
           
           // Ghost eaten particles
           for (let i = 0; i < 8; i++) {
-            const particle = particleManager.addParticle({
+            particleManager.getParticleSystem().addParticle({
               x: ghost.x * 20,
               y: ghost.y * 20,
               vx: (Math.random() - 0.5) * 80,
@@ -642,9 +634,6 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
               life: 500,
               size: 3
             });
-            if (particle) {
-              game.particles.push(particle);
-            }
           }
           
           if (settings.sound) {
@@ -712,7 +701,6 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       }));
 
       // Clear effects but maintain game progress
-      game.particles = [];
       game.modeTimer = 0;
       game.frightTimer = 0;
       setPowerMode(false);
@@ -725,16 +713,8 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       console.log(`Level ${level + 1} initialized with increased difficulty`);
     }
 
-    // Update particles with limit to prevent memory leak
-    game.particles = game.particles.filter(particle => {
-      particle.update(deltaTime);
-      return particle.life > 0;
-    });
-    
-    // Limit particle count to prevent memory issues
-    if (game.particles.length > 100) {
-      game.particles = game.particles.slice(-50);
-    }
+    // Update particles
+    particleManager.update(deltaTime);
 
     // Render
     const canvas = canvasRef.current;
@@ -855,9 +835,7 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     });
     
     // Draw particles
-    game.particles.forEach(particle => {
-      particle.draw(ctx);
-    });
+    particleManager.draw(ctx);
     
   }, [gameOver, paused, isWalkable, wrapPosition, getGhostTarget, resetMazeToOriginal, settings.sound, score, updateHighScore, level, checkCollisionWithRadius, isAtValidIntersection]);
 
@@ -1249,7 +1227,6 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     }));
 
     // 5. Clear all particles and effects
-    game.particles = [];
 
     // 6. Reset all timers and counters
     game.lastUpdate = 0;
@@ -1270,7 +1247,7 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       dotsRemaining: game.dotsRemaining,
       pacmanPosition: `${game.pacman.x}, ${game.pacman.y}`,
       ghostCount: game.ghosts.length,
-      particleCount: game.particles.length
+      particleCount: particleManager.getStats().active
     });
   }, [resetMazeToOriginal, initializeGame]);
 
