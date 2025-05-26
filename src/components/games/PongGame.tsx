@@ -1,12 +1,34 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
-
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
+import { GameProps } from '../../core/GameTypes';
 
-export const PongGame = ({ settings, updateHighScore }) => {
+interface Paddle {
+  y: number;
+  width: number;
+  height: number;
+  speed: number;
+}
+
+interface Ball {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+}
+
+interface GameRef {
+  playerPaddle: Paddle;
+  aiPaddle: Paddle;
+  ball: Ball;
+  particles: Particle[];
+}
+
+export const PongGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
   const [playerScore, setPlayerScore] = useState(0);
   const [aiScore, setAiScore] = useState(0);

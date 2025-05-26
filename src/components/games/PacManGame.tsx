@@ -4,8 +4,33 @@ import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
+import { GameProps } from '../../core/GameTypes';
 
-export const PacManGame = ({ settings, updateHighScore }) => {
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface Ghost extends Position {
+  color: string;
+  mode: 'chase' | 'scatter' | 'frightened';
+  targetX: number;
+  targetY: number;
+  speed: number;
+}
+
+interface GameRef {
+  pacman: Position & { direction: Position; nextDirection: Position };
+  ghosts: Ghost[];
+  dots: boolean[][];
+  powerPellets: Position[];
+  score: number;
+  particles: Particle[];
+  frightenedTimer: number;
+  level: number;
+}
+
+export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
   const [level, setLevel] = useState(1);

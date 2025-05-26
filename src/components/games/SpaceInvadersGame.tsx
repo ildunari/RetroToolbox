@@ -1,11 +1,39 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
+import { GameProps } from '../../core/GameTypes';
 
+interface Enemy {
+  x: number;
+  y: number;
+  type: 'basic' | 'fast' | 'tank';
+  alive: boolean;
+  points: number;
+  health: number;
+}
 
+interface Bullet {
+  x: number;
+  y: number;
+  vy: number;
+  active: boolean;
+}
 
-export const SpaceInvadersGame = ({ settings, updateHighScore }) => {
+interface GameRef {
+  player: { x: number; y: number; width: number; height: number; speed: number };
+  bullets: Bullet[];
+  alienBullets: Bullet[];
+  aliens: Enemy[];
+  barriers: any[];
+  powerUps: any[];
+  particles: Particle[];
+  alienDirection: number;
+  lastShot: number;
+  alienShootTimer: number;
+}
+
+export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);

@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
+import { GameProps } from '../../core/GameTypes';
 
 // Tetromino shapes
 const TETROMINOES = {
@@ -96,8 +97,26 @@ const BOARD_WIDTH = 10;
 const BOARD_HEIGHT = 20;
 const CELL_SIZE = 25;
 
-export const TetrisGame = ({ settings, updateHighScore }) => {
-  const canvasRef = useRef(null);
+interface TetrisPiece {
+  shape: number[][][];
+  color: string;
+  rotationIndex: number;
+}
+
+interface GameRef {
+  board: number[][];
+  currentPiece: TetrisPiece | null;
+  currentPosition: { x: number; y: number };
+  currentRotation: number;
+  nextPiece: TetrisPiece | null;
+  dropTime: number;
+  lastDrop: number;
+  particles: Particle[];
+  isPlacing: boolean;
+}
+
+export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [lines, setLines] = useState(0);
   const [level, setLevel] = useState(1);

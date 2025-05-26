@@ -26,6 +26,21 @@ export interface GameInfo {
   description: string;
 }
 
+export interface GameProps {
+  settings: GameSettings;
+  updateHighScore: (game: GameId, score: number) => void;
+}
+
+export interface GameState {
+  score: number;
+  lives: number;
+  level: number;
+  gameOver: boolean;
+  paused: boolean;
+}
+
+export type GameId = 'snake' | 'pong' | 'breakout' | 'tetris' | 'spaceInvaders' | 'pacman' | 'stellarDrift';
+
 export interface GameComponentProps {
   settings: GameSettings;
   onScoreUpdate: (gameId: string, score: number) => void;

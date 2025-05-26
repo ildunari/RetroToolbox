@@ -4,8 +4,44 @@ import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
+import { GameProps } from '../../core/GameTypes';
 
-export const StellarDriftGame = ({ settings, updateHighScore }) => {
+interface Ship {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rotation: number;
+  thrust: number;
+  shield: boolean;
+  shieldTime: number;
+  fuel: number;
+  rapidFire: boolean;
+  rapidFireTime: number;
+}
+
+interface Asteroid {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  rotation: number;
+  rotationSpeed: number;
+}
+
+interface GameRef {
+  ship: Ship;
+  asteroids: Asteroid[];
+  bullets: any[];
+  powerUps: any[];
+  stars: any[];
+  particles: Particle[];
+  lastShot: number;
+  animationFrame?: number;
+}
+
+export const StellarDriftGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
   const [distance, setDistance] = useState(0);

@@ -1,11 +1,36 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
+import { GameProps, Brick } from '../../core/GameTypes';
 
-export const BreakoutGame = ({ settings, updateHighScore }) => {
+interface Ball {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+}
+
+interface Paddle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  speed: number;
+}
+
+interface GameRef {
+  ball: Ball;
+  paddle: Paddle;
+  bricks: Brick[];
+  particles: Particle[];
+  powerUps: any[];
+}
+
+export const BreakoutGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
