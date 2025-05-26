@@ -656,7 +656,7 @@ export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
             const newLives = prev - 1;
             if (newLives <= 0) {
               setGameOver(true);
-              updateHighScore('pac-man', score);
+              updateHighScore('pacman', score);
               if (settings.sound) {
                 soundManager.playGameOver();
               }
