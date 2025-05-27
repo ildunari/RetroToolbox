@@ -4,6 +4,8 @@ import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
+import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
+import { CANVAS_CONFIG } from "../../core/CanvasConfig";
 
 
 
@@ -90,13 +92,8 @@ export const PongGame: React.FC<PongGameProps> = ({ settings, updateHighScore })
     
     let animationId: number;
     
-    const resizeCanvas = (): void => {
-      canvas.width = Math.min(window.innerWidth - 32, 800);
-      canvas.height = 400;
-    };
-    
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    canvas.width = 800;
+    canvas.height = 400;
 
     const handleBlur = (): void => setPaused(true);
     const handleFocus = (): void => setPaused(false);
@@ -322,7 +319,6 @@ export const PongGame: React.FC<PongGameProps> = ({ settings, updateHighScore })
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('keydown', handleKeyboard);
-      window.removeEventListener('resize', resizeCanvas);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
     };
@@ -404,12 +400,17 @@ export const PongGame: React.FC<PongGameProps> = ({ settings, updateHighScore })
         <span className={`text-red-400 transition-transform ${aiFlash ? 'scale-125' : ''}`}>{aiScore}</span>
       </div>
 
-      <FadingCanvas active={!gameOver}>
-        <canvas
-          ref={canvasRef}
-          className="border-2 border-blue-500 rounded-lg shadow-lg shadow-blue-500/50 cursor-none touch-none"
-        />
-      </FadingCanvas>
+      <ResponsiveCanvas
+        width={CANVAS_CONFIG.pong.width}
+        height={CANVAS_CONFIG.pong.height}
+      >
+        <FadingCanvas active={!gameOver}>
+          <canvas
+            ref={canvasRef}
+            className="border-2 border-blue-500 rounded-lg shadow-lg shadow-blue-500/50 cursor-none touch-none"
+          />
+        </FadingCanvas>
+      </ResponsiveCanvas>
       <GameOverBanner show={gameOver} />
       
       <div className="mt-4 flex gap-2">

@@ -4,6 +4,8 @@ import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
+import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
+import { CANVAS_CONFIG } from "../../core/CanvasConfig";
 
 interface Position {
   x: number;
@@ -75,14 +77,8 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
     if (!ctx) return;
     let animationId: number;
     
-    const resizeCanvas = () => {
-      const size = Math.min(window.innerWidth - 32, 400);
-      canvas.width = size;
-      canvas.height = size;
-    };
-    
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    canvas.width = 400;
+    canvas.height = 400;
 
     const handleBlur = () => setPaused(true);
     const handleFocus = () => setPaused(false);
@@ -358,7 +354,6 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
         speedTimeoutRef.current = null;
       }
       window.removeEventListener('keydown', handleInput);
-      window.removeEventListener('resize', resizeCanvas);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
     };
@@ -488,15 +483,20 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
         )}
       </div>
       
-      <FadingCanvas active={!gameOver}>
-        <canvas
-          ref={canvasRef}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          className="border-2 border-green-500 rounded-lg shadow-lg shadow-green-500/50 touch-none"
-        />
-      </FadingCanvas>
+      <ResponsiveCanvas
+        width={CANVAS_CONFIG.snake.width}
+        height={CANVAS_CONFIG.snake.height}
+      >
+        <FadingCanvas active={!gameOver}>
+          <canvas
+            ref={canvasRef}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            className="border-2 border-green-500 rounded-lg shadow-lg shadow-green-500/50 touch-none"
+          />
+        </FadingCanvas>
+      </ResponsiveCanvas>
       <GameOverBanner show={gameOver} />
       
       <div className="mt-4 flex gap-2">

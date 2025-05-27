@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
+import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
+import { CANVAS_CONFIG } from "../../core/CanvasConfig";
 
 
 
@@ -155,13 +157,8 @@ export const SpaceInvadersGame: React.FC<SpaceInvadersGameProps> = ({ settings, 
     
     let animationId: number;
     
-    const resizeCanvas = () => {
-      canvas.width = Math.min(window.innerWidth - 32, 800);
-      canvas.height = 600;
-    };
-    
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    canvas.width = CANVAS_CONFIG.spaceInvaders.width;
+    canvas.height = CANVAS_CONFIG.spaceInvaders.height;
 
     const handleBlur = () => setPaused(true);
     const handleFocus = () => setPaused(false);
@@ -735,7 +732,6 @@ export const SpaceInvadersGame: React.FC<SpaceInvadersGameProps> = ({ settings, 
       }
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('resize', resizeCanvas);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
       canvas.removeEventListener('mousemove', handleMouseMove);
@@ -808,11 +804,16 @@ export const SpaceInvadersGame: React.FC<SpaceInvadersGameProps> = ({ settings, 
           </div>
         </div>
         
-        <canvas
-          ref={canvasRef}
-          className="border-2 border-gray-600 rounded-lg bg-black mx-auto block"
-          style={{ maxWidth: '100%', height: 'auto' }}
-        />
+        <ResponsiveCanvas
+          width={CANVAS_CONFIG.spaceInvaders.width}
+          height={CANVAS_CONFIG.spaceInvaders.height}
+        >
+          <canvas
+            ref={canvasRef}
+            className="border-2 border-gray-600 rounded-lg bg-black mx-auto block"
+            style={{ maxWidth: '100%', height: 'auto' }}
+          />
+        </ResponsiveCanvas>
         
         <div className="mt-4 text-center text-sm text-gray-400">
           <p>Arrow Keys/WASD to move • Mouse/Touch to follow • Hold Space/Click to auto-fire • P to pause</p>

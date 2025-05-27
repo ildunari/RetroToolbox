@@ -219,6 +219,7 @@ If upgrading from the old monolithic version (prior to modular architecture):
 - Check Tailwind CSS responsive classes
 - Test landscape/portrait orientation changes
 - Use ResponsiveCanvas component for consistent scaling
+- Define base canvas sizes in `src/core/CanvasConfig.ts` and import values in each game
 - Check viewport meta tag configuration
 
 **Port conflicts:**
