@@ -44,7 +44,7 @@ function App() {
   const GameComponent = selectedGame ? gameComponents[selectedGame] : null;
   const currentGame = games.find(g => g.id === selectedGame);
 
-  // Prevent page scrolling with arrow keys and spacebar
+  // Prevent default scrolling gestures only when a game is active
   useEffect(() => {
     const preventScroll = (e) => {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
@@ -60,16 +60,18 @@ function App() {
       e.preventDefault();
     };
 
-    window.addEventListener('keydown', preventScroll);
-    window.addEventListener('wheel', preventScrollWheel, { passive: false });
-    window.addEventListener('touchmove', preventTouchMove, { passive: false });
+    if (selectedGame) {
+      window.addEventListener('keydown', preventScroll);
+      window.addEventListener('wheel', preventScrollWheel, { passive: false });
+      window.addEventListener('touchmove', preventTouchMove, { passive: false });
+    }
 
     return () => {
       window.removeEventListener('keydown', preventScroll);
       window.removeEventListener('wheel', preventScrollWheel);
       window.removeEventListener('touchmove', preventTouchMove);
     };
-  }, []);
+  }, [selectedGame]);
 
   // Cleanup InputManager on unmount
   useEffect(() => {
