@@ -764,9 +764,9 @@ export const SpaceInvadersGame: React.FC<SpaceInvadersGameProps> = ({ settings, 
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
-      <div className="relative max-w-4xl w-full">
-        <div className="flex justify-between items-center mb-4">
+    <div className="flex flex-col items-center justify-center bg-gray-900 text-white p-2 h-full">
+      <div className="relative max-w-4xl w-full flex flex-col h-full">
+        <div className="flex justify-between items-center mb-2">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1">
               <span className="text-sm font-semibold">Score:</span>
@@ -804,16 +804,18 @@ export const SpaceInvadersGame: React.FC<SpaceInvadersGameProps> = ({ settings, 
           </div>
         </div>
         
-        <ResponsiveCanvas
-          width={CANVAS_CONFIG.spaceInvaders.width}
-          height={CANVAS_CONFIG.spaceInvaders.height}
-        >
-          <canvas
-            ref={canvasRef}
-            className="border-2 border-gray-600 rounded-lg bg-black mx-auto block"
-            style={{ maxWidth: '100%', height: 'auto' }}
-          />
-        </ResponsiveCanvas>
+        <div className="flex-grow flex items-center justify-center w-full min-h-0">
+          <ResponsiveCanvas
+            width={CANVAS_CONFIG.spaceInvaders.width}
+            height={CANVAS_CONFIG.spaceInvaders.height}
+          >
+            <canvas
+              ref={canvasRef}
+              className="border-2 border-gray-600 rounded-lg bg-black mx-auto block"
+              style={{ maxWidth: '100%', height: 'auto' }}
+            />
+          </ResponsiveCanvas>
+        </div>
         
         <div className="mt-4 text-center text-sm text-gray-400">
           <p>Arrow Keys/WASD to move • Mouse/Touch to follow • Hold Space/Click to auto-fire • P to pause</p>

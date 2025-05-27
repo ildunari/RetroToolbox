@@ -461,8 +461,8 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
   }, []);
 
   return (
-    <div className="flex flex-col items-center p-4">
-      <div className="mb-4 flex items-center gap-4 flex-wrap justify-center">
+    <div className="h-full flex flex-col items-center p-2">
+      <div className="mb-2 flex items-center gap-4 flex-wrap justify-center">
         <div className={`text-white font-bold text-xl transition-transform ${scoreFlash ? 'scale-125 text-yellow-400' : ''}`}>Score: {score}</div>
         <div className="flex items-center gap-1">
           {Array.from({ length: lives }).map((_, i) => (
@@ -483,10 +483,11 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
         )}
       </div>
       
-      <ResponsiveCanvas
-        width={CANVAS_CONFIG.snake.width}
-        height={CANVAS_CONFIG.snake.height}
-      >
+      <div className="flex-grow flex items-center justify-center w-full min-h-0">
+        <ResponsiveCanvas
+          width={CANVAS_CONFIG.snake.width}
+          height={CANVAS_CONFIG.snake.height}
+        >
         <FadingCanvas active={!gameOver}>
           <canvas
             ref={canvasRef}
@@ -496,8 +497,9 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
             className="border-2 border-green-500 rounded-lg shadow-lg shadow-green-500/50 touch-none"
           />
         </FadingCanvas>
-      </ResponsiveCanvas>
-      <GameOverBanner show={gameOver} />
+        </ResponsiveCanvas>
+        <GameOverBanner show={gameOver} />
+      </div>
       
       <div className="mt-4 flex gap-2">
         <button

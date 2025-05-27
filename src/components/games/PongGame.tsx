@@ -390,28 +390,30 @@ export const PongGame: React.FC<PongGameProps> = ({ settings, updateHighScore })
   };
 
   return (
-    <div className="flex flex-col items-center p-4">
-      <div className="mb-4 text-center">
-        <p className="text-gray-400 text-sm mb-2">First to 7 wins!</p>
+    <div className="flex flex-col items-center h-full p-2">
+      <div className="text-center">
+        <p className="text-gray-400 text-sm">First to 7 wins!</p>
       </div>
 
-      <div className="flex justify-between w-full max-w-xl mb-2 text-4xl font-mono font-bold">
+      <div className="flex justify-between w-full max-w-xl text-4xl font-mono font-bold">
         <span className={`text-blue-400 transition-transform ${playerFlash ? 'scale-125' : ''}`}>{playerScore}</span>
         <span className={`text-red-400 transition-transform ${aiFlash ? 'scale-125' : ''}`}>{aiScore}</span>
       </div>
 
-      <ResponsiveCanvas
-        width={CANVAS_CONFIG.pong.width}
-        height={CANVAS_CONFIG.pong.height}
-      >
+      <div className="flex-grow flex items-center justify-center w-full min-h-0">
+        <ResponsiveCanvas
+          width={CANVAS_CONFIG.pong.width}
+          height={CANVAS_CONFIG.pong.height}
+        >
         <FadingCanvas active={!gameOver}>
           <canvas
             ref={canvasRef}
             className="border-2 border-blue-500 rounded-lg shadow-lg shadow-blue-500/50 cursor-none touch-none"
           />
         </FadingCanvas>
-      </ResponsiveCanvas>
-      <GameOverBanner show={gameOver} />
+        </ResponsiveCanvas>
+        <GameOverBanner show={gameOver} />
+      </div>
       
       <div className="mt-4 flex gap-2">
         <button

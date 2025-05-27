@@ -15,7 +15,7 @@ export const ResponsiveCanvas: React.FC<ResponsiveCanvasProps> = ({
   className = '',
   onResize,
   maintainAspectRatio = true,
-  maxScale = 1.5,
+  maxScale = 2.5,
   children
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -35,7 +35,7 @@ export const ResponsiveCanvas: React.FC<ResponsiveCanvasProps> = ({
     
     // Use the smaller of container size or viewport size
     const availableWidth = Math.min(containerRect.width, viewportWidth);
-    const availableHeight = Math.min(containerRect.height, viewportHeight - 100); // 100px for mobile UI
+    const availableHeight = Math.min(containerRect.height, viewportHeight);
 
     if (maintainAspectRatio) {
       const aspectRatio = width / height;

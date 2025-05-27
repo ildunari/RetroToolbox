@@ -442,8 +442,8 @@ export const BreakoutGame: React.FC<BreakoutGameProps> = ({ settings, updateHigh
   const remaining = gameRef.current.bricks.length;
 
   return (
-    <div className="flex flex-col items-center p-4">
-      <div className="mb-4 flex items-center gap-4 flex-wrap justify-center">
+    <div className="flex flex-col items-center p-2 h-full">
+      <div className="mb-2 flex items-center gap-4 flex-wrap justify-center">
         <div className={`text-white font-bold text-xl transition-transform ${scoreFlash ? 'scale-125 text-yellow-400' : ''}`}>Score: {score}</div>
         <div className="text-white font-bold text-xl">Level: {level}</div>
         <div className="text-white font-bold text-xl">Bricks Left: {remaining}</div>
@@ -454,18 +454,20 @@ export const BreakoutGame: React.FC<BreakoutGameProps> = ({ settings, updateHigh
         </div>
       </div>
       
-      <ResponsiveCanvas
-        width={CANVAS_CONFIG.breakout.width}
-        height={CANVAS_CONFIG.breakout.height}
-      >
-        <FadingCanvas active={!gameOver && !transitioning} slide={transitioning}>
-          <canvas
-            ref={canvasRef}
-            className="border-2 border-red-500 rounded-lg shadow-lg shadow-red-500/50 cursor-none touch-none"
-          />
-        </FadingCanvas>
-      </ResponsiveCanvas>
-      <GameOverBanner show={gameOver} />
+      <div className="flex-grow flex items-center justify-center w-full min-h-0">
+        <ResponsiveCanvas
+          width={CANVAS_CONFIG.breakout.width}
+          height={CANVAS_CONFIG.breakout.height}
+        >
+          <FadingCanvas active={!gameOver && !transitioning} slide={transitioning}>
+            <canvas
+              ref={canvasRef}
+              className="border-2 border-red-500 rounded-lg shadow-lg shadow-red-500/50 cursor-none touch-none"
+            />
+          </FadingCanvas>
+        </ResponsiveCanvas>
+        <GameOverBanner show={gameOver} />
+      </div>
       
       <div className="mt-4 flex gap-2">
         <button
