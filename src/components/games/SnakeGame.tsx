@@ -54,6 +54,7 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
   const animationIdRef = useRef<number | null>(null);
   const speedTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scoreFlashTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   
   const gameRef = useRef<GameState>({
     snake: [{ x: 10, y: 10 }],
@@ -363,21 +364,7 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
     };
   }, [paused, gameOver, lives, score, powerUps, settings.difficulty, updateHighScore]);
 
-  const handleTouch = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (gameOver) return;
-    
-    const touch = e.touches[0];
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-    
-    const dx = x - centerX;
-    const dy = y - centerY;
-    
+  const updateDirectionByDelta = (dx: number, dy: number) => {
     const game = gameRef.current;
     if (Math.abs(dx) > Math.abs(dy)) {
       if (game.direction.x === 0) {
@@ -388,6 +375,47 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
         game.nextDirection = dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 };
       }
     }
+  };
+
+  const updateDirectionFromPos = (x: number, y: number) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    updateDirectionByDelta(x - centerX, y - centerY);
+  };
+
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    if (!gameOver) {
+      updateDirectionFromPos(touch.clientX, touch.clientY);
+    }
+  }, [gameOver]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (gameOver || !touchStartRef.current) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - touchStartRef.current.x;
+    const dy = touch.clientY - touchStartRef.current.y;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+      updateDirectionByDelta(dx, dy);
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    }
+  }, [gameOver]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (gameOver || !touchStartRef.current) {
+      touchStartRef.current = null;
+      return;
+    }
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - touchStartRef.current.x;
+    const dy = touch.clientY - touchStartRef.current.y;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+      updateDirectionByDelta(dx, dy);
+    }
+    touchStartRef.current = null;
   }, [gameOver]);
 
   const restart = () => {
@@ -463,7 +491,9 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
       <FadingCanvas active={!gameOver}>
         <canvas
           ref={canvasRef}
-          onTouchStart={handleTouch}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
           className="border-2 border-green-500 rounded-lg shadow-lg shadow-green-500/50 touch-none"
         />
       </FadingCanvas>
