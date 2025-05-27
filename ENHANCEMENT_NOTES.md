@@ -163,3 +163,4 @@ const getThemeForLevel = (level: number) => {
 - Game systems should extend existing core modules
 - Use existing hooks pattern for state management
 - Maintain TypeScript interfaces throughout
+- Canvas sizing is centralized in `src/core/CanvasConfig.ts` and used with `ResponsiveCanvas`

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
+import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
+import { CANVAS_CONFIG } from "../../core/CanvasConfig";
 
 
 
@@ -469,13 +471,8 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
     
     let animationId: number;
     
-    const resizeCanvas = () => {
-      canvas.width = BOARD_WIDTH * CELL_SIZE + 200; // Extra space for UI
-      canvas.height = BOARD_HEIGHT * CELL_SIZE;
-    };
-    
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    canvas.width = CANVAS_CONFIG.tetris.width;
+    canvas.height = CANVAS_CONFIG.tetris.height;
 
     const handleBlur = () => setPaused(true);
     const handleFocus = () => setPaused(false);
@@ -916,7 +913,6 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('resize', resizeCanvas);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
       canvas.removeEventListener('touchstart', handleTouchStart);
@@ -980,11 +976,16 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
           </div>
         </div>
         
-        <canvas
-          ref={canvasRef}
-          className="border-2 border-gray-600 rounded-lg bg-black mx-auto block"
-          style={{ maxWidth: '100%', height: 'auto' }}
-        />
+        <ResponsiveCanvas
+          width={CANVAS_CONFIG.tetris.width}
+          height={CANVAS_CONFIG.tetris.height}
+        >
+          <canvas
+            ref={canvasRef}
+            className="border-2 border-gray-600 rounded-lg bg-black mx-auto block"
+            style={{ maxWidth: '100%', height: 'auto' }}
+          />
+        </ResponsiveCanvas>
         
         <div className="mt-4 text-center text-sm text-gray-400">
           <p>Arrow Keys/WASD to move • Tap to rotate • Swipe down to drop</p>

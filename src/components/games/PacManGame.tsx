@@ -4,6 +4,8 @@ import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from '../ui/FadingCanvas';
 import { GameOverBanner } from '../ui/GameOverBanner';
+import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
+import { CANVAS_CONFIG } from "../../core/CanvasConfig";
 
 // TypeScript interfaces
 interface Position {
@@ -403,12 +405,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     
     let animationId: number;
     
-    const resizeCanvas = () => {
-      canvas.width = MAZE_WIDTH * CELL_SIZE;
-      canvas.height = MAZE_HEIGHT * CELL_SIZE;
-    };
-    
-    resizeCanvas();
+    canvas.width = CANVAS_CONFIG.pacman.width;
+    canvas.height = CANVAS_CONFIG.pacman.height;
     initializeGame();
     
     const gameLoop = (timestamp: number) => {
@@ -1062,11 +1060,12 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-4">
       <div className="relative bg-black rounded-lg shadow-2xl overflow-hidden">
-        <FadingCanvas 
-          ref={canvasRef} 
-          width={MAZE_WIDTH * CELL_SIZE}
-          height={MAZE_HEIGHT * CELL_SIZE}
-        />
+        <ResponsiveCanvas
+          width={CANVAS_CONFIG.pacman.width}
+          height={CANVAS_CONFIG.pacman.height}
+        >
+          <FadingCanvas ref={canvasRef} />
+        </ResponsiveCanvas>
         
         {gameOver && <GameOverBanner score={score} onRestart={resetGame} />}
         
