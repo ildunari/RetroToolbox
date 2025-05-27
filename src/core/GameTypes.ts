@@ -26,21 +26,6 @@ export interface GameInfo {
   description: string;
 }
 
-export interface GameProps {
-  settings: GameSettings;
-  updateHighScore: (game: GameId, score: number) => void;
-}
-
-export interface GameState {
-  score: number;
-  lives: number;
-  level: number;
-  gameOver: boolean;
-  paused: boolean;
-}
-
-export type GameId = 'snake' | 'pong' | 'breakout' | 'tetris' | 'spaceInvaders' | 'pacman' | 'stellarDrift';
-
 export interface GameComponentProps {
   settings: GameSettings;
   onScoreUpdate: (gameId: string, score: number) => void;
@@ -74,43 +59,4 @@ export interface Brick {
   hits: number;
   maxHits: number;
   powerUp?: string | null;
-}
-
-// Core System Interfaces
-export interface CoreSystemsConfig {
-  soundManager: {
-    poolSize: number;
-    volume: number;
-    enabled: boolean;
-  };
-  particleSystem: {
-    maxParticles: number;
-    poolSize: number;
-    enableLayers: boolean;
-  };
-  inputManager: {
-    bufferTime: number;
-    gamepadDeadzone: number;
-    gestureThreshold: number;
-  };
-}
-
-export interface AudioContextState {
-  initialized: boolean;
-  suspended: boolean;
-  sampleRate: number;
-}
-
-export interface ParticleStats {
-  active: number;
-  pooled: number;
-  total: number;
-  layerCounts: Record<number, number>;
-}
-
-export interface InputState {
-  keyboard: Record<string, boolean>;
-  mouse: { x: number; y: number; buttons: boolean[] };
-  touch: { active: boolean; gestureType?: string };
-  gamepad: { connected: boolean; index?: number };
 }

@@ -1,26 +1,31 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Star, Zap, Shield, Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle, particleManager } from '../../core/ParticleSystem';
+import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
-import { GameProps } from '../../core/GameTypes';
 
 interface Position {
   x: number;
   y: number;
 }
 
-interface PowerUp extends Position {
-  type: 'speed' | 'points' | 'shield' | 'shrink';
-  lifetime: number;
+interface Direction {
+  x: number;
+  y: number;
 }
 
-interface GameRef {
+interface PowerUp {
+  x: number;
+  y: number;
+  type: 'speed' | 'points' | 'shield' | 'shrink';
+  lifeTime: number;
+}
+
+interface GameState {
   snake: Position[];
-  direction: Position;
-  nextDirection: Position;
-  inputBuffer: Position[];
+  direction: Direction;
+  nextDirection: Direction;
   food: Position;
   particles: Particle[];
   speed: number;
@@ -28,39 +33,32 @@ interface GameRef {
   gridSize: number;
 }
 
-export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
+interface Settings {
+  difficulty: string;
+}
+
+interface SnakeGameProps {
+  settings: Settings;
+  updateHighScore: (game: string, score: number) => void;
+}
+
+export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [score, setScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [scoreFlash, setScoreFlash] = useState(false);
-  const prevScore = useRef(0);
+  const [score, setScore] = useState<number>(0);
+  const [gameOver, setGameOver] = useState<boolean>(false);
+  const [paused, setPaused] = useState<boolean>(false);
+  const [scoreFlash, setScoreFlash] = useState<boolean>(false);
+  const prevScore = useRef<number>(0);
   const [powerUps, setPowerUps] = useState<PowerUp[]>([]);
-  const [lives, setLives] = useState(3);
-  const lastFrameRef = useRef(0);
-
-  // Refs for mutable state used inside event callbacks
-  const pausedRef = useRef(paused);
-  const gameOverRef = useRef(gameOver);
-  const scoreRef = useRef(score);
-  const powerUpsRef = useRef(powerUps);
-  const livesRef = useRef(lives);
-  const updateHighScoreRef = useRef(updateHighScore);
-  const difficultyRef = useRef(settings.difficulty);
-
-  useEffect(() => { pausedRef.current = paused; }, [paused]);
-  useEffect(() => { gameOverRef.current = gameOver; }, [gameOver]);
-  useEffect(() => { scoreRef.current = score; }, [score]);
-  useEffect(() => { powerUpsRef.current = powerUps; }, [powerUps]);
-  useEffect(() => { livesRef.current = lives; }, [lives]);
-  useEffect(() => { updateHighScoreRef.current = updateHighScore; }, [updateHighScore]);
-  useEffect(() => { difficultyRef.current = settings.difficulty; }, [settings.difficulty]);
+  const [lives, setLives] = useState<number>(3);
+  const animationIdRef = useRef<number | null>(null);
+  const speedTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const scoreFlashTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  const gameRef = useRef<GameRef>({
+  const gameRef = useRef<GameState>({
     snake: [{ x: 10, y: 10 }],
     direction: { x: 1, y: 0 },
     nextDirection: { x: 1, y: 0 },
-    inputBuffer: [],
     food: { x: 15, y: 15 },
     particles: [],
     speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
@@ -73,84 +71,41 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
     if (!canvas) return;
     
     const ctx = canvas.getContext('2d');
-    let animationId;
+    if (!ctx) return;
+    let animationId: number;
     
     const resizeCanvas = () => {
-      const devicePixelRatio = window.devicePixelRatio || 1;
-      
-      // Get full viewport dimensions
-      const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
-      const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
-      
-      // Use much more of the screen - only leave 80px for header and minimal padding
-      const availableWidth = vw - 16;
-      const availableHeight = vh - 80;
-      
-      // Square canvas - use the smaller dimension but at least 80% of available space
-      const maxSize = Math.min(availableWidth, availableHeight);
-      const displaySize = Math.max(maxSize * 0.85, Math.min(300, maxSize));
-      const size = Math.floor(displaySize);
-      
-      canvas.width = size * devicePixelRatio;
-      canvas.height = size * devicePixelRatio;
-      canvas.style.width = `${size}px`;
-      canvas.style.height = `${size}px`;
-      
-      // Reset any existing transforms to avoid cumulative scaling on resize
-      if ('setTransform' in ctx) {
-        ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-      } else {
-        ctx.resetTransform();
-        ctx.scale(devicePixelRatio, devicePixelRatio);
-      }
+      const size = Math.min(window.innerWidth - 32, 400);
+      canvas.width = size;
+      canvas.height = size;
     };
     
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
-    window.addEventListener('orientationchange', resizeCanvas);
-
-    // Prevent scrolling when in game
-    const preventScroll = (e) => {
-      if (e.target === canvas || canvas.contains(e.target)) {
-        e.preventDefault();
-      }
-    };
-
-    document.addEventListener('touchstart', preventScroll, { passive: false });
-    document.addEventListener('touchend', preventScroll, { passive: false });
-    document.addEventListener('touchmove', preventScroll, { passive: false });
 
     const handleBlur = () => setPaused(true);
     const handleFocus = () => setPaused(false);
-    window.addEventListener('blur', handleBlur);
-    window.addEventListener('focus', handleFocus);
-
-    const handleInput = (e) => {
-      if (gameOverRef.current) return;
+    
+    const handleInput = (e: KeyboardEvent) => {
+      if (gameOver) return;
       
       const game = gameRef.current;
-      let newDirection = null;
-      
       switch(e.key) {
         case 'ArrowUp':
         case 'w':
-          e.preventDefault();
-          if (game.direction.y === 0) newDirection = { x: 0, y: -1 };
+          if (game.direction.y === 0) game.nextDirection = { x: 0, y: -1 };
           break;
         case 'ArrowDown':
         case 's':
-          e.preventDefault();
-          if (game.direction.y === 0) newDirection = { x: 0, y: 1 };
+          if (game.direction.y === 0) game.nextDirection = { x: 0, y: 1 };
           break;
         case 'ArrowLeft':
         case 'a':
-          e.preventDefault();
-          if (game.direction.x === 0) newDirection = { x: -1, y: 0 };
+          if (game.direction.x === 0) game.nextDirection = { x: -1, y: 0 };
           break;
         case 'ArrowRight':
         case 'd':
-          e.preventDefault();
-          if (game.direction.x === 0) newDirection = { x: 1, y: 0 };
+          if (game.direction.x === 0) game.nextDirection = { x: 1, y: 0 };
           break;
         case ' ':
         case 'Escape':
@@ -158,121 +113,51 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
           setPaused(p => !p);
           break;
       }
-      
-      // Add to input buffer if valid direction (max 2 inputs buffered)
-      if (newDirection && game.inputBuffer.length < 2) {
-        game.inputBuffer.push(newDirection);
-      }
     };
 
-    const handleTouch = (e) => {
-      if (gameOverRef.current) return;
-      
-      e.preventDefault();
-      e.stopPropagation();
-      
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.touches[0] || e.changedTouches[0];
-      const x = touch.clientX - rect.left;
-      const y = touch.clientY - rect.top;
-      const centerX = rect.width / 2;
-      const centerY = rect.height / 2;
-      
-      const dx = x - centerX;
-      const dy = y - centerY;
-      
-      // Require minimum distance to avoid accidental inputs
-      const minDistance = 30;
-      if (Math.abs(dx) < minDistance && Math.abs(dy) < minDistance) return;
-      
-      const game = gameRef.current;
-      if (Math.abs(dx) > Math.abs(dy)) {
-        // Horizontal movement
-        if (dx > 0 && game.direction.x === 0) {
-          game.nextDirection = { x: 1, y: 0 }; // Right
-        } else if (dx < 0 && game.direction.x === 0) {
-          game.nextDirection = { x: -1, y: 0 }; // Left
-        }
-      } else {
-        // Vertical movement
-        if (dy > 0 && game.direction.y === 0) {
-          game.nextDirection = { x: 0, y: 1 }; // Down
-        } else if (dy < 0 && game.direction.y === 0) {
-          game.nextDirection = { x: 0, y: -1 }; // Up
-        }
-      }
-    };
-
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
     window.addEventListener('keydown', handleInput);
-    canvas.addEventListener('touchstart', handleTouch, { passive: false });
-    canvas.addEventListener('touchend', handleTouch, { passive: false });
 
     const spawnPowerUp = () => {
       if (Math.random() < 0.3 && powerUps.length < 2) {
-        const types = ['speed', 'points', 'shield', 'shrink'];
+        const types: PowerUp['type'][] = ['speed', 'points', 'shield', 'shrink'];
         const type = types[Math.floor(Math.random() * types.length)];
-        const powerUp = {
+        const powerUp: PowerUp = {
           x: Math.floor(Math.random() * gameRef.current.gridSize),
           y: Math.floor(Math.random() * gameRef.current.gridSize),
           type,
-          lifetime: 10000
+          lifeTime: 10000
         };
         setPowerUps(prev => [...prev, powerUp]);
       }
     };
 
-    const createParticles = (x, y, color, count = 10) => {
+    const createParticles = (x: number, y: number, color: string, count: number = 10) => {
       const particles = gameRef.current.particles;
       for (let i = 0; i < count; i++) {
         const angle = (Math.PI * 2 * i) / count;
-        const particle = particleManager.addParticle({
-          x: x * (canvas.width / gameRef.current.gridSize) + 10,
-          y: y * (canvas.height / gameRef.current.gridSize) + 10,
-          vx: Math.cos(angle) * 100,
-          vy: Math.sin(angle) * 100,
-          color: color,
-          life: 0.5,
-          size: 2
-        });
-        if (particle) {
-          particles.push(particle);
-        }
+        particles.push(new Particle(
+          x * (canvas.width / gameRef.current.gridSize) + 10,
+          y * (canvas.height / gameRef.current.gridSize) + 10,
+          Math.cos(angle) * 100,
+          Math.sin(angle) * 100,
+          color,
+          0.5
+        ));
       }
     };
 
-    const gameLoop = (timestamp) => {
-      const frameDelta = timestamp - lastFrameRef.current;
-      lastFrameRef.current = timestamp;
-
-      // Decrease lifetime of power-ups and remove expired ones
-      setPowerUps(prev =>
-        prev
-          .map(p => ({ ...p, lifetime: p.lifetime - frameDelta }))
-          .filter(p => p.lifetime > 0)
-      );
-
-      if (!pausedRef.current && !gameOverRef.current) {
+    const gameLoop = (timestamp: DOMHighResTimeStamp) => {
+      if (!paused && !gameOver) {
         const deltaTime = timestamp - gameRef.current.lastUpdate;
         
         if (deltaTime >= gameRef.current.speed) {
           const game = gameRef.current;
           const snake = game.snake;
           
-          // First check nextDirection, then fall back to input buffer
-          if (game.nextDirection.x !== game.direction.x || game.nextDirection.y !== game.direction.y) {
-            // Validate nextDirection is valid (not opposite to current)
-            if ((game.nextDirection.x !== 0 && game.direction.x === 0) || 
-                (game.nextDirection.y !== 0 && game.direction.y === 0)) {
-              game.direction = game.nextDirection;
-            }
-          } else if (game.inputBuffer.length > 0) {
-            const bufferedDirection = game.inputBuffer.shift();
-            // Validate buffered direction is still valid
-            if ((bufferedDirection.x !== 0 && game.direction.x === 0) || 
-                (bufferedDirection.y !== 0 && game.direction.y === 0)) {
-              game.direction = bufferedDirection;
-            }
-          }
+          // Update direction
+          game.direction = game.nextDirection;
           
           // Calculate new head position
           const head = { ...snake[0] };
@@ -285,33 +170,9 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
           if (head.y < 0) head.y = game.gridSize - 1;
           if (head.y >= game.gridSize) head.y = 0;
 
-          snake.unshift(head);
-
-          // Check food collision
-          if (head.x === game.food.x && head.y === game.food.y) {
-            setScore(s => s + 10);
-            soundManager.playCollect();
-            createParticles(game.food.x, game.food.y, '#10b981', 15);
-
-            // Brief pause for food collection feedback
-            game.lastUpdate = timestamp + 50; // 50ms pause
-
-            // Spawn new food
-            do {
-              game.food = {
-                x: Math.floor(Math.random() * game.gridSize),
-                y: Math.floor(Math.random() * game.gridSize)
-              };
-            } while (snake.some(s => s.x === game.food.x && s.y === game.food.y));
-
-            spawnPowerUp();
-          } else {
-            snake.pop();
-          }
-
-          // Check self collision after potential tail removal
-          if (snake.slice(1).some(segment => segment.x === head.x && segment.y === head.y)) {
-            if (livesRef.current > 1) {
+          // Check self collision
+          if (snake.some(segment => segment.x === head.x && segment.y === head.y)) {
+            if (lives > 1) {
               setLives(l => l - 1);
               soundManager.playHit();
               createParticles(head.x, head.y, '#ef4444', 20);
@@ -322,56 +183,77 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
             } else {
               setGameOver(true);
               soundManager.playGameOver();
-              updateHighScoreRef.current('snake', scoreRef.current);
+              updateHighScore('snake', score);
               return;
             }
-          }
+          } else {
+            snake.unshift(head);            // Check food collision
+            if (head.x === game.food.x && head.y === game.food.y) {
+              setScore(s => s + 10);
+              soundManager.playCollect();
+              createParticles(game.food.x, game.food.y, '#10b981', 15);
+              
+              // Spawn new food
+              do {
+                game.food = {
+                  x: Math.floor(Math.random() * game.gridSize),
+                  y: Math.floor(Math.random() * game.gridSize)
+                };
+              } while (snake.some(s => s.x === game.food.x && s.y === game.food.y));
+              
+              spawnPowerUp();
+            } else {
+              snake.pop();
+            }
 
-          // Check power-up collision
-          setPowerUps(prev => {
-            const collected = prev.filter(p => {
-              if (head.x === p.x && head.y === p.y) {
-                soundManager.playPowerUp();
-                createParticles(p.x, p.y, '#f59e0b', 20);
-
-                switch(p.type) {
-                  case 'points':
-                    setScore(s => s + 50);
-                    break;
-                  case 'speed':
-                    game.speed = Math.max(50, game.speed - 20);
-                    setTimeout(() => game.speed = settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100, 5000);
-                    break;
-                  case 'shield':
-                    setLives(l => Math.min(5, l + 1));
-                    break;
-                  case 'shrink':
-                    if (snake.length > 3) {
-                      snake.splice(-2);
-                    }
-                    break;
+            // Check power-up collision
+            setPowerUps(prev => {
+              const collected = prev.filter(p => {
+                if (head.x === p.x && head.y === p.y) {
+                  soundManager.playPowerUp();
+                  createParticles(p.x, p.y, '#f59e0b', 20);
+                  
+                  switch(p.type) {
+                    case 'points':
+                      setScore(s => s + 50);
+                      break;
+                    case 'speed':
+                      game.speed = Math.max(50, game.speed - 20);
+                      // Clear existing timeout if any
+                      if (speedTimeoutRef.current) {
+                        clearTimeout(speedTimeoutRef.current);
+                      }
+                      speedTimeoutRef.current = setTimeout(() => {
+                        game.speed = settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100;
+                        speedTimeoutRef.current = null;
+                      }, 5000);
+                      break;
+                    case 'shield':
+                      setLives(l => Math.min(5, l + 1));
+                      break;
+                    case 'shrink':
+                      if (snake.length > 3) {
+                        snake.splice(-2);
+                      }
+                      break;
+                  }
+                  return false;
                 }
-                return false;
-              }
-              return true;
+                return true;
+              });
+              return collected;
             });
-            return collected;
-          });
+          }
           
           gameRef.current.lastUpdate = timestamp;
         }
       }
 
-      // Update particles with memory leak prevention
+      // Update particles
       gameRef.current.particles = gameRef.current.particles.filter(p => {
         p.update(0.016);
         return p.life > 0;
       });
-      
-      // Prevent memory leak - limit max particles
-      if (gameRef.current.particles.length > 100) {
-        gameRef.current.particles = gameRef.current.particles.slice(-50);
-      }
 
       // Draw
       ctx.fillStyle = '#0f172a';
@@ -439,7 +321,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
 
       // Draw power-ups
       powerUps.forEach(powerUp => {
-        const colors = {
+        const colors: Record<PowerUp['type'], string> = {
           speed: '#3b82f6',
           points: '#f59e0b',
           shield: '#8b5cf6',
@@ -460,128 +342,62 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       // Draw particles
       gameRef.current.particles.forEach(p => p.draw(ctx));
 
-      animationId = requestAnimationFrame(gameLoop);
+      animationIdRef.current = requestAnimationFrame(gameLoop);
     };
 
-    animationId = requestAnimationFrame(gameLoop);
+    animationIdRef.current = requestAnimationFrame(gameLoop);
 
     return () => {
-      cancelAnimationFrame(animationId);
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+        animationIdRef.current = null;
+      }
+      if (speedTimeoutRef.current) {
+        clearTimeout(speedTimeoutRef.current);
+        speedTimeoutRef.current = null;
+      }
       window.removeEventListener('keydown', handleInput);
       window.removeEventListener('resize', resizeCanvas);
-      window.removeEventListener('orientationchange', resizeCanvas);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
-      canvas.removeEventListener('touchstart', handleTouch);
-      canvas.removeEventListener('touchend', handleTouch);
-      document.removeEventListener('touchstart', preventScroll);
-      document.removeEventListener('touchend', preventScroll);
-      document.removeEventListener('touchmove', preventScroll);
     };
-  }, []);
+  }, [paused, gameOver, lives, score, powerUps, settings.difficulty, updateHighScore]);
 
-  // Touch and swipe handling
-  const touchStartRef = useRef(null);
-  const touchRef = useRef({ isDown: false, startX: 0, startY: 0, currentX: 0, currentY: 0 });
-
-  const handleTouchStart = useCallback((e) => {
-    e.preventDefault();
-    if (gameOverRef.current) return;
+  const handleTouch = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (gameOver) return;
     
     const touch = e.touches[0];
-    const rect = canvasRef.current.getBoundingClientRect();
-    touchRef.current = {
-      isDown: true,
-      startX: touch.clientX - rect.left,
-      startY: touch.clientY - rect.top,
-      currentX: touch.clientX - rect.left,
-      currentY: touch.clientY - rect.top
-    };
-    touchStartRef.current = Date.now();
-  }, []);
-
-  const handleTouchMove = useCallback((e) => {
-    e.preventDefault();
-    if (gameOverRef.current || !touchRef.current.isDown) return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
     
-    const touch = e.touches[0];
-    const rect = canvasRef.current.getBoundingClientRect();
-    touchRef.current.currentX = touch.clientX - rect.left;
-    touchRef.current.currentY = touch.clientY - rect.top;
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
     
-    // Real-time direction change for held touch
-    const dx = touchRef.current.currentX - touchRef.current.startX;
-    const dy = touchRef.current.currentY - touchRef.current.startY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    const dx = x - centerX;
+    const dy = y - centerY;
     
-    // Only change direction if moved a minimum distance
-    if (distance > 20) {
-      const game = gameRef.current;
-      if (Math.abs(dx) > Math.abs(dy)) {
-        // Horizontal movement
-        if (dx > 0 && game.direction.x !== -1) {
-          game.nextDirection = { x: 1, y: 0 };
-        } else if (dx < 0 && game.direction.x !== 1) {
-          game.nextDirection = { x: -1, y: 0 };
-        }
-      } else {
-        // Vertical movement
-        if (dy > 0 && game.direction.y !== -1) {
-          game.nextDirection = { x: 0, y: 1 };
-        } else if (dy < 0 && game.direction.y !== 1) {
-          game.nextDirection = { x: 0, y: -1 };
-        }
+    const game = gameRef.current;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      if (game.direction.x === 0) {
+        game.nextDirection = dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 };
       }
-      // Reset start position to current for continuous movement
-      touchRef.current.startX = touchRef.current.currentX;
-      touchRef.current.startY = touchRef.current.currentY;
-    }
-  }, []);
-
-  const handleTouchEnd = useCallback((e) => {
-    e.preventDefault();
-    if (gameOverRef.current || !touchRef.current.isDown) return;
-    
-    const touchDuration = Date.now() - touchStartRef.current;
-    const dx = touchRef.current.currentX - touchRef.current.startX;
-    const dy = touchRef.current.currentY - touchRef.current.startY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // Quick tap/swipe detection
-    if (touchDuration < 300 && distance > 10) {
-      const game = gameRef.current;
-      if (Math.abs(dx) > Math.abs(dy)) {
-        // Horizontal swipe
-        if (dx > 0 && game.direction.x !== -1) {
-          game.nextDirection = { x: 1, y: 0 };
-        } else if (dx < 0 && game.direction.x !== 1) {
-          game.nextDirection = { x: -1, y: 0 };
-        }
-      } else {
-        // Vertical swipe
-        if (dy > 0 && game.direction.y !== -1) {
-          game.nextDirection = { x: 0, y: 1 };
-        } else if (dy < 0 && game.direction.y !== 1) {
-          game.nextDirection = { x: 0, y: -1 };
-        }
+    } else {
+      if (game.direction.y === 0) {
+        game.nextDirection = dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 };
       }
-    } else if (touchDuration < 200 && distance < 10) {
-      // Quick tap to pause/resume
-      setPaused(p => !p);
     }
-    
-    touchRef.current.isDown = false;
-  }, []);
+  }, [gameOver]);
 
   const restart = () => {
     gameRef.current = {
       snake: [{ x: 10, y: 10 }],
       direction: { x: 1, y: 0 },
       nextDirection: { x: 1, y: 0 },
-      inputBuffer: [],
       food: { x: 15, y: 15 },
       particles: [],
-      speed: difficultyRef.current === 'easy' ? 150 : difficultyRef.current === 'hard' ? 80 : 100,
+      speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
       lastUpdate: 0,
       gridSize: 20
     };
@@ -591,15 +407,35 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
     setGameOver(false);
     setPaused(false);
   };
+  
   useEffect(() => {
     if (score > prevScore.current) {
       setScoreFlash(true);
-      const t = setTimeout(() => setScoreFlash(false), 300);
+      if (scoreFlashTimeoutRef.current) {
+        clearTimeout(scoreFlashTimeoutRef.current);
+      }
+      scoreFlashTimeoutRef.current = setTimeout(() => {
+        setScoreFlash(false);
+        scoreFlashTimeoutRef.current = null;
+      }, 300);
       prevScore.current = score;
-      return () => clearTimeout(t);
     }
   }, [score]);
 
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (scoreFlashTimeoutRef.current) {
+        clearTimeout(scoreFlashTimeoutRef.current);
+      }
+      if (speedTimeoutRef.current) {
+        clearTimeout(speedTimeoutRef.current);
+      }
+      if (animationIdRef.current) {
+        cancelAnimationFrame(animationIdRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="flex flex-col items-center p-4">
@@ -627,9 +463,7 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       <FadingCanvas active={!gameOver}>
         <canvas
           ref={canvasRef}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
+          onTouchStart={handleTouch}
           className="border-2 border-green-500 rounded-lg shadow-lg shadow-green-500/50 touch-none"
         />
       </FadingCanvas>
@@ -653,9 +487,10 @@ export const SnakeGame: React.FC<GameProps> = ({ settings, updateHighScore }) =>
       </div>
 
       <div className="mt-4 text-center">
-        <p className="text-gray-400 text-sm">Use WASD/Arrows, swipe, or hold & drag to move</p>
-        <p className="text-gray-400 text-xs">Quick tap to pause</p>
+        <p className="text-gray-400 text-sm">Use WASD/Arrows or touch to move</p>
       </div>
     </div>
   );
 };
+
+SnakeGame.displayName = 'SnakeGame';

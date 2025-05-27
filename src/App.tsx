@@ -8,9 +8,9 @@ import { BreakoutGame } from './components/games/BreakoutGame';
 import { TetrisGame } from './components/games/TetrisGame';
 import { SpaceInvadersGame } from './components/games/SpaceInvadersGame';
 import { PacManGame } from './components/games/PacManGame';
-import { StellarDriftGame } from './components/games/StellarDriftGame';
 import { useSettings } from './hooks/useSettings';
 import { useStats } from './hooks/useStats';
+import { cleanupInputManager } from './core/InputManager';
 
 const gameComponents = {
   snake: SnakeGame,
@@ -18,8 +18,7 @@ const gameComponents = {
   breakout: BreakoutGame,
   tetris: TetrisGame,
   spaceInvaders: SpaceInvadersGame,
-  pacman: PacManGame,
-  stellarDrift: StellarDriftGame
+  pacman: PacManGame
 };
 
 const games = [
@@ -28,8 +27,7 @@ const games = [
   { id: 'breakout', name: 'BRICK BREAKER', icon: '🧱' },
   { id: 'tetris', name: 'TETRIS REMIX', icon: '🔲' },
   { id: 'spaceInvaders', name: 'SPACE DEFENSE', icon: '👾' },
-  { id: 'pacman', name: 'PAC-MAN', icon: '🟡' },
-  { id: 'stellarDrift', name: 'STELLAR DRIFT', icon: '🚀' }
+  { id: 'pacman', name: 'PAC-MAN NEON', icon: '👻' }
 ];
 
 function App() {
@@ -70,6 +68,13 @@ function App() {
       window.removeEventListener('keydown', preventScroll);
       window.removeEventListener('wheel', preventScrollWheel);
       window.removeEventListener('touchmove', preventTouchMove);
+    };
+  }, []);
+
+  // Cleanup InputManager on unmount
+  useEffect(() => {
+    return () => {
+      cleanupInputManager();
     };
   }, []);
 

@@ -1,48 +1,84 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle, particleManager } from '../../core/ParticleSystem';
-import { GameProps } from '../../core/GameTypes';
+import { Particle } from '../../core/ParticleSystem';
 
-interface Enemy {
+
+
+// Type definitions
+interface Position {
   x: number;
   y: number;
-  type: 'basic' | 'fast' | 'tank';
+}
+
+interface GameObject extends Position {
+  width: number;
+  height: number;
+}
+
+interface Player extends GameObject {
+  speed: number;
+}
+
+interface Enemy extends GameObject {
+  type: number;
   alive: boolean;
   points: number;
+}
+
+interface Projectile extends GameObject {
+  speed: number;
+  isPlayer: boolean;
+}
+
+interface Barrier extends GameObject {
   health: number;
 }
 
-interface Bullet {
-  x: number;
-  y: number;
-  vy: number;
-  active: boolean;
+interface PowerUp extends GameObject {
+  type: 'rapidfire' | 'multishot' | 'shield';
+  speed: number;
 }
 
-interface GameRef {
-  player: { x: number; y: number; width: number; height: number; speed: number };
-  bullets: Bullet[];
-  alienBullets: Bullet[];
+interface GameState {
+  player: Player;
+  bullets: Projectile[];
+  alienBullets: Projectile[];
   aliens: Enemy[];
-  barriers: any[];
-  powerUps: any[];
+  barriers: Barrier[];
+  powerUps: PowerUp[];
   particles: Particle[];
+  lastUpdate: number;
   alienDirection: number;
-  lastShot: number;
-  alienShootTimer: number;
+  alienSpeed: number;
+  fireRate: number;
+  playerFireCooldown: number;
+  powerUpEndTime: number;
+  keys: Record<string, boolean>;
+  mouseX: number;
+  autoFire: boolean;
 }
 
-export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
-  const canvasRef = useRef(null);
+interface SpaceInvadersGameProps {
+  settings: {
+    soundEnabled: boolean;
+    volume: number;
+  };
+  updateHighScore: (game: string, score: number) => void;
+}
+
+export const SpaceInvadersGame: React.FC<SpaceInvadersGameProps> = ({ settings, updateHighScore }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
   const [level, setLevel] = useState(1);
-  const [powerUp, setPowerUp] = useState(null);
+  const [powerUp, setPowerUp] = useState<PowerUp['type'] | null>(null);
+  const animationIdRef = useRef<number | null>(null);
+  const gameOverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  const gameRef = useRef({
+  const gameRef = useRef<GameState>({
     player: { x: 400, y: 500, width: 40, height: 30, speed: 8 },
     bullets: [],
     alienBullets: [],
@@ -62,7 +98,7 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
   });
 
   const initAliens = useCallback(() => {
-    const aliens = [];
+    const aliens: Enemy[] = [];
     const rows = 4 + Math.floor(level / 3);
     const cols = 8 + Math.floor(level / 5);
     const alienWidth = 30;
@@ -87,7 +123,7 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
   }, [level]);
 
   const initBarriers = useCallback(() => {
-    const barriers = [];
+    const barriers: Barrier[] = [];
     const barrierCount = 4;
     const barrierWidth = 60;
     const barrierHeight = 40;
@@ -115,19 +151,13 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
     if (!canvas) return;
     
     const ctx = canvas.getContext('2d');
-    let animationId;
+    if (!ctx) return;
+    
+    let animationId: number;
     
     const resizeCanvas = () => {
-      const devicePixelRatio = window.devicePixelRatio || 1;
-      const displayWidth = Math.min(window.innerWidth - 32, 800);
-      const displayHeight = 600;
-      
-      canvas.width = displayWidth * devicePixelRatio;
-      canvas.height = displayHeight * devicePixelRatio;
-      canvas.style.width = `${displayWidth}px`;
-      canvas.style.height = `${displayHeight}px`;
-      
-      ctx.scale(devicePixelRatio, devicePixelRatio);
+      canvas.width = Math.min(window.innerWidth - 32, 800);
+      canvas.height = 600;
     };
     
     resizeCanvas();
@@ -135,16 +165,14 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
 
     const handleBlur = () => setPaused(true);
     const handleFocus = () => setPaused(false);
-    window.addEventListener('blur', handleBlur);
-    window.addEventListener('focus', handleFocus);
 
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (gameOver) return;
       gameRef.current.keys[e.key] = true;
       
       if (e.key === 'p' || e.key === 'Escape') {
         e.preventDefault();
-        setPaused(!paused);
+        setPaused(prev => !prev);
       }
       if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') {
         e.preventDefault();
@@ -152,48 +180,56 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
       }
     };
 
-    const handleKeyUp = (e) => {
+    const handleKeyUp = (e: KeyboardEvent) => {
       gameRef.current.keys[e.key] = false;
       if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') {
         gameRef.current.autoFire = false;
       }
     };
 
-    const handleMouseMove = (e) => {
+    const handleMouseMove = (e: MouseEvent) => {
       if (gameOver) return;
-      const rect = canvas.getBoundingClientRect();
-      gameRef.current.mouseX = e.clientX - rect.left;
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        gameRef.current.mouseX = e.clientX - rect.left;
+      }
     };
 
-    const handleMouseDown = (e) => {
+    const handleMouseDown = (e: MouseEvent) => {
       if (gameOver) return;
       gameRef.current.autoFire = true;
     };
 
-    const handleMouseUp = (e) => {
+    const handleMouseUp = (e: MouseEvent) => {
       gameRef.current.autoFire = false;
     };
 
-    const handleTouchMove = (e) => {
+    const handleTouchMove = (e: TouchEvent) => {
       if (gameOver) return;
       e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      gameRef.current.mouseX = e.touches[0].clientX - rect.left;
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        gameRef.current.mouseX = e.touches[0].clientX - rect.left;
+      }
     };
 
-    const handleTouchStart = (e) => {
+    const handleTouchStart = (e: TouchEvent) => {
       if (gameOver) return;
       e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      gameRef.current.mouseX = e.touches[0].clientX - rect.left;
-      gameRef.current.autoFire = true;
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        gameRef.current.mouseX = e.touches[0].clientX - rect.left;
+        gameRef.current.autoFire = true;
+      }
     };
 
-    const handleTouchEnd = (e) => {
+    const handleTouchEnd = (e: TouchEvent) => {
       e.preventDefault();
       gameRef.current.autoFire = false;
     };
 
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     canvas.addEventListener('mousemove', handleMouseMove);
@@ -203,7 +239,7 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
     canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
     canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
 
-    const gameLoop = (timestamp) => {
+    const gameLoop = (timestamp: number) => {
       if (gameOver) {
         animationId = requestAnimationFrame(gameLoop);
         return;
@@ -330,7 +366,9 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
       });
 
       // Collision detection - Player bullets vs aliens
-      game.bullets.filter(b => b.isPlayer).forEach((bullet, bulletIndex) => {
+      const bulletsToRemove: number[] = [];
+      game.bullets.forEach((bullet, bulletIndex) => {
+        if (!bullet.isPlayer) return;
         game.aliens.forEach((alien, alienIndex) => {
           if (alien.alive && 
               bullet.x < alien.x + alien.width &&
@@ -340,32 +378,28 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
             
             // Alien hit
             alien.alive = false;
-            game.bullets.splice(bulletIndex, 1);
+            bulletsToRemove.push(bulletIndex);
             
             const newScore = score + alien.points;
             setScore(newScore);
             
             // Create enhanced particles
             for (let i = 0; i < 15; i++) {
-              const particle = particleManager.addParticle({
-                x: alien.x + alien.width / 2,
-                y: alien.y + alien.height / 2,
-                vx: Math.random() * 8 - 4,
-                vy: Math.random() * 8 - 4,
-                color: `hsl(${alien.type * 60 + 180}, 90%, ${60 + Math.random() * 30}%)`,
-                life: 60,
-                size: 2
-              });
-              if (particle) {
-                game.particles.push(particle);
-              }
+              game.particles.push(new Particle(
+                alien.x + alien.width / 2,
+                alien.y + alien.height / 2,
+                Math.random() * 8 - 4,
+                Math.random() * 8 - 4,
+                `hsl(${alien.type * 60 + 180}, 90%, ${60 + Math.random() * 30}%)`,
+                60
+              ));
             }
             
             soundManager.playHit();
             
             // Power-up chance
             if (Math.random() < 0.1) {
-              const powerUpTypes = ['rapidfire', 'multishot', 'shield'];
+              const powerUpTypes: PowerUp['type'][] = ['rapidfire', 'multishot', 'shield'];
               game.powerUps.push({
                 x: alien.x + alien.width / 2,
                 y: alien.y + alien.height / 2,
@@ -378,8 +412,118 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
           }
         });
       });
+      // Remove marked bullets
+      game.bullets = game.bullets.filter((_, index) => !bulletsToRemove.includes(index));
 
-      // Update power-ups FIRST - moved before alien bullet collision
+      // Collision detection - Alien bullets vs player
+      const alienBulletsToRemove: number[] = [];
+      game.alienBullets.forEach((bullet, bulletIndex) => {
+        if (bullet.x < game.player.x + game.player.width &&
+            bullet.x + bullet.width > game.player.x &&
+            bullet.y < game.player.y + game.player.height &&
+            bullet.y + bullet.height > game.player.y) {
+          
+          alienBulletsToRemove.push(bulletIndex);
+          
+          if (powerUp !== 'shield') {
+            setLives(prev => {
+              const newLives = prev - 1;
+              if (newLives <= 0) {
+                if (gameOverTimeoutRef.current) {
+                  clearTimeout(gameOverTimeoutRef.current);
+                }
+                gameOverTimeoutRef.current = setTimeout(() => {
+                  setGameOver(true);
+                  updateHighScore('spaceInvaders', score);
+                  soundManager.playGameOver();
+                  gameOverTimeoutRef.current = null;
+                }, 100);
+              } else {
+                soundManager.playHit();
+              }
+              return newLives;
+            });
+            
+            // Create particles
+            for (let i = 0; i < 12; i++) {
+              game.particles.push(new Particle(
+                game.player.x + game.player.width / 2,
+                game.player.y + game.player.height / 2,
+                Math.random() * 6 - 3,
+                Math.random() * 6 - 3,
+                '#ff6b6b',
+                40
+              ));
+            }
+          }
+        }
+      });
+      // Remove marked alien bullets
+      game.alienBullets = game.alienBullets.filter((_, index) => !alienBulletsToRemove.includes(index));
+
+      // Collision detection - Bullets vs barriers
+      const playerBulletsToRemove: number[] = [];
+      const alienBulletsToRemove2: number[] = [];
+      
+      // Check player bullets vs barriers
+      game.bullets.forEach((bullet, bulletIndex) => {
+        game.barriers.forEach(barrier => {
+          if (barrier.health > 0 &&
+              bullet.x < barrier.x + barrier.width &&
+              bullet.x + bullet.width > barrier.x &&
+              bullet.y < barrier.y + barrier.height &&
+              bullet.y + bullet.height > barrier.y) {
+            
+            barrier.health--;
+            playerBulletsToRemove.push(bulletIndex);
+            
+            // Create particles
+            for (let i = 0; i < 4; i++) {
+              game.particles.push(new Particle(
+                bullet.x,
+                bullet.y,
+                Math.random() * 4 - 2,
+                Math.random() * 4 - 2,
+                '#4ecdc4',
+                20
+              ));
+            }
+          }
+        });
+      });
+      
+      // Check alien bullets vs barriers
+      game.alienBullets.forEach((bullet, bulletIndex) => {
+        game.barriers.forEach(barrier => {
+          if (barrier.health > 0 &&
+              bullet.x < barrier.x + barrier.width &&
+              bullet.x + bullet.width > barrier.x &&
+              bullet.y < barrier.y + barrier.height &&
+              bullet.y + bullet.height > barrier.y) {
+            
+            barrier.health--;
+            alienBulletsToRemove2.push(bulletIndex);
+            
+            // Create particles
+            for (let i = 0; i < 4; i++) {
+              game.particles.push(new Particle(
+                bullet.x,
+                bullet.y,
+                Math.random() * 4 - 2,
+                Math.random() * 4 - 2,
+                '#4ecdc4',
+                20
+              ));
+            }
+          }
+        });
+      });
+      
+      // Remove marked bullets
+      game.bullets = game.bullets.filter((_, index) => !playerBulletsToRemove.includes(index));
+      game.alienBullets = game.alienBullets.filter((_, index) => !alienBulletsToRemove2.includes(index));
+
+      // Update power-ups
       game.powerUps = game.powerUps.filter(powerUpItem => {
         powerUpItem.y += powerUpItem.speed;
         
@@ -395,18 +539,14 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
           
           // Create particles
           for (let i = 0; i < 10; i++) {
-            const particle = particleManager.addParticle({
-              x: powerUpItem.x + powerUpItem.width / 2,
-              y: powerUpItem.y + powerUpItem.height / 2,
-              vx: Math.random() * 6 - 3,
-              vy: Math.random() * 6 - 3,
-              color: '#ffd93d',
-              life: 30,
-              size: 2
-            });
-            if (particle) {
-              game.particles.push(particle);
-            }
+            game.particles.push(new Particle(
+              powerUpItem.x + powerUpItem.width / 2,
+              powerUpItem.y + powerUpItem.height / 2,
+              Math.random() * 6 - 3,
+              Math.random() * 6 - 3,
+              '#ffd93d',
+              30
+            ));
           }
           
           return false;
@@ -415,88 +555,9 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
         return powerUpItem.y < canvas.height;
       });
 
-      // Collision detection - Alien bullets vs player
-      game.alienBullets.forEach((bullet, bulletIndex) => {
-        if (bullet.x < game.player.x + game.player.width &&
-            bullet.x + bullet.width > game.player.x &&
-            bullet.y < game.player.y + game.player.height &&
-            bullet.y + bullet.height > game.player.y) {
-          
-          game.alienBullets.splice(bulletIndex, 1);
-          
-          // Shield power-up prevents damage on same frame it's collected
-          if (powerUp !== 'shield') {
-            setLives(prev => {
-              const newLives = prev - 1;
-              if (newLives <= 0) {
-                setTimeout(() => {
-                  setGameOver(true);
-                  updateHighScore('spaceInvaders', score);
-                  soundManager.playGameOver();
-                }, 100);
-              } else {
-                soundManager.playHit();
-              }
-              return newLives;
-            });
-            
-            // Create particles
-            for (let i = 0; i < 12; i++) {
-              const particle = particleManager.addParticle({
-                x: game.player.x + game.player.width / 2,
-                y: game.player.y + game.player.height / 2,
-                vx: Math.random() * 6 - 3,
-                vy: Math.random() * 6 - 3,
-                color: '#ff6b6b',
-                life: 40,
-                size: 2
-              });
-              if (particle) {
-                game.particles.push(particle);
-              }
-            }
-          }
-        }
-      });
-
-      // Collision detection - Bullets vs barriers
-      [...game.bullets, ...game.alienBullets].forEach((bullet, bulletIndex) => {
-        game.barriers.forEach(barrier => {
-          if (barrier.health > 0 &&
-              bullet.x < barrier.x + barrier.width &&
-              bullet.x + bullet.width > barrier.x &&
-              bullet.y < barrier.y + barrier.height &&
-              bullet.y + bullet.height > barrier.y) {
-            
-            barrier.health--;
-            if (bullet.isPlayer) {
-              game.bullets.splice(bulletIndex, 1);
-            } else {
-              game.alienBullets.splice(bulletIndex, 1);
-            }
-            
-            // Create particles
-            for (let i = 0; i < 4; i++) {
-              const particle = particleManager.addParticle({
-                x: bullet.x,
-                y: bullet.y,
-                vx: Math.random() * 4 - 2,
-                vy: Math.random() * 4 - 2,
-                color: '#4ecdc4',
-                life: 20,
-                size: 2
-              });
-              if (particle) {
-                game.particles.push(particle);
-              }
-            }
-          }
-        });
-      });
-
       // Update particles
       game.particles = game.particles.filter(particle => {
-        particle.update();
+        particle.update(1); // Pass deltaTime as 1 for frame-based update
         return particle.life > 0;
       });
 
@@ -511,10 +572,14 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
 
       // Check lose condition - aliens reached player
       if (aliveAliens.some(alien => alien.y + alien.height >= game.player.y)) {
-        setTimeout(() => {
+        if (gameOverTimeoutRef.current) {
+          clearTimeout(gameOverTimeoutRef.current);
+        }
+        gameOverTimeoutRef.current = setTimeout(() => {
           setGameOver(true);
           updateHighScore('spaceInvaders', score);
           soundManager.playGameOver();
+          gameOverTimeoutRef.current = null;
         }, 100);
       }
       
@@ -633,7 +698,7 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
 
       // Draw power-ups
       game.powerUps.forEach(powerUpItem => {
-        const colors = {
+        const colors: Record<PowerUp['type'], string> = {
           rapidfire: '#ff9500',
           multishot: '#9c88ff',
           shield: '#4ecdc4'
@@ -645,21 +710,29 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
         ctx.fillStyle = '#ffffff';
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
-        const icons = { rapidfire: 'R', multishot: 'M', shield: 'S' };
+        const icons: Record<PowerUp['type'], string> = { rapidfire: 'R', multishot: 'M', shield: 'S' };
         ctx.fillText(icons[powerUpItem.type], powerUpItem.x + powerUpItem.width/2, powerUpItem.y + powerUpItem.height/2 + 4);
       });
 
       // Draw particles
       game.particles.forEach(particle => {
-        particle.render(ctx);
+        particle.draw(ctx);
       });
 
-      animationId = requestAnimationFrame(gameLoop);
+      animationIdRef.current = requestAnimationFrame(gameLoop);
     };
 
-    animationId = requestAnimationFrame(gameLoop);
+    animationIdRef.current = requestAnimationFrame(gameLoop);
 
     return () => {
+      if (animationIdRef.current !== null) {
+        cancelAnimationFrame(animationIdRef.current);
+        animationIdRef.current = null;
+      }
+      if (gameOverTimeoutRef.current) {
+        clearTimeout(gameOverTimeoutRef.current);
+        gameOverTimeoutRef.current = null;
+      }
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('resize', resizeCanvas);
@@ -671,11 +744,8 @@ export const SpaceInvadersGame: React.FC<GameProps> = ({ settings, updateHighSco
       canvas.removeEventListener('touchmove', handleTouchMove);
       canvas.removeEventListener('touchstart', handleTouchStart);
       canvas.removeEventListener('touchend', handleTouchEnd);
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-      }
     };
-  }, [gameOver, paused, score, powerUp, level, updateHighScore]);
+  }, [gameOver, paused, score, powerUp, level, updateHighScore, initAliens, initBarriers]);
 
   const resetGame = () => {
     setScore(0);

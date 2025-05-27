@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
 
-export const GameOverBanner = ({ show }) => {
-  const [visible, setVisible] = useState(false);
+interface GameOverBannerProps {
+  show: boolean;
+}
+
+export const GameOverBanner: React.FC<GameOverBannerProps> = ({ show }) => {
+  const [visible, setVisible] = useState<boolean>(false);
 
   useEffect(() => {
     if (show) {
@@ -21,3 +25,5 @@ export const GameOverBanner = ({ show }) => {
     </div>
   );
 };
+
+GameOverBanner.displayName = 'GameOverBanner';

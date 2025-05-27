@@ -11,140 +11,142 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const isDev = process.env.NODE_ENV !== 'production';
 
-// Security: Rate limiting to prevent DoS attacks
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDev ? 1000 : 100, // limit each IP to 100 requests per windowMs in prod, 1000 in dev
-  message: {
-    error: 'Too many requests from this IP, please try again later.',
-    retryAfter: '15 minutes'
+// Environment configuration
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const isDevelopment = NODE_ENV === 'development';
+
+// Configure allowed origins based on environment
+const getAllowedOrigins = () => {
+  const origins = [];
+  
+  // Always allow localhost in development
+  if (isDevelopment) {
+    origins.push(
+      'http://localhost:3004',
+      'http://127.0.0.1:3004',
+      'http://localhost:5173', // Vite dev server
+      'http://127.0.0.1:5173'
+    );
+  }
+  
+  // Add production domains from environment variables
+  if (process.env.ALLOWED_ORIGINS) {
+    origins.push(...process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()));
+  }
+  
+  // Add Tailscale IPs if provided
+  if (process.env.TAILSCALE_IPS) {
+    const tailscaleIps = process.env.TAILSCALE_IPS.split(',').map(ip => ip.trim());
+    tailscaleIps.forEach(ip => {
+      origins.push(`http://${ip}:3004`);
+      origins.push(`https://${ip}:3004`);
+    });
+  }
+  
+  return origins;
+};
+
+// Configure CORS with security restrictions
+const corsOptions = {
+  origin: (origin, callback) => {
+    const allowedOrigins = getAllowedOrigins();
+    
+    // Allow requests with no origin (e.g., mobile apps, Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Check if origin is allowed
+    if (allowedOrigins.length === 0 && isDevelopment) {
+      // In development with no specific origins, allow all
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Log rejected origins for debugging
+    console.warn(`CORS: Rejected origin: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
   },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+  credentials: true,
+  optionsSuccessStatus: 200,
+  maxAge: 86400 // Cache preflight requests for 24 hours
+};
 
-// Security: Apply rate limiting to all requests
-app.use(limiter);
+// Apply CORS middleware
+app.use(cors(corsOptions));
 
-// Security: Helmet for basic security headers
+// Configure Helmet for security headers
 app.use(helmet({
-  contentSecurityPolicy: isDev ? false : {
+  contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"], // Allow inline styles for React
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Allow inline scripts and eval for dev
       imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", "ws:", "wss:"], // Allow WebSocket connections
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
       frameSrc: ["'none'"],
     },
   },
-  crossOriginEmbedderPolicy: false // Needed for some game features
+  crossOriginEmbedderPolicy: !isDevelopment, // Disable in development for easier debugging
 }));
 
-// Security: CORS configuration with whitelist
-const allowedOrigins = [
-  'http://localhost:3004',
-  'http://127.0.0.1:3004',
-  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [])
-];
-
-// Add Tailscale and local network IPs to allowed origins
-const localIPs = getLocalIPs();
-localIPs.forEach(ip => {
-  allowedOrigins.push(`http://${ip}:3004`);
+// Configure rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skip: (req) => {
+    // Skip rate limiting for static assets
+    const staticExtensions = ['.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico'];
+    return staticExtensions.some(ext => req.path.endsWith(ext));
+  }
 });
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
-    
-    // In development, allow all origins
-    if (isDev) return callback(null, true);
-    
-    // Check if origin is in whitelist
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    
-    // Allow Tailscale domains
-    if (origin.includes('.ts.net')) {
-      return callback(null, true);
-    }
-    
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true
-}));
+// Apply rate limiting to all routes
+app.use(limiter);
 
-// Basic request validation and parsing
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
-
-// Request logging middleware
+// Additional security headers
 app.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
-  console.log(`${timestamp} - ${req.method} ${req.url} - ${req.ip}`);
+  // Prevent clickjacking
+  res.setHeader('X-Frame-Options', 'DENY');
+  
+  // Prevent MIME type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  
+  // Enable XSS filter
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  
+  // Referrer policy
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  
+  // Feature policy
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  
   next();
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development',
-    version: process.env.npm_package_version || '1.0.0'
-  });
-});
-
-// API endpoints with basic validation
-app.get('/api/status', (req, res) => {
-  res.json({
-    server: 'Retro Game Toolbox',
-    status: 'running',
-    timestamp: new Date().toISOString()
-  });
-});
-
 // Serve static files from the dist directory
-app.use(express.static(path.join(__dirname, '../dist'), {
-  maxAge: isDev ? 0 : '1d', // Cache static files in production
-  etag: true,
-  lastModified: true
-}));
+app.use(express.static(path.join(__dirname, '../dist')));
 
 // Handle all routes by serving index.html (SPA)
 app.get('*', (req, res) => {
-  // Basic path validation to prevent directory traversal
-  if (req.path.includes('..') || req.path.includes('\\')) {
-    return res.status(400).json({ error: 'Invalid path' });
-  }
-  
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Server error:', err.message);
-  
-  // Don't leak error details in production
-  const message = isDev ? err.message : 'Internal server error';
-  
-  res.status(err.status || 500).json({
-    error: message,
-    timestamp: new Date().toISOString()
-  });
-});
+// Fixed port configuration as per CLAUDE.md
+const PORT = process.env.PORT || 3004;
 
 // Get local IP addresses for Tailscale
-function getLocalIPs() {
+const getLocalIPs = () => {
   const nets = networkInterfaces();
   const results = [];
   
@@ -157,54 +159,58 @@ function getLocalIPs() {
     }
   }
   return results;
-}
+};
 
-// Graceful shutdown handling
-process.on('SIGTERM', () => {
-  console.log('🛑 SIGTERM received. Starting graceful shutdown...');
-  server.close(() => {
-    console.log('✅ Server closed. Process terminating.');
-    process.exit(0);
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('\n🛑 SIGINT received. Starting graceful shutdown...');
-  server.close(() => {
-    console.log('✅ Server closed. Process terminating.');
-    process.exit(0);
-  });
-});
-
-// Start server
-const startServer = async () => {
-  const port = process.env.PORT || 3004;
+// Start server on fixed port
+const startServer = () => {
   const ips = getLocalIPs();
   
-  const server = app.listen(port, '0.0.0.0', () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log('🎮 Retro Game Toolbox Server Started!');
     console.log('=' .repeat(50));
-    console.log(`🌐 Local: http://localhost:${port}`);
-    console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🛡️  Security: Rate limiting enabled (${isDev ? '1000' : '100'} req/15min)`);
+    console.log(`🌐 Local: http://localhost:${PORT}`);
     
     if (ips.length > 0) {
-      console.log(`🔗 Network: http://${ips[0]}:${port}`);
+      console.log(`🔗 Network: http://${ips[0]}:${PORT}`);
     }
     
-    console.log(`📱 Tailscale: Use your Tailscale IP with port ${port}`);
-    console.log(`🩺 Health check: http://localhost:${port}/health`);
+    console.log(`📱 Tailscale: Use your Tailscale IP with port ${PORT}`);
+    console.log('=' .repeat(50));
+    console.log(`🔒 Security: CORS ${isDevelopment ? 'relaxed (dev)' : 'restricted'}, Rate limiting enabled`);
+    console.log(`🛡️  Environment: ${NODE_ENV}`);
+    
+    if (isDevelopment) {
+      console.log('⚠️  Development mode: Security restrictions relaxed');
+    } else {
+      const allowedOrigins = getAllowedOrigins();
+      if (allowedOrigins.length > 0) {
+        console.log(`✅ Allowed origins: ${allowedOrigins.join(', ')}`);
+      }
+    }
+    
     console.log('=' .repeat(50));
     console.log('Press Ctrl+C to stop the server');
   });
-
-  // Handle server errors
-  server.on('error', (err) => {
-    console.error('❌ Server error:', err.message);
-    process.exit(1);
-  });
-
-  return server;
 };
 
-const server = await startServer().catch(console.error);
+// Handle server errors
+app.on('error', (error) => {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  switch (error.code) {
+    case 'EACCES':
+      console.error(`Port ${PORT} requires elevated privileges`);
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(`Port ${PORT} is already in use`);
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+});
+
+startServer();

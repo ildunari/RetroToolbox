@@ -1,1385 +1,1129 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Play, Pause, RotateCcw, Zap, Shield, Gauge } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle, particleManager } from '../../core/ParticleSystem';
-import { GameOverBanner } from "../ui/GameOverBanner";
-import { GameProps } from '../../core/GameTypes';
+import { Particle } from '../../core/ParticleSystem';
+import { FadingCanvas } from '../ui/FadingCanvas';
+import { GameOverBanner } from '../ui/GameOverBanner';
 
+// TypeScript interfaces
 interface Position {
   x: number;
   y: number;
 }
 
-interface Ghost extends Position {
+interface GridPosition {
+  row: number;
+  col: number;
+}
+
+interface Ghost {
+  id: string;
+  position: Position;
+  gridPos: GridPosition;
+  targetGridPos: GridPosition;
   color: string;
-  mode: 'chase' | 'scatter' | 'frightened';
-  targetX: number;
-  targetY: number;
+  mode: 'chase' | 'scatter' | 'frightened' | 'eaten';
   speed: number;
-  lastDirectionChange: number;
-  directionChangeTimeout: number;
-  stuckCounter: number;
-  previousPosition: Position;
-  targetHistory: number[];
+  aiType: 'blinky' | 'pinky' | 'inky' | 'clyde';
+  direction: Direction;
+  scatterTarget: GridPosition;
 }
 
-interface GameRef {
-  pacman: Position & { direction: number; nextDirection: number; speed: number };
+interface PowerUp {
+  type: 'speed' | 'freeze' | 'magnet' | 'shield';
+  gridPos: GridPosition;
+  duration: number;
+  icon: string;
+}
+
+type Direction = 'up' | 'down' | 'left' | 'right' | 'none';
+
+interface GameState {
+  pacman: {
+    position: Position;
+    gridPos: GridPosition;
+    targetGridPos: GridPosition;
+    previousGridPos: GridPosition;
+    direction: Direction;
+    nextDirection: Direction;
+    speed: number;
+    mouthOpen: boolean;
+    mouthTimer: number;
+    powerUpActive: string | null;
+    powerUpTimer: number;
+  };
   ghosts: Ghost[];
-  powerPellets: Position[];
+  maze: number[][];
+  pellets: Set<string>;
+  powerPellets: Set<string>;
+  powerUps: Map<string, PowerUp>;
   score: number;
-  particles: Particle[];
-  frightenedTimer: number;
+  lives: number;
   level: number;
+  combo: number;
+  comboTimer: number;
+  particles: Particle[];
+  gamePhase: 'ready' | 'playing' | 'levelComplete' | 'gameOver';
+  frightenedTimer: number;
+  freezeTimer: number;
+  lastUpdate: number;
 }
 
-export const PacManGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
-  const canvasRef = useRef(null);
-  const [score, setScore] = useState(0);
-  const [level, setLevel] = useState(1);
-  const [lives, setLives] = useState(3);
+interface PacManGameProps {
+  settings: {
+    soundEnabled: boolean;
+    difficulty: 'easy' | 'normal' | 'hard';
+  };
+  updateHighScore: (gameId: string, score: number) => void;
+}
+
+// Maze constants
+const CELL_SIZE = 20;
+const MAZE_WIDTH = 28;
+const MAZE_HEIGHT = 31;
+
+// Classic Pac-Man maze layout (0 = wall, 1 = pellet, 2 = power pellet, 3 = empty)
+const MAZE_TEMPLATE: number[][] = [
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
+  [0,2,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,2,0],
+  [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,1,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,1,0],
+  [0,1,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,1,0],
+  [0,1,1,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,1,1,0],
+  [0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,1,1,1,1,1,1,1,1,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,0,0,0,3,3,0,0,0,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,0,3,3,3,3,3,3,0,1,0,0,1,0,0,0,0,0,0],
+  [1,1,1,1,1,1,1,1,1,1,0,3,3,3,3,3,3,0,1,1,1,1,1,1,1,1,1,1],
+  [0,0,0,0,0,0,1,0,0,1,0,3,3,3,3,3,3,0,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,1,1,1,1,1,1,1,1,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
+  [0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,0,0,0,0,1,0,0,0,0,1,0],
+  [0,2,1,1,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,1,1,2,0],
+  [0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0,0],
+  [0,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1,0,0,0],
+  [0,1,1,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,1,1,0],
+  [0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0],
+  [0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+];
+
+export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScore }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [powerMode, setPowerMode] = useState(false);
-  const [powerTimer, setPowerTimer] = useState(0);
-  const [debugInfo, setDebugInfo] = useState('Initializing...');
-
-  // Touch gesture state management
-  const [touchState, setTouchState] = useState({
-    isActive: false,
-    startPoint: null,
-    currentPoint: null,
-    startTime: 0,
-    direction: null,
-    showTouchFeedback: false,
-    feedbackPosition: null
-  });
-
-  const touchStateRef = useRef({
-    startX: 0,
-    startY: 0,
-    currentX: 0,
-    currentY: 0,
-    startTime: 0,
-    isTracking: false,
-    minSwipeDistance: 30,      // Minimum pixels for swipe
-    maxSwipeTime: 800,         // Maximum time for swipe (ms)
-    tapThreshold: 10,          // Maximum movement for tap
-    velocity: { x: 0, y: 0 }   // Current swipe velocity
-  });
-
-  const gameRef = useRef({
-    // Store the original maze template (immutable)
-    originalMaze: [
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,1],
-      [1,3,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,3,1],
-      [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-      [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
-      [1,2,2,2,2,2,2,1,1,2,2,2,1,1,2,2,2,1,1,2,2,2,2,2,2,1],
-      [1,1,1,1,1,1,2,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1],
-      [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0],
-      [1,1,1,1,1,1,2,1,1,0,1,1,0,0,0,1,1,0,1,1,2,1,1,1,1,1],
-      [0,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,1,0,0,0,2,0,0,0,0,0],
-      [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1],
-      [0,0,0,0,0,1,2,1,1,0,1,0,0,0,0,0,1,0,1,1,2,1,0,0,0,0],
-      [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1],
-      [0,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,1,0,0,0,2,0,0,0,0,0],
-      [1,1,1,1,1,1,2,1,1,0,1,1,1,1,1,1,1,0,1,1,2,1,1,1,1,1],
-      [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0],
-      [1,1,1,1,1,1,2,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1],
-      [1,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,1],
-      [1,2,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,2,1],
-      [1,3,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,3,1],
-      [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
-      [1,2,2,2,2,2,2,1,1,2,2,2,1,1,2,2,2,1,1,2,2,2,2,2,2,1],
-      [1,2,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,2,1],
-      [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
-    ],
-
-    // Working maze (will be modified during gameplay)  
+  const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(3);
+  const [level, setLevel] = useState(1);
+  const [combo, setCombo] = useState(0);
+  
+  const gameRef = useRef<GameState>({
+    pacman: {
+      position: { x: 14 * CELL_SIZE, y: 23 * CELL_SIZE },
+      gridPos: { row: 23, col: 14 },
+      targetGridPos: { row: 23, col: 14 },
+      previousGridPos: { row: 23, col: 14 },
+      direction: 'none',
+      nextDirection: 'none',
+      speed: 0.15,
+      mouthOpen: true,
+      mouthTimer: 0,
+      powerUpActive: null,
+      powerUpTimer: 0
+    },
+    ghosts: [],
     maze: [],
-
-    // Store original positions for complete reset
-    originalPositions: {
-      pacman: { x: 13, y: 23, direction: 0, nextDirection: 0 },
-      ghosts: [
-        { x: 13, y: 11, direction: 0, mode: 'scatter', name: 'Blinky' },
-        { x: 13, y: 13, direction: 2, mode: 'scatter', name: 'Pinky' },
-        { x: 12, y: 13, direction: 1, mode: 'scatter', name: 'Inky' },
-        { x: 14, y: 13, direction: 3, mode: 'scatter', name: 'Clyde' }
-      ]
-    },
-
-    // Track game state for proper cleanup
-    gameState: {
-      timers: {
-        modeTimer: 0,
-        frightTimer: 0,
-        powerTimer: 0
-      },
-      counters: {
-        dotsRemaining: 0,
-        level: 1,
-        score: 0,
-        lives: 3
-      },
-      flags: {
-        gameOver: false,
-        paused: false,
-        powerMode: false
-      }
-    },
-    
-    // Game mechanics
-    lastUpdate: 0,
+    pellets: new Set(),
+    powerPellets: new Set(),
+    powerUps: new Map(),
+    score: 0,
+    lives: 3,
+    level: 1,
+    combo: 0,
+    comboTimer: 0,
     particles: [],
-    powerPellets: [],
-    dotsRemaining: 0,
-    modeTimer: 0,
-    frightTimer: 0,
-    directions: [
-      { x: 1, y: 0 },   // Right
-      { x: 0, y: -1 },  // Up  
-      { x: -1, y: 0 },  // Left
-      { x: 0, y: 1 }    // Down
-    ],
-    
-    // Colors
-    colors: {
-      wall: '#0080ff',
-      dot: '#ffff00',
-      powerPellet: '#ffff00',
-      pacman: '#ffff00',
-      pacmanMouth: '#000000',
-      frightened: '#0000ff',
-      background: '#000022'
-    }
+    gamePhase: 'ready',
+    frightenedTimer: 0,
+    freezeTimer: 0,
+    lastUpdate: 0
   });
 
   // Initialize game
   const initializeGame = useCallback(() => {
     const game = gameRef.current;
     
-    // Count dots and mark power pellets
-    let dots = 0;
-    game.powerPellets = [];
+    // Deep copy maze template
+    game.maze = MAZE_TEMPLATE.map(row => [...row]);
     
-    for (let y = 0; y < game.maze.length; y++) {
-      for (let x = 0; x < game.maze[y].length; x++) {
-        if (game.maze[y][x] === 2) {
-          dots++;
-        } else if (game.maze[y][x] === 3) {
-          game.powerPellets.push({x, y});
-          dots++;
+    // Initialize pellets
+    game.pellets.clear();
+    game.powerPellets.clear();
+    game.powerUps.clear();
+    
+    for (let row = 0; row < MAZE_HEIGHT; row++) {
+      for (let col = 0; col < MAZE_WIDTH; col++) {
+        const cell = game.maze[row][col];
+        if (cell === 1) {
+          game.pellets.add(`${row},${col}`);
+        } else if (cell === 2) {
+          game.powerPellets.add(`${row},${col}`);
         }
       }
     }
     
-    game.dotsRemaining = dots;
-    game.modeTimer = 0;
-    game.frightTimer = 0;
-    
-    // Reset positions
-    game.pacman = { x: 13, y: 23, direction: 0, nextDirection: 0, speed: 0.1 + level * 0.005 };
+    // Initialize ghosts
     game.ghosts = [
-      { 
-        x: 13, y: 11, direction: 0, mode: 'scatter', color: '#ff0000', name: 'Blinky', 
-        speed: 0.08 + level * 0.002,
-        lastDirectionChange: 0,
-        directionChangeTimeout: 0,
-        stuckCounter: 0,
-        previousPosition: { x: 13, y: 11 },
-        targetHistory: []
+      {
+        id: 'blinky',
+        position: { x: 14 * CELL_SIZE, y: 14 * CELL_SIZE },
+        gridPos: { row: 14, col: 14 },
+        targetGridPos: { row: 13, col: 14 },
+        color: '#ff0000',
+        mode: 'scatter',
+        speed: 0.1 + (game.level - 1) * 0.01,
+        aiType: 'blinky',
+        direction: 'up',
+        scatterTarget: { row: 0, col: 25 }
       },
-      { 
-        x: 13, y: 13, direction: 2, mode: 'scatter', color: '#ffb8ff', name: 'Pinky', 
-        speed: 0.08 + level * 0.002,
-        lastDirectionChange: 0,
-        directionChangeTimeout: 0,
-        stuckCounter: 0,
-        previousPosition: { x: 13, y: 13 },
-        targetHistory: []
+      {
+        id: 'pinky',
+        position: { x: 13 * CELL_SIZE, y: 14 * CELL_SIZE },
+        gridPos: { row: 14, col: 13 },
+        targetGridPos: { row: 13, col: 13 },
+        color: '#ffb8ff',
+        mode: 'scatter',
+        speed: 0.1 + (game.level - 1) * 0.01,
+        aiType: 'pinky',
+        direction: 'up',
+        scatterTarget: { row: 0, col: 2 }
       },
-      { 
-        x: 12, y: 13, direction: 1, mode: 'scatter', color: '#00ffff', name: 'Inky', 
-        speed: 0.08 + level * 0.002,
-        lastDirectionChange: 0,
-        directionChangeTimeout: 0,
-        stuckCounter: 0,
-        previousPosition: { x: 12, y: 13 },
-        targetHistory: []
+      {
+        id: 'inky',
+        position: { x: 14 * CELL_SIZE, y: 15 * CELL_SIZE },
+        gridPos: { row: 15, col: 14 },
+        targetGridPos: { row: 14, col: 14 },
+        color: '#00ffff',
+        mode: 'scatter',
+        speed: 0.1 + (game.level - 1) * 0.01,
+        aiType: 'inky',
+        direction: 'up',
+        scatterTarget: { row: 35, col: 27 }
       },
-      { 
-        x: 14, y: 13, direction: 3, mode: 'scatter', color: '#ffb852', name: 'Clyde', 
-        speed: 0.08 + level * 0.002,
-        lastDirectionChange: 0,
-        directionChangeTimeout: 0,
-        stuckCounter: 0,
-        previousPosition: { x: 14, y: 13 },
-        targetHistory: []
+      {
+        id: 'clyde',
+        position: { x: 15 * CELL_SIZE, y: 14 * CELL_SIZE },
+        gridPos: { row: 14, col: 15 },
+        targetGridPos: { row: 13, col: 15 },
+        color: '#ffb851',
+        mode: 'scatter',
+        speed: 0.1 + (game.level - 1) * 0.01,
+        aiType: 'clyde',
+        direction: 'up',
+        scatterTarget: { row: 35, col: 0 }
       }
     ];
-  }, [level]);
+    
+    // Reset Pac-Man
+    game.pacman = {
+      position: { x: 14 * CELL_SIZE, y: 23 * CELL_SIZE },
+      gridPos: { row: 23, col: 14 },
+      targetGridPos: { row: 23, col: 14 },
+      previousGridPos: { row: 23, col: 14 },
+      direction: 'none',
+      nextDirection: 'none',
+      speed: 0.15,
+      mouthOpen: true,
+      mouthTimer: 0,
+      powerUpActive: null,
+      powerUpTimer: 0
+    };
+    
+    game.particles = [];
+    game.frightenedTimer = 0;
+    game.freezeTimer = 0;
+    game.gamePhase = 'ready';
+  }, []);
 
-  // Create complete maze reset function
-  const resetMazeToOriginal = useCallback(() => {
-    const game = gameRef.current;
+  // Create particles
+  const createParticles = useCallback((x: number, y: number, color: string, count: number = 10) => {
+    const particles = gameRef.current.particles;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      particles.push(new Particle(
+        x, y,
+        Math.cos(angle) * 100,
+        Math.sin(angle) * 100,
+        color,
+        0.8
+      ));
+    }
+  }, []);
 
-    // Deep clone the original maze to avoid reference issues
-    game.maze = game.originalMaze.map(row => [...row]);
+  // Grid movement helpers
+  const gridToPixel = (gridPos: GridPosition): Position => ({
+    x: gridPos.col * CELL_SIZE + CELL_SIZE / 2,
+    y: gridPos.row * CELL_SIZE + CELL_SIZE / 2
+  });
+  
+  const pixelToGrid = (pos: Position): GridPosition => ({
+    row: Math.floor(pos.y / CELL_SIZE),
+    col: Math.floor(pos.x / CELL_SIZE)
+  });
 
-    // Count initial dots and power pellets
-    let totalDots = 0;
-    game.powerPellets = [];
+  const canMove = (gridPos: GridPosition, direction: Direction): boolean => {
+    const { row, col } = gridPos;
+    const maze = gameRef.current.maze;
+    
+    switch (direction) {
+      case 'up':
+        return row > 0 && maze[row - 1][col] !== 0;
+      case 'down':
+        return row < MAZE_HEIGHT - 1 && maze[row + 1][col] !== 0;
+      case 'left':
+        return col > 0 && maze[row][col - 1] !== 0;
+      case 'right':
+        return col < MAZE_WIDTH - 1 && maze[row][col + 1] !== 0;
+      default:
+        return false;
+    }
+  };
 
-    for (let y = 0; y < game.maze.length; y++) {
-      for (let x = 0; x < game.maze[y].length; x++) {
-        if (game.maze[y][x] === 2) {
-          totalDots++;
-        } else if (game.maze[y][x] === 3) {
-          game.powerPellets.push({ x, y });
-          totalDots++;
+  const getNextGridPos = (gridPos: GridPosition, direction: Direction): GridPosition => {
+    const { row, col } = gridPos;
+    switch (direction) {
+      case 'up':
+        return { row: row - 1, col };
+      case 'down':
+        return { row: row + 1, col };
+      case 'left':
+        return { row, col: col - 1 };
+      case 'right':
+        return { row, col: col + 1 };
+      default:
+        return gridPos;
+    }
+  };
+
+  // Handle input
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      const game = gameRef.current;
+      
+      if (e.key === ' ' || e.key === 'Escape') {
+        e.preventDefault();
+        setPaused(p => !p);
+        return;
+      }
+      
+      let nextDir: Direction = 'none';
+      
+      switch (e.key) {
+        case 'ArrowUp':
+        case 'w':
+          nextDir = 'up';
+          break;
+        case 'ArrowDown':
+        case 's':
+          nextDir = 'down';
+          break;
+        case 'ArrowLeft':
+        case 'a':
+          nextDir = 'left';
+          break;
+        case 'ArrowRight':
+        case 'd':
+          nextDir = 'right';
+          break;
+      }
+      
+      if (nextDir !== 'none') {
+        game.pacman.nextDirection = nextDir;
+        if (game.gamePhase === 'ready') {
+          game.gamePhase = 'playing';
         }
       }
-    }
+    };
 
-    game.dotsRemaining = totalDots;
-    console.log(`Maze reset: ${totalDots} dots, ${game.powerPellets.length} power pellets`);
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
   }, []);
 
-  // Check if position is walkable
-  const isWalkable = useCallback((x, y) => {
-    const game = gameRef.current;
-    if (y < 0 || y >= game.maze.length || x < 0 || x >= game.maze[y].length) {
-      return false;
-    }
-    return game.maze[y][x] !== 1;
-  }, []);
+  // Touch controls
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-  // Enhanced collision detection that accounts for Pac-Man's size
-  const checkCollisionWithRadius = useCallback((x, y, radius = 0.4) => {
-    const game = gameRef.current;
+    let touchStartX = 0;
+    let touchStartY = 0;
 
-    // Check all four corners of Pac-Man's bounding box
-    const corners = [
-      { x: x - radius, y: y - radius }, // Top-left
-      { x: x + radius, y: y - radius }, // Top-right  
-      { x: x - radius, y: y + radius }, // Bottom-left
-      { x: x + radius, y: y + radius }  // Bottom-right
-    ];
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    };
 
-    // Also check center and edge midpoints for thoroughness
-    const checkPoints = [
-      ...corners,
-      { x: x, y: y - radius },         // Top center
-      { x: x, y: y + radius },         // Bottom center
-      { x: x - radius, y: y },         // Left center  
-      { x: x + radius, y: y },         // Right center
-      { x: x, y: y }                   // Center
-    ];
-
-    for (const point of checkPoints) {
-      // Handle tunnel wrapping for horizontal edges
-      let checkX = point.x;
-      if (checkX < 0) checkX = 25 + (checkX % 1);
-      if (checkX > 25) checkX = (checkX % 1);
-
-      const tileX = Math.floor(checkX);
-      const tileY = Math.floor(point.y);
-
-      // Boundary checks
-      if (tileY < 0 || tileY >= game.maze.length) return false;
-      if (tileX < 0 || tileX >= game.maze[tileY].length) {
-        // Allow horizontal tunnel wrapping
-        if (tileY === 12 && (tileX < 0 || tileX >= 26)) continue;
-        return false;
+    const handleTouchEnd = (e: TouchEvent) => {
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      
+      const dx = touchEndX - touchStartX;
+      const dy = touchEndY - touchStartY;
+      
+      if (Math.abs(dx) > Math.abs(dy)) {
+        gameRef.current.pacman.nextDirection = dx > 0 ? 'right' : 'left';
+      } else {
+        gameRef.current.pacman.nextDirection = dy > 0 ? 'down' : 'up';
       }
+    };
 
-      // Check if tile is walkable
-      if (game.maze[tileY][tileX] === 1) return false;
-    }
+    canvas.addEventListener('touchstart', handleTouchStart);
+    canvas.addEventListener('touchend', handleTouchEnd);
 
-    return true;
-  }, []);
-
-  // Handle tunnel wrapping
-  const wrapPosition = useCallback((x, y) => {
-    if (x < 0) x = 25;
-    if (x > 25) x = 0;
-    return { x, y };
-  }, []);
-
-  // Improved intersection detection with hysteresis
-  const isAtValidIntersection = useCallback((ghost, threshold = 0.15) => {
-    const game = gameRef.current;
-    const currentX = Math.floor(ghost.x + 0.5);
-    const currentY = Math.floor(ghost.y + 0.5);
-
-    // Check if ghost is close enough to tile center
-    const centerDistance = Math.sqrt(
-      Math.pow(ghost.x - currentX, 2) +
-      Math.pow(ghost.y - currentY, 2)
-    );
-
-    if (centerDistance > threshold) return false;
-
-    // Count available directions from this position
-    const availableDirections = [0, 1, 2, 3].filter(dir => {
-      const dirVector = game.directions[dir];
-      const testX = Math.floor(currentX + dirVector.x);
-      const testY = Math.floor(currentY + dirVector.y);
-      return isWalkable(testX, testY);
-    });
-
-    // Only consider it an intersection if there are 3+ directions or it's a forced turn
-    return availableDirections.length >= 3 ||
-           !availableDirections.includes(ghost.direction);
-  }, [isWalkable]);
-
-  // Get ghost target based on mode and personality
-  const getGhostTarget = useCallback((ghost, pacman) => {
-    const { x: px, y: py, direction: pDir } = pacman;
-    const pDirVector = gameRef.current.directions[pDir];
-    
-    switch (ghost.name) {
-      case 'Blinky': // Direct chase
-        return { x: px, y: py };
-      case 'Pinky': // Ambush ahead of Pac-Man
-        return { x: px + pDirVector.x * 4, y: py + pDirVector.y * 4 };
-      case 'Inky': // Complex targeting
-        const blinky = gameRef.current.ghosts[0];
-        const targetX = px + pDirVector.x * 2;
-        const targetY = py + pDirVector.y * 2;
-        return { 
-          x: targetX + (targetX - blinky.x), 
-          y: targetY + (targetY - blinky.y) 
-        };
-      case 'Clyde': // Patrol behavior
-        const dist = Math.sqrt((ghost.x - px) ** 2 + (ghost.y - py) ** 2);
-        return dist > 8 ? { x: px, y: py } : { x: 0, y: 24 };
-      default:
-        return { x: px, y: py };
-    }
+    return () => {
+      canvas.removeEventListener('touchstart', handleTouchStart);
+      canvas.removeEventListener('touchend', handleTouchEnd);
+    };
   }, []);
 
   // Game loop
-  const gameLoop = useCallback((timestamp) => {
-    if (gameOver || paused) return;
-
-    const game = gameRef.current;
-    const deltaTime = Math.min(timestamp - game.lastUpdate, 50) / 1000;
-    game.lastUpdate = timestamp;
-
-    // Update mode timers
-    game.modeTimer += deltaTime;
-    if (game.frightTimer > 0) {
-      game.frightTimer -= deltaTime;
-      if (game.frightTimer <= 0) {
-        game.ghosts.forEach(ghost => {
-          if (ghost.mode === 'frightened') {
-            ghost.mode = 'chase';
-          }
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    let animationId: number;
+    
+    const resizeCanvas = () => {
+      canvas.width = MAZE_WIDTH * CELL_SIZE;
+      canvas.height = MAZE_HEIGHT * CELL_SIZE;
+    };
+    
+    resizeCanvas();
+    initializeGame();
+    
+    const gameLoop = (timestamp: number) => {
+      if (!paused && !gameOver) {
+        const game = gameRef.current;
+        if (game.lastUpdate === 0) {
+          game.lastUpdate = timestamp;
+        }
+        const deltaTime = (timestamp - game.lastUpdate) / 1000;
+        game.lastUpdate = timestamp;
+        
+        if (deltaTime > 0.1) {
+          animationId = requestAnimationFrame(gameLoop);
+          return;
+        }
+        
+        // Update Pac-Man
+        updatePacMan(deltaTime);
+        
+        // Update ghosts
+        updateGhosts(deltaTime);
+        
+        // Update particles
+        game.particles = game.particles.filter(p => {
+          p.update(deltaTime);
+          return p.life > 0;
         });
-        setPowerMode(false);
-        setPowerTimer(0);
-      } else {
-        setPowerTimer(game.frightTimer);
-      }
-    }
-
-    // Update Pac-Man with enhanced collision detection
-    const pacman = game.pacman;
-
-    // Check if we can change direction with lookahead
-    const nextDir = game.directions[pacman.nextDirection];
-    const lookaheadDistance = 0.6; // Look ahead more than current radius
-    const testNextX = pacman.x + nextDir.x * lookaheadDistance;
-    const testNextY = pacman.y + nextDir.y * lookaheadDistance;
-
-    if (checkCollisionWithRadius(testNextX, testNextY)) {
-      pacman.direction = pacman.nextDirection;
-    }
-
-    // Calculate new position based on current direction
-    const moveDir = game.directions[pacman.direction];
-    const proposedX = pacman.x + moveDir.x * pacman.speed;
-    const proposedY = pacman.y + moveDir.y * pacman.speed;
-
-    // Validate movement with collision detection
-    if (checkCollisionWithRadius(proposedX, proposedY)) {
-      // Movement is valid - apply it
-      pacman.x = proposedX;
-      pacman.y = proposedY;
-
-      // Handle tunnel wrapping (only for horizontal movement)
-      if (pacman.y >= 12 && pacman.y <= 13) { // Tunnel row
-        if (pacman.x < -0.5) pacman.x = 25.5;
-        if (pacman.x > 25.5) pacman.x = -0.5;
-      }
-    } else {
-      // Movement blocked - try to slide along walls
-      // Test X movement only
-      if (checkCollisionWithRadius(proposedX, pacman.y)) {
-        pacman.x = proposedX;
-      }
-      // Test Y movement only  
-      else if (checkCollisionWithRadius(pacman.x, proposedY)) {
-        pacman.y = proposedY;
-      }
-      // If both fail, Pac-Man stays in current position
-    }
-
-    // Eat dots and power pellets with precise positioning
-    const pacCenterX = Math.floor(pacman.x + 0.5);
-    const pacCenterY = Math.floor(pacman.y + 0.5);
-
-    // Only collect dots when Pac-Man's center is close to tile center
-    const distanceFromCenter = Math.sqrt(
-      Math.pow(pacman.x - pacCenterX + 0.5, 2) +
-      Math.pow(pacman.y - pacCenterY + 0.5, 2)
-    );
-
-    if (distanceFromCenter < 0.3 && game.maze[pacCenterY] && game.maze[pacCenterY][pacCenterX] === 2) {
-      game.maze[pacCenterY][pacCenterX] = 0;
-      game.dotsRemaining--;
-      setScore(prev => prev + 10);
-      
-      // Dot collection particles
-      for (let i = 0; i < 3; i++) {
-        const particle = particleManager.addParticle({
-          x: pacman.x * 20,
-          y: pacman.y * 20,
-          vx: (Math.random() - 0.5) * 50,
-          vy: (Math.random() - 0.5) * 50,
-          color: game.colors.dot,
-          life: 300,
-          size: 2
-        });
-        if (particle) {
-          game.particles.push(particle);
-        }
-      }
-      
-      if (settings.sound) {
-        soundManager.playCollect();
-      }
-    } else if (game.maze[pacCenterY] && game.maze[pacCenterY][pacCenterX] === 3) {
-      game.maze[pacCenterY][pacCenterX] = 0;
-      game.dotsRemaining--;
-      setScore(prev => prev + 50);
-      
-      // Power pellet effect
-      game.frightTimer = 8; // 8 seconds of power mode
-      game.ghosts.forEach(ghost => {
-        ghost.mode = 'frightened';
-        ghost.direction = (ghost.direction + 2) % 4; // Reverse direction
-      });
-      
-      setPowerMode(true);
-      setPowerTimer(8);
-      
-      // Power pellet particles
-      for (let i = 0; i < 10; i++) {
-        const particle = particleManager.addParticle({
-          x: pacman.x * 20,
-          y: pacman.y * 20,
-          vx: (Math.random() - 0.5) * 100,
-          vy: (Math.random() - 0.5) * 100,
-          color: game.colors.powerPellet,
-          life: 800,
-          size: 3
-        });
-        if (particle) {
-          game.particles.push(particle);
-        }
-      }
-      
-      if (settings.sound) {
-        soundManager.playPowerUp();
-      }
-    }
-
-    // Update ghosts with enhanced AI
-    game.ghosts.forEach((ghost, index) => {
-      const currentTime = timestamp;
-
-      // Update stuck detection
-      const positionDistance = Math.sqrt(
-        Math.pow(ghost.x - ghost.previousPosition.x, 2) +
-        Math.pow(ghost.y - ghost.previousPosition.y, 2)
-      );
-
-      if (positionDistance < 0.01) {
-        ghost.stuckCounter++;
-      } else {
-        ghost.stuckCounter = 0;
-        ghost.previousPosition = { x: ghost.x, y: ghost.y };
-      }
-
-      // Force direction change if stuck for too long
-      const forceDirectionChange = ghost.stuckCounter > 30;
-
-      // Check if direction change is allowed
-      const timeSinceLastChange = currentTime - ghost.lastDirectionChange;
-      const canChangeDirection =
-        timeSinceLastChange > ghost.directionChangeTimeout ||
-        forceDirectionChange ||
-        !isWalkable(
-          Math.floor(ghost.x + game.directions[ghost.direction].x),
-          Math.floor(ghost.y + game.directions[ghost.direction].y)
-        );
-
-      // Only consider direction changes at valid intersections or when forced
-      if (canChangeDirection && (isAtValidIntersection(ghost) || forceDirectionChange)) {
-
-        // Get target based on current mode
-        let target;
-        if (ghost.mode === 'frightened') {
-          // Run away from Pac-Man when frightened
-          target = {
-            x: ghost.x + (ghost.x - pacman.x) * 2,
-            y: ghost.y + (ghost.y - pacman.y) * 2
-          };
-        } else {
-          target = getGhostTarget(ghost, pacman);
-        }
-
-        // Get all valid directions (never reverse unless it's the only option)
-        const allDirections = [0, 1, 2, 3].filter(dir => {
-          const dirVector = game.directions[dir];
-          const newX = Math.floor(ghost.x + dirVector.x * 0.8);
-          const newY = Math.floor(ghost.y + dirVector.y * 0.8);
-          return isWalkable(newX, newY);
-        });
-
-        // Remove reverse direction unless it's the only option or ghost is stuck
-        const reverseDirection = (ghost.direction + 2) % 4;
-        const forwardDirections = allDirections.filter(dir => dir !== reverseDirection);
-        const validDirections = (forwardDirections.length > 0 && !forceDirectionChange) ?
-                               forwardDirections : allDirections;
-
-        if (validDirections.length > 0) {
-          // Score each direction based on distance to target
-          const directionScores = validDirections.map(dir => {
-            const dirVector = game.directions[dir];
-            const futureX = ghost.x + dirVector.x * 3; // Look ahead 3 tiles
-            const futureY = ghost.y + dirVector.y * 3;
-
-            const distance = Math.sqrt(
-              Math.pow(futureX - target.x, 2) +
-              Math.pow(futureY - target.y, 2)
-            );
-
-            // Add penalty for recently chosen directions to prevent cycling
-            const recentPenalty = ghost.targetHistory.includes(dir) ? 2 : 0;
-
-            // Add random factor to prevent deterministic behavior
-            const randomFactor = Math.random() * 1.5;
-
-            return {
-              direction: dir,
-              score: distance + recentPenalty + randomFactor
-            };
-          });
-
-          // Choose direction with best (lowest) score
-          directionScores.sort((a, b) => a.score - b.score);
-          const chosenDirection = directionScores[0].direction;
-
-          if (chosenDirection !== ghost.direction) {
-            ghost.direction = chosenDirection;
-            ghost.lastDirectionChange = currentTime;
-            ghost.directionChangeTimeout = ghost.mode === 'frightened' ? 200 : 400; // ms
-            ghost.stuckCounter = 0;
-
-            // Update target history (keep last 3 directions)
-            ghost.targetHistory.push(chosenDirection);
-            if (ghost.targetHistory.length > 3) {
-              ghost.targetHistory.shift();
-            }
-          }
-        }
-      }
-
-      // Move ghost with enhanced collision detection
-      const ghostDir = game.directions[ghost.direction];
-      const proposedX = ghost.x + ghostDir.x * ghost.speed;
-      const proposedY = ghost.y + ghostDir.y * ghost.speed;
-
-      // Check if movement is valid
-      if (checkCollisionWithRadius(proposedX, proposedY, 0.3)) {
-        ghost.x = proposedX;
-        ghost.y = proposedY;
-
-        // Handle tunnel wrapping
-        if (ghost.y >= 12 && ghost.y <= 13) {
-          if (ghost.x < -0.5) ghost.x = 25.5;
-          if (ghost.x > 25.5) ghost.x = -0.5;
-        }
-      } else {
-        // Movement blocked - force direction change on next update
-        ghost.directionChangeTimeout = 0;
-        ghost.stuckCounter += 5; // Increase stuck counter more rapidly
-      }
-
-      // Check collision with Pac-Man
-      const dist = Math.sqrt((ghost.x - pacman.x) ** 2 + (ghost.y - pacman.y) ** 2);
-      if (dist < 0.7) {
-        if (ghost.mode === 'frightened') {
-          // Eat ghost
-          setScore(prev => prev + 200 * (index + 1));
-          ghost.x = 13;
-          ghost.y = 13;
-          ghost.mode = 'scatter';
-          
-          // Ghost eaten particles
-          for (let i = 0; i < 8; i++) {
-            const particle = particleManager.addParticle({
-              x: ghost.x * 20,
-              y: ghost.y * 20,
-              vx: (Math.random() - 0.5) * 80,
-              vy: (Math.random() - 0.5) * 80,
-              color: '#ffffff',
-              life: 500,
-              size: 3
+        
+        // Update timers
+        if (game.frightenedTimer > 0) {
+          game.frightenedTimer -= deltaTime;
+          if (game.frightenedTimer <= 0) {
+            game.ghosts.forEach(ghost => {
+              if (ghost.mode === 'frightened') {
+                ghost.mode = 'chase';
+              }
             });
-            if (particle) {
-              game.particles.push(particle);
-            }
+          }
+        }
+        
+        if (game.freezeTimer > 0) {
+          game.freezeTimer -= deltaTime;
+        }
+        
+        if (game.pacman.powerUpTimer > 0) {
+          game.pacman.powerUpTimer -= deltaTime;
+          if (game.pacman.powerUpTimer <= 0) {
+            game.pacman.powerUpActive = null;
+          }
+        }
+        
+        if (game.comboTimer > 0) {
+          game.comboTimer -= deltaTime;
+          if (game.comboTimer <= 0) {
+            game.combo = 0;
+            setCombo(0);
+          }
+        }
+        
+        // Check collisions
+        checkCollisions();
+        
+        // Check win condition
+        if (game.pellets.size === 0 && game.powerPellets.size === 0) {
+          game.level++;
+          setLevel(game.level);
+          initializeGame();
+        }
+        
+        // Update score display
+        if (game.score !== score) {
+          setScore(game.score);
+        }
+      }
+      
+      // Render
+      render(ctx);
+      
+      animationId = requestAnimationFrame(gameLoop);
+    };
+    
+    const updatePacMan = (deltaTime: number) => {
+      const game = gameRef.current;
+      const pacman = game.pacman;
+      
+      // Update mouth animation
+      pacman.mouthTimer += deltaTime * 10;
+      pacman.mouthOpen = Math.sin(pacman.mouthTimer) > 0;
+      
+      // Check if we can change direction
+      if (pacman.nextDirection !== 'none' && canMove(pacman.gridPos, pacman.nextDirection)) {
+        pacman.direction = pacman.nextDirection;
+        pacman.nextDirection = 'none';
+        // Set new target when changing direction
+        pacman.targetGridPos = getNextGridPos(pacman.gridPos, pacman.direction);
+      }
+      
+      // Move Pac-Man
+      if (pacman.direction !== 'none') {
+        // Calculate distance to current grid center
+        const currentGridCenter = gridToPixel(pacman.gridPos);
+        const distToCenter = Math.sqrt(
+          Math.pow(currentGridCenter.x - pacman.position.x, 2) + 
+          Math.pow(currentGridCenter.y - pacman.position.y, 2)
+        );
+        
+        // If we're close to grid center, we can move to next grid
+        if (distToCenter < 2 && canMove(pacman.gridPos, pacman.direction)) {
+          pacman.previousGridPos = pacman.gridPos;
+          pacman.gridPos = getNextGridPos(pacman.gridPos, pacman.direction);
+          pacman.targetGridPos = getNextGridPos(pacman.gridPos, pacman.direction);
+        }
+        
+        // Always move in the current direction
+        const speed = pacman.powerUpActive === 'speed' ? pacman.speed * 1.5 : pacman.speed;
+        const moveDistance = speed * CELL_SIZE * deltaTime;
+        
+        switch (pacman.direction) {
+          case 'up':
+            pacman.position.y -= moveDistance;
+            break;
+          case 'down':
+            pacman.position.y += moveDistance;
+            break;
+          case 'left':
+            pacman.position.x -= moveDistance;
+            break;
+          case 'right':
+            pacman.position.x += moveDistance;
+            break;
+        }
+        
+        // Snap to grid if we can't move further
+        if (!canMove(pacman.gridPos, pacman.direction)) {
+          const gridCenter = gridToPixel(pacman.gridPos);
+          pacman.position.x = gridCenter.x;
+          pacman.position.y = gridCenter.y;
+          pacman.direction = 'none';
+        }
+      }
+      
+      // Collect pellets only when entering a new grid cell
+      if (pacman.gridPos.row !== pacman.previousGridPos.row || 
+          pacman.gridPos.col !== pacman.previousGridPos.col) {
+        const key = `${pacman.gridPos.row},${pacman.gridPos.col}`;
+        if (game.pellets.has(key)) {
+        game.pellets.delete(key);
+        game.score += 10 * (game.combo + 1);
+        game.combo++;
+        game.comboTimer = 2;
+        setCombo(game.combo);
+        createParticles(pacman.position.x, pacman.position.y, '#ffff00', 5);
+        if (settings.soundEnabled) {
+          soundManager.playCollect();
+        }
+      }
+      
+      if (game.powerPellets.has(key)) {
+        game.powerPellets.delete(key);
+        game.score += 50 * (game.combo + 1);
+        game.frightenedTimer = 8;
+        game.ghosts.forEach(ghost => {
+          if (ghost.mode !== 'eaten') {
+            ghost.mode = 'frightened';
+          }
+        });
+        createParticles(pacman.position.x, pacman.position.y, '#ff00ff', 15);
+        if (settings.soundEnabled) {
+          soundManager.playPowerUp();
+        }
+        }
+        
+        // Collect power-ups
+        const powerUpKey = `${pacman.gridPos.row},${pacman.gridPos.col}`;
+        if (game.powerUps.has(powerUpKey)) {
+          const powerUp = game.powerUps.get(powerUpKey)!;
+          game.powerUps.delete(powerUpKey);
+          
+          pacman.powerUpActive = powerUp.type;
+          pacman.powerUpTimer = powerUp.duration;
+          
+          if (powerUp.type === 'freeze') {
+            game.freezeTimer = powerUp.duration;
           }
           
-          if (settings.sound) {
-            soundManager.playHit();
+          createParticles(pacman.position.x, pacman.position.y, '#00ff00', 20);
+          if (settings.soundEnabled) {
+            soundManager.playPowerUp();
           }
-        } else {
-          // Pac-Man dies
-          setLives(prev => {
-            const newLives = prev - 1;
-            if (newLives <= 0) {
+        }
+      }
+    };
+    
+    const updateGhosts = (deltaTime: number) => {
+      const game = gameRef.current;
+      
+      game.ghosts.forEach(ghost => {
+        // Skip if frozen
+        if (game.freezeTimer > 0 && ghost.mode !== 'eaten') {
+          return;
+        }
+        
+        // Update AI target
+        updateGhostAI(ghost);
+        
+        // Move ghost smoothly
+        const currentGridCenter = gridToPixel(ghost.gridPos);
+        const distToCenter = Math.sqrt(
+          Math.pow(currentGridCenter.x - ghost.position.x, 2) + 
+          Math.pow(currentGridCenter.y - ghost.position.y, 2)
+        );
+        
+        // If at grid center, choose next direction
+        if (distToCenter < 2) {
+          // Choose next direction
+          const possibleDirs: Direction[] = ['up', 'down', 'left', 'right'];
+          const validDirs = possibleDirs.filter(dir => {
+            if (dir === getOppositeDirection(ghost.direction)) return false;
+            return canMove(ghost.gridPos, dir);
+          });
+          
+          if (validDirs.length > 0) {
+            // Choose direction based on AI
+            let bestDir = validDirs[0];
+            let bestDistance = Infinity;
+            
+            validDirs.forEach(dir => {
+              const nextPos = getNextGridPos(ghost.gridPos, dir);
+              const dist = getDistance(nextPos, ghost.mode === 'scatter' ? ghost.scatterTarget : game.pacman.gridPos);
+              
+              if (ghost.mode === 'frightened') {
+                // Random movement when frightened
+                if (Math.random() < 0.5) {
+                  bestDir = dir;
+                }
+              } else if (dist < bestDistance) {
+                bestDistance = dist;
+                bestDir = dir;
+              }
+            });
+            
+            ghost.direction = bestDir;
+            ghost.targetGridPos = getNextGridPos(ghost.gridPos, ghost.direction);
+          }
+        }
+        
+        // Move in current direction
+        if (ghost.direction !== 'none') {
+          const speed = ghost.mode === 'frightened' ? ghost.speed * 0.5 : 
+                       ghost.mode === 'eaten' ? ghost.speed * 2 : ghost.speed;
+          const moveDistance = speed * CELL_SIZE * deltaTime;
+          
+          switch (ghost.direction) {
+            case 'up':
+              ghost.position.y -= moveDistance;
+              break;
+            case 'down':
+              ghost.position.y += moveDistance;
+              break;
+            case 'left':
+              ghost.position.x -= moveDistance;
+              break;
+            case 'right':
+              ghost.position.x += moveDistance;
+              break;
+          }
+          
+          // Update grid position when crossing grid boundaries
+          const newGridPos = pixelToGrid(ghost.position);
+          if (newGridPos.row !== ghost.gridPos.row || newGridPos.col !== ghost.gridPos.col) {
+            ghost.gridPos = newGridPos;
+          }
+        }
+      });
+    };
+    
+    const updateGhostAI = (ghost: Ghost) => {
+      const game = gameRef.current;
+      
+      // Switch between chase and scatter modes
+      const timeInLevel = (Date.now() / 1000) % 20;
+      if (ghost.mode !== 'frightened' && ghost.mode !== 'eaten') {
+        ghost.mode = timeInLevel < 15 ? 'chase' : 'scatter';
+      }
+      
+      // Return to normal after being eaten
+      if (ghost.mode === 'eaten' && ghost.gridPos.row === 14 && ghost.gridPos.col === 14) {
+        ghost.mode = 'chase';
+      }
+    };
+    
+    const getOppositeDirection = (dir: Direction): Direction => {
+      switch (dir) {
+        case 'up': return 'down';
+        case 'down': return 'up';
+        case 'left': return 'right';
+        case 'right': return 'left';
+        default: return 'none';
+      }
+    };
+    
+    const getDistance = (a: GridPosition, b: GridPosition): number => {
+      return Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+    };
+    
+    const checkCollisions = () => {
+      const game = gameRef.current;
+      const pacman = game.pacman;
+      
+      game.ghosts.forEach(ghost => {
+        const dx = ghost.position.x - pacman.position.x;
+        const dy = ghost.position.y - pacman.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < CELL_SIZE * 0.8) {
+          if (ghost.mode === 'frightened') {
+            // Eat ghost
+            ghost.mode = 'eaten';
+            game.score += 200 * (game.combo + 1);
+            game.combo++;
+            game.comboTimer = 2;
+            setCombo(game.combo);
+            createParticles(ghost.position.x, ghost.position.y, ghost.color, 20);
+            if (settings.soundEnabled) {
+              soundManager.playHit();
+            }
+          } else if (ghost.mode !== 'eaten' && pacman.powerUpActive !== 'shield') {
+            // Pac-Man dies
+            game.lives--;
+            setLives(game.lives);
+            createParticles(pacman.position.x, pacman.position.y, '#ffff00', 30);
+            
+            if (game.lives <= 0) {
               setGameOver(true);
-              updateHighScore('pacman', score);
-              if (settings.sound) {
+              updateHighScore('pacman', game.score);
+              if (settings.soundEnabled) {
                 soundManager.playGameOver();
               }
             } else {
               // Reset positions
-              pacman.x = 13;
-              pacman.y = 23;
-              pacman.direction = 0;
-              game.ghosts.forEach((g, i) => {
-                g.x = 13;
-                g.y = 11 + (i > 0 ? 2 : 0);
-                g.mode = 'scatter';
-              });
-              if (settings.sound) {
-                soundManager.playHit();
+              pacman.position = { x: 14 * CELL_SIZE, y: 23 * CELL_SIZE };
+              pacman.gridPos = { row: 23, col: 14 };
+              pacman.targetGridPos = { row: 23, col: 14 };
+              pacman.direction = 'none';
+              pacman.nextDirection = 'none';
+              
+              if (settings.soundEnabled) {
+                soundManager.playGameOver();
               }
             }
-            return newLives;
-          });
+          } else if (pacman.powerUpActive === 'shield') {
+            // Shield protects
+            pacman.powerUpActive = null;
+            pacman.powerUpTimer = 0;
+            createParticles(pacman.position.x, pacman.position.y, '#00ffff', 20);
+          }
         }
-      }
-    });
-
-    // Check for level completion
-    if (game.dotsRemaining <= 0) {
-      console.log(`Level ${level} completed! Advancing to level ${level + 1}...`);
-      
-      // Reset maze but keep level progression
-      resetMazeToOriginal();
-      
-      // Reset positions but maintain speed increases
-      const originalPacman = game.originalPositions.pacman;
-      game.pacman = {
-        ...originalPacman,
-        speed: 0.1 + (level + 1) * 0.005 // Increase speed with level
-      };
-
-      game.ghosts = game.originalPositions.ghosts.map((originalGhost, index) => ({
-        x: originalGhost.x,
-        y: originalGhost.y,
-        direction: originalGhost.direction,
-        mode: originalGhost.mode,
-        color: ['#ff0000', '#ffb8ff', '#00ffff', '#ffb852'][index],
-        name: originalGhost.name,
-        speed: 0.08 + (level + 1) * 0.002, // Increase ghost speed with level
-
-        // Reset AI state
-        lastDirectionChange: 0,
-        directionChangeTimeout: 0,
-        stuckCounter: 0,
-        previousPosition: { x: originalGhost.x, y: originalGhost.y },
-        targetHistory: []
-      }));
-
-      // Clear effects but maintain game progress
-      game.particles = [];
-      game.modeTimer = 0;
-      game.frightTimer = 0;
-      setPowerMode(false);
-      setPowerTimer(0);
-
-      // Add level bonus and advance level
-      setScore(prev => prev + 1000);
-      setLevel(prev => prev + 1);
-      
-      console.log(`Level ${level + 1} initialized with increased difficulty`);
-    }
-
-    // Update particles with limit to prevent memory leak
-    game.particles = game.particles.filter(particle => {
-      particle.update(deltaTime);
-      return particle.life > 0;
-    });
-    
-    // Limit particle count to prevent memory issues
-    if (game.particles.length > 100) {
-      game.particles = game.particles.slice(-50);
-    }
-
-    // Render
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      console.error('PacManGame: Canvas lost during game loop');
-      return;
-    }
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      console.error('PacManGame: Could not get 2D context');
-      return;
-    }
-    
-    const cellSize = canvas.width / 26;
-    
-    // Debug: check if cellSize is valid
-    if (cellSize <= 0 || !isFinite(cellSize)) {
-      console.error('Invalid cellSize:', cellSize, 'canvas.width:', canvas.width);
-      return;
-    }
-    
-    // Clear canvas with dark blue background (more visible than black)
-    ctx.fillStyle = '#001133';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Debug: log rendering info occasionally
-    if (Math.random() < 0.01) {
-      console.log('Rendering:', {
-        canvasSize: `${canvas.width}x${canvas.height}`,
-        cellSize: cellSize,
-        pacman: `${game.pacman.x.toFixed(1)}, ${game.pacman.y.toFixed(1)}`,
-        score: score
       });
-    }
+    };
     
-    // Draw maze
-    ctx.strokeStyle = game.colors.wall;
-    ctx.lineWidth = 2;
-    
-    for (let y = 0; y < game.maze.length; y++) {
-      for (let x = 0; x < game.maze[y].length; x++) {
-        const cell = game.maze[y][x];
-        const px = x * cellSize;
-        const py = y * cellSize;
-        
-        if (cell === 1) {
-          // Wall - bright blue
-          ctx.fillStyle = '#00aaff';
-          ctx.fillRect(px, py, cellSize, cellSize);
-        } else if (cell === 2) {
-          // Dot - bright yellow
-          ctx.fillStyle = '#ffff00';
-          ctx.beginPath();
-          ctx.arc(px + cellSize/2, py + cellSize/2, Math.max(2, cellSize/8), 0, Math.PI * 2);
-          ctx.fill();
-        } else if (cell === 3) {
-          // Power pellet - bright yellow, larger
-          ctx.fillStyle = '#ffff00';
-          ctx.beginPath();
-          ctx.arc(px + cellSize/2, py + cellSize/2, Math.max(6, cellSize/4), 0, Math.PI * 2);
-          ctx.fill();
+    const render = (ctx: CanvasRenderingContext2D) => {
+      const game = gameRef.current;
+      
+      // Clear canvas
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Add glow effect
+      ctx.shadowBlur = 20;
+      
+      // Draw maze
+      ctx.strokeStyle = '#0044ff';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#0044ff';
+      
+      for (let row = 0; row < MAZE_HEIGHT; row++) {
+        for (let col = 0; col < MAZE_WIDTH; col++) {
+          if (game.maze[row][col] === 0) {
+            const x = col * CELL_SIZE;
+            const y = row * CELL_SIZE;
+            
+            // Draw walls with proper connections
+            ctx.beginPath();
+            if (row > 0 && game.maze[row - 1][col] === 0) {
+              ctx.moveTo(x + CELL_SIZE / 2, y);
+              ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
+            }
+            if (row < MAZE_HEIGHT - 1 && game.maze[row + 1][col] === 0) {
+              ctx.moveTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
+              ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE);
+            }
+            if (col > 0 && game.maze[row][col - 1] === 0) {
+              ctx.moveTo(x, y + CELL_SIZE / 2);
+              ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
+            }
+            if (col < MAZE_WIDTH - 1 && game.maze[row][col + 1] === 0) {
+              ctx.moveTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
+              ctx.lineTo(x + CELL_SIZE, y + CELL_SIZE / 2);
+            }
+            ctx.stroke();
+          }
         }
       }
-    }
-    
-    // Draw Pac-Man - bright yellow
-    const pacPx = pacman.x * cellSize;
-    const pacPy = pacman.y * cellSize;
-    
-    ctx.fillStyle = '#ffff00';
-    ctx.beginPath();
-    
-    // Mouth animation based on direction
-    const mouthAngle = Math.sin(timestamp * 0.01) * 0.5 + 0.5;
-    const startAngle = (pacman.direction * Math.PI / 2) + (mouthAngle * 0.3);
-    const endAngle = startAngle + (Math.PI * 2 - mouthAngle * 0.6);
-    
-    ctx.arc(pacPx + cellSize/2, pacPy + cellSize/2, Math.max(cellSize/3, 8), startAngle, endAngle);
-    ctx.lineTo(pacPx + cellSize/2, pacPy + cellSize/2);
-    ctx.fill();
-    
-    // Draw ghosts
-    game.ghosts.forEach(ghost => {
-      const ghostPx = ghost.x * cellSize;
-      const ghostPy = ghost.y * cellSize;
       
-      ctx.fillStyle = ghost.mode === 'frightened' ? 
-        (game.frightTimer < 2 && Math.floor(timestamp / 200) % 2 ? '#ffffff' : game.colors.frightened) :
-        ghost.color;
+      // Draw pellets
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 5;
+      game.pellets.forEach(key => {
+        const [row, col] = key.split(',').map(Number);
+        ctx.beginPath();
+        ctx.arc(col * CELL_SIZE + CELL_SIZE / 2, row * CELL_SIZE + CELL_SIZE / 2, 2, 0, Math.PI * 2);
+        ctx.fill();
+      });
       
-      // Ghost body - make bigger and more visible
-      const ghostRadius = Math.max(cellSize/3, 8);
+      // Draw power pellets
+      ctx.fillStyle = '#ffff00';
+      ctx.shadowColor = '#ffff00';
+      ctx.shadowBlur = 10;
+      game.powerPellets.forEach(key => {
+        const [row, col] = key.split(',').map(Number);
+        const pulse = Math.sin(Date.now() / 200) * 2 + 6;
+        ctx.beginPath();
+        ctx.arc(col * CELL_SIZE + CELL_SIZE / 2, row * CELL_SIZE + CELL_SIZE / 2, pulse, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      
+      // Draw power-ups
+      game.powerUps.forEach((powerUp, key) => {
+        const [row, col] = key.split(',').map(Number);
+        const x = col * CELL_SIZE + CELL_SIZE / 2;
+        const y = row * CELL_SIZE + CELL_SIZE / 2;
+        
+        ctx.fillStyle = '#00ff00';
+        ctx.shadowColor = '#00ff00';
+        ctx.shadowBlur = 15;
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(powerUp.icon, x, y);
+      });
+      
+      // Draw particles
+      game.particles.forEach(particle => {
+        particle.draw(ctx);
+      });
+      
+      // Draw ghosts
+      game.ghosts.forEach(ghost => {
+        ctx.save();
+        ctx.translate(ghost.position.x, ghost.position.y);
+        
+        if (ghost.mode === 'frightened') {
+          ctx.fillStyle = game.frightenedTimer < 2 ? '#ffffff' : '#0000ff';
+          ctx.shadowColor = '#0000ff';
+        } else if (ghost.mode === 'eaten') {
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = '#ffffff';
+        } else {
+          ctx.fillStyle = ghost.color;
+          ctx.shadowColor = ghost.color;
+        }
+        
+        ctx.shadowBlur = 20;
+        
+        // Ghost body
+        ctx.beginPath();
+        ctx.arc(0, -4, 8, Math.PI, 0, true);
+        ctx.lineTo(8, 8);
+        for (let i = 0; i < 4; i++) {
+          ctx.lineTo(8 - i * 4 - 2, 8 - (i % 2) * 3);
+        }
+        ctx.lineTo(-8, 8);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Eyes
+        if (ghost.mode !== 'eaten') {
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(-3, -4, 2, 0, Math.PI * 2);
+          ctx.arc(3, -4, 2, 0, Math.PI * 2);
+          ctx.fill();
+          
+          ctx.fillStyle = '#000000';
+          ctx.beginPath();
+          ctx.arc(-3, -4, 1, 0, Math.PI * 2);
+          ctx.arc(3, -4, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+        ctx.restore();
+      });
+      
+      // Draw Pac-Man
+      ctx.save();
+      ctx.translate(game.pacman.position.x, game.pacman.position.y);
+      
+      // Power-up effects
+      if (game.pacman.powerUpActive) {
+        ctx.shadowBlur = 30;
+        switch (game.pacman.powerUpActive) {
+          case 'speed':
+            ctx.shadowColor = '#00ffff';
+            break;
+          case 'shield':
+            ctx.shadowColor = '#00ff00';
+            break;
+          case 'magnet':
+            ctx.shadowColor = '#ff00ff';
+            break;
+        }
+      } else {
+        ctx.shadowColor = '#ffff00';
+        ctx.shadowBlur = 20;
+      }
+      
+      ctx.fillStyle = '#ffff00';
+      
+      // Draw trail if speed power-up is active
+      if (game.pacman.powerUpActive === 'speed') {
+        ctx.globalAlpha = 0.3;
+        for (let i = 0; i < 5; i++) {
+          const offset = i * 4;
+          ctx.beginPath();
+          ctx.arc(-offset * Math.cos(getDirectionAngle(game.pacman.direction)), 
+                  -offset * Math.sin(getDirectionAngle(game.pacman.direction)), 
+                  8 - i, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+      
+      // Rotate based on direction
+      ctx.rotate(getDirectionAngle(game.pacman.direction));
+      
+      // Draw Pac-Man
       ctx.beginPath();
-      ctx.arc(ghostPx + cellSize/2, ghostPy + cellSize/2, ghostRadius, Math.PI, 0);
-      ctx.lineTo(ghostPx + cellSize/2 + ghostRadius, ghostPy + cellSize/2 + ghostRadius);
-      ctx.lineTo(ghostPx + cellSize/2 + ghostRadius/2, ghostPy + cellSize/2 + ghostRadius*0.75);
-      ctx.lineTo(ghostPx + cellSize/2, ghostPy + cellSize/2 + ghostRadius);
-      ctx.lineTo(ghostPx + cellSize/2 - ghostRadius/2, ghostPy + cellSize/2 + ghostRadius*0.75);
-      ctx.lineTo(ghostPx + cellSize/2 - ghostRadius, ghostPy + cellSize/2 + ghostRadius);
+      if (game.pacman.mouthOpen) {
+        ctx.arc(0, 0, 10, 0.2 * Math.PI, 1.8 * Math.PI);
+      } else {
+        ctx.arc(0, 0, 10, 0, 2 * Math.PI);
+      }
+      ctx.lineTo(0, 0);
       ctx.closePath();
       ctx.fill();
       
-      // Ghost eyes
+      ctx.restore();
+      
+      // Draw combo meter
+      if (game.combo > 0) {
+        ctx.fillStyle = '#ffff00';
+        ctx.shadowColor = '#ffff00';
+        ctx.shadowBlur = 20;
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${game.combo}x COMBO!`, canvas.width / 2, 50);
+      }
+      
+      // Draw HUD
+      ctx.shadowBlur = 0;
       ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(ghostPx + cellSize/2 - 4, ghostPy + cellSize/2 - 2, 3, 0, Math.PI * 2);
-      ctx.arc(ghostPx + cellSize/2 + 4, ghostPy + cellSize/2 - 2, 3, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.font = '16px Arial';
+      ctx.textAlign = 'left';
+      ctx.fillText(`Score: ${game.score}`, 10, 20);
+      ctx.fillText(`Level: ${game.level}`, 10, 40);
+      ctx.textAlign = 'right';
+      ctx.fillText(`Lives: ${game.lives}`, canvas.width - 10, 20);
       
-      if (ghost.mode !== 'frightened') {
-        ctx.fillStyle = '#000000';
-        ctx.beginPath();
-        ctx.arc(ghostPx + cellSize/2 - 4, ghostPy + cellSize/2 - 2, 1, 0, Math.PI * 2);
-        ctx.arc(ghostPx + cellSize/2 + 4, ghostPy + cellSize/2 - 2, 1, 0, Math.PI * 2);
-        ctx.fill();
+      // Draw power-up indicator
+      if (game.pacman.powerUpActive) {
+        ctx.textAlign = 'center';
+        ctx.fillText(`Power: ${game.pacman.powerUpActive.toUpperCase()} ${Math.ceil(game.pacman.powerUpTimer)}s`, 
+                     canvas.width / 2, 20);
       }
-    });
+    };
     
-    // Draw particles
-    game.particles.forEach(particle => {
-      particle.draw(ctx);
-    });
+    const getDirectionAngle = (direction: Direction): number => {
+      switch (direction) {
+        case 'right': return 0;
+        case 'down': return Math.PI / 2;
+        case 'left': return Math.PI;
+        case 'up': return -Math.PI / 2;
+        default: return 0;
+      }
+    };
     
-  }, [gameOver, paused, isWalkable, wrapPosition, getGhostTarget, resetMazeToOriginal, settings.sound, score, updateHighScore, level, checkCollisionWithRadius, isAtValidIntersection]);
-
-  // Input handling
-  const handleInput = useCallback((direction) => {
-    if (gameOver || paused) return;
-    gameRef.current.pacman.nextDirection = direction;
-  }, [gameOver, paused]);
-
-  // Touch event handlers - moved outside useEffect to avoid React hook violations
-  const handleTouchStart = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (gameOver || !canvasRef.current) return;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const touch = e.touches[0];
-    const touchX = touch.clientX - rect.left;
-    const touchY = touch.clientY - rect.top;
-
-    // Initialize touch tracking
-    touchStateRef.current = {
-      ...touchStateRef.current,
-      startX: touchX,
-      startY: touchY,
-      currentX: touchX,
-      currentY: touchY,
-      startTime: performance.now(),
-      isTracking: true,
-      velocity: { x: 0, y: 0 }
-    };
-
-    // Show touch feedback
-    setTouchState(prev => ({
-      ...prev,
-      isActive: true,
-      startPoint: { x: touchX, y: touchY },
-      currentPoint: { x: touchX, y: touchY },
-      startTime: performance.now(),
-      showTouchFeedback: true,
-      feedbackPosition: { x: touchX, y: touchY }
-    }));
-
-    console.log('Touch started at:', touchX, touchY);
-  }, [gameOver]);
-
-  const handleTouchMove = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!touchStateRef.current.isTracking || gameOver || !canvasRef.current) return;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const touch = e.touches[0];
-    const touchX = touch.clientX - rect.left;
-    const touchY = touch.clientY - rect.top;
-
-    // Update current position and calculate velocity
-    const deltaTime = performance.now() - touchStateRef.current.startTime;
-    if (deltaTime > 0) {
-      touchStateRef.current.velocity = {
-        x: (touchX - touchStateRef.current.startX) / deltaTime,
-        y: (touchY - touchStateRef.current.startY) / deltaTime
-      };
-    }
-
-    touchStateRef.current.currentX = touchX;
-    touchStateRef.current.currentY = touchY;
-
-    // Update visual feedback
-    setTouchState(prev => ({
-      ...prev,
-      currentPoint: { x: touchX, y: touchY }
-    }));
-  }, [gameOver]);
-
-  const handleTouchEnd = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!touchStateRef.current.isTracking || gameOver || !canvasRef.current) return;
-
-    const touchData = touchStateRef.current;
-    const swipeDistance = Math.sqrt(
-      Math.pow(touchData.currentX - touchData.startX, 2) +
-      Math.pow(touchData.currentY - touchData.startY, 2)
-    );
-    const swipeTime = performance.now() - touchData.startTime;
-
-    // Determine gesture type and direction
-    let direction = null;
-    let gestureType = 'none';
-
-    if (swipeDistance < touchData.tapThreshold) {
-      // Handle tap gesture - change direction toward tap location
-      gestureType = 'tap';
-      const canvas = canvasRef.current;
-      const cellSize = canvas.width / 26;
-      const pacman = gameRef.current.pacman;
-
-      // Convert touch position to game coordinates
-      const gameX = touchData.currentX / cellSize;
-      const gameY = touchData.currentY / cellSize;
-
-      // Calculate direction from Pac-Man to tap location
-      const dx = gameX - pacman.x;
-      const dy = gameY - pacman.y;
-
-      if (Math.abs(dx) > Math.abs(dy)) {
-        direction = dx > 0 ? 0 : 2; // Right or Left
-      } else {
-        direction = dy > 0 ? 3 : 1; // Down or Up
-      }
-
-    } else if (swipeDistance >= touchData.minSwipeDistance && swipeTime <= touchData.maxSwipeTime) {
-      // Handle swipe gesture
-      gestureType = 'swipe';
-      const dx = touchData.currentX - touchData.startX;
-      const dy = touchData.currentY - touchData.startY;
-
-      // Determine primary swipe direction
-      if (Math.abs(dx) > Math.abs(dy)) {
-        direction = dx > 0 ? 0 : 2; // Right or Left
-      } else {
-        direction = dy > 0 ? 3 : 1; // Down or Up
-      }
-
-      // Validate swipe velocity (prevent accidental slow drags)
-      const velocityThreshold = 0.1; // pixels per ms
-      const currentVelocity = Math.sqrt(
-        touchData.velocity.x * touchData.velocity.x +
-        touchData.velocity.y * touchData.velocity.y
-      );
-
-      if (currentVelocity < velocityThreshold) {
-        direction = null; // Too slow, ignore
-        gestureType = 'drag';
-      }
-    }
-
-    // Apply direction change if valid
-    if (direction !== null) {
-      handleInput(direction);
-
-      // Show direction feedback
-      const directionNames = ['Right', 'Up', 'Left', 'Down'];
-      console.log(`${gestureType} detected: ${directionNames[direction]} (distance: ${swipeDistance.toFixed(1)}px, time: ${swipeTime.toFixed(1)}ms)`);
-
-      // Visual feedback for successful gesture
-      setTouchState(prev => ({
-        ...prev,
-        direction: direction,
-        showTouchFeedback: true
-      }));
-
-      // Play feedback sound
-      if (settings.sound) {
-        soundManager.playTone(800, 50);
-      }
-    }
-
-    // Clear touch tracking
-    touchStateRef.current.isTracking = false;
-
-    // Hide feedback after delay
-    setTimeout(() => {
-      setTouchState(prev => ({
-        ...prev,
-        isActive: false,
-        showTouchFeedback: false,
-        direction: null
-      }));
-    }, 200);
-
-  }, [gameOver, handleInput, settings.sound]);
-
-  // Set up game loop and input
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      setDebugInfo('ERROR: Canvas ref is null');
-      console.error('PacManGame: Canvas ref is null');
-      return;
-    }
+    animationId = requestAnimationFrame(gameLoop);
     
-    setDebugInfo('Canvas found, setting up...');
-
-    const resizeCanvas = () => {
-      // Get full viewport dimensions
-      const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
-      const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
-      
-      // Use much more of the screen - only leave 80px for header and minimal padding
-      const availableWidth = vw - 16; // Only 8px padding on each side
-      const availableHeight = vh - 80; // Only 80px for header and controls
-      
-      // Maintain 26:25 aspect ratio (maze dimensions)
-      const aspectRatio = 26 / 25;
-      let width = availableWidth;
-      let height = width / aspectRatio;
-      
-      // If height is too big, scale down from height
-      if (height > availableHeight) {
-        height = availableHeight;
-        width = height * aspectRatio;
-      }
-      
-      // Ensure we use at least 80% of available space
-      const minWidth = Math.min(availableWidth * 0.8, width);
-      const minHeight = Math.min(availableHeight * 0.8, height);
-      
-      if (width < minWidth) {
-        width = minWidth;
-        height = width / aspectRatio;
-      }
-      
-      // Set canvas dimensions
-      canvas.width = Math.floor(width);
-      canvas.height = Math.floor(height);
-      canvas.style.width = `${Math.floor(width)}px`;
-      canvas.style.height = `${Math.floor(height)}px`;
-      
-      console.log(`Canvas resized to: ${Math.floor(width)}x${Math.floor(height)} (viewport: ${vw}x${vh})`);
-      setDebugInfo(`Canvas: ${Math.floor(width)}x${Math.floor(height)}`);
-    };
-
-    try {
-      resizeCanvas();
-      setDebugInfo('Canvas resized, setting up game loop...');
-    } catch (error) {
-      console.error('PacManGame: Error in resizeCanvas:', error);
-      setDebugInfo(`ERROR: ${error.message}`);
-    }
-    window.addEventListener('resize', resizeCanvas);
-    window.addEventListener('orientationchange', resizeCanvas);
-
-    // Prevent scrolling when in game
-    const preventScroll = (e) => {
-      if (e.target === canvas || canvas.contains(e.target)) {
-        e.preventDefault();
-      }
-    };
-
-    document.addEventListener('touchstart', preventScroll, { passive: false });
-    document.addEventListener('touchend', preventScroll, { passive: false });
-    document.addEventListener('touchmove', preventScroll, { passive: false });
-
-    const handleKeyDown = (e) => {
-      if (gameOver) return;
-      
-      switch(e.key) {
-        case 'ArrowLeft':
-        case 'a':
-        case 'A':
-          e.preventDefault();
-          handleInput(2); // Left
-          break;
-        case 'ArrowRight':
-        case 'd':
-        case 'D':
-          e.preventDefault();
-          handleInput(0); // Right
-          break;
-        case 'ArrowUp':
-        case 'w':
-        case 'W':
-          e.preventDefault();
-          handleInput(1); // Up
-          break;
-        case 'ArrowDown':
-        case 's':
-        case 'S':
-          e.preventDefault();
-          handleInput(3); // Down
-          break;
-        case ' ':
-        case 'Escape':
-          e.preventDefault();
-          setPaused(prev => !prev);
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-    canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-    canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
-
-    // Prevent context menu on long press
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
-    let animationId;
-    let isLoopRunning = false;
-    
-    const startGameLoop = () => {
-      if (gameOver || paused || isLoopRunning) return;
-      
-      try {
-        isLoopRunning = true;
-        const animate = (timestamp) => {
-          if (gameOver || paused) {
-            isLoopRunning = false;
-            return;
-          }
-          gameLoop(timestamp);
-          animationId = requestAnimationFrame(animate);
-        };
-        animationId = requestAnimationFrame(animate);
-        setDebugInfo('Game loop started!');
-      } catch (error) {
-        console.error('PacManGame: Error starting game loop:', error);
-        setDebugInfo(`LOOP ERROR: ${error.message}`);
-        isLoopRunning = false;
-      }
-    };
-
-    // Initial render without animation
-    try {
-      gameLoop(performance.now());
-    } catch (error) {
-      console.error('PacManGame: Error in initial render:', error);
-    }
-
-    startGameLoop();
-
     return () => {
-      isLoopRunning = false;
-      window.removeEventListener('resize', resizeCanvas);
-      window.removeEventListener('orientationchange', resizeCanvas);
-      window.removeEventListener('keydown', handleKeyDown);
-      canvas.removeEventListener('touchstart', handleTouchStart);
-      canvas.removeEventListener('touchmove', handleTouchMove);
-      canvas.removeEventListener('touchend', handleTouchEnd);
-      canvas.removeEventListener('contextmenu', (e) => e.preventDefault());
-      document.removeEventListener('touchstart', preventScroll);
-      document.removeEventListener('touchend', preventScroll);
-      document.removeEventListener('touchmove', preventScroll);
-      if (animationId) {
-        cancelAnimationFrame(animationId);
+      cancelAnimationFrame(animationId);
+    };
+  }, [gameOver, paused, settings.soundEnabled, initializeGame, createParticles, updateHighScore, score]);
+
+  // Spawn power-ups periodically
+  useEffect(() => {
+    const spawnPowerUp = () => {
+      const game = gameRef.current;
+      if (game.gamePhase !== 'playing' || paused || gameOver) return;
+      
+      // Find empty spots
+      const emptySpots: GridPosition[] = [];
+      for (let row = 0; row < MAZE_HEIGHT; row++) {
+        for (let col = 0; col < MAZE_WIDTH; col++) {
+          if (game.maze[row][col] !== 0 && 
+              !game.pellets.has(`${row},${col}`) &&
+              !game.powerPellets.has(`${row},${col}`) &&
+              !game.powerUps.has(`${row},${col}`)) {
+            emptySpots.push({ row, col });
+          }
+        }
+      }
+      
+      if (emptySpots.length > 0) {
+        const spot = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+        const types: Array<{ type: PowerUp['type']; icon: string }> = [
+          { type: 'speed', icon: '⚡' },
+          { type: 'freeze', icon: '❄️' },
+          { type: 'magnet', icon: '🧲' },
+          { type: 'shield', icon: '🛡️' }
+        ];
+        const powerUp = types[Math.floor(Math.random() * types.length)];
+        
+        game.powerUps.set(`${spot.row},${spot.col}`, {
+          type: powerUp.type,
+          gridPos: spot,
+          duration: 5,
+          icon: powerUp.icon
+        });
       }
     };
-  }, [gameLoop, handleInput, gameOver, paused, handleTouchStart, handleTouchMove, handleTouchEnd]);
+    
+    const interval = setInterval(spawnPowerUp, 15000);
+    return () => clearInterval(interval);
+  }, [paused, gameOver]);
 
-  const resetGame = useCallback(() => {
-    console.log('Starting complete game reset...');
-
-    const game = gameRef.current;
-
-    // 1. Reset maze to original state
-    resetMazeToOriginal();
-
-    // 2. Reset all React state
-    setScore(0);
-    setLevel(1);
-    setLives(3);
+  const resetGame = () => {
+    initializeGame();
     setGameOver(false);
     setPaused(false);
-    setPowerMode(false);
-    setPowerTimer(0);
-    setDebugInfo('Game reset complete');
-
-    // 3. Reset Pac-Man to original position and state
-    const originalPacman = game.originalPositions.pacman;
-    game.pacman = {
-      x: originalPacman.x,
-      y: originalPacman.y,
-      direction: originalPacman.direction,
-      nextDirection: originalPacman.nextDirection,
-      speed: 0.1 // Base speed, will be adjusted by initializeGame
-    };
-
-    // 4. Reset ghosts to original positions and state
-    game.ghosts = game.originalPositions.ghosts.map((originalGhost, index) => ({
-      x: originalGhost.x,
-      y: originalGhost.y,
-      direction: originalGhost.direction,
-      mode: originalGhost.mode,
-      color: ['#ff0000', '#ffb8ff', '#00ffff', '#ffb852'][index],
-      name: originalGhost.name,
-      speed: 0.08, // Base speed, will be adjusted by initializeGame
-
-      // Reset enhanced AI state
-      lastDirectionChange: 0,
-      directionChangeTimeout: 0,
-      stuckCounter: 0,
-      previousPosition: { x: originalGhost.x, y: originalGhost.y },
-      targetHistory: []
-    }));
-
-    // 5. Clear all particles and effects
-    game.particles = [];
-
-    // 6. Reset all timers and counters
-    game.lastUpdate = 0;
-    game.modeTimer = 0;
-    game.frightTimer = 0;
-
-    // 7. Reset game state tracking
-    game.gameState = {
-      timers: { modeTimer: 0, frightTimer: 0, powerTimer: 0 },
-      counters: { dotsRemaining: game.dotsRemaining, level: 1, score: 0, lives: 3 },
-      flags: { gameOver: false, paused: false, powerMode: false }
-    };
-
-    // 8. Re-initialize with level 1 settings
-    initializeGame();
-
-    console.log('Game reset completed:', {
-      dotsRemaining: game.dotsRemaining,
-      pacmanPosition: `${game.pacman.x}, ${game.pacman.y}`,
-      ghostCount: game.ghosts.length,
-      particleCount: game.particles.length
-    });
-  }, [resetMazeToOriginal, initializeGame]);
-
-  useEffect(() => {
-    console.log('PacManGame: Component mounted, initializing game...');
-    resetGame();
-  }, [resetGame]);
-
-  // Add debugging for game state
-  useEffect(() => {
-    console.log('PacManGame: Game state changed', { gameOver, paused, score, level, lives });
-  }, [gameOver, paused, score, level, lives]);
+    setScore(0);
+    setLives(3);
+    setLevel(1);
+    setCombo(0);
+    gameRef.current.score = 0;
+    gameRef.current.lives = 3;
+    gameRef.current.level = 1;
+    gameRef.current.combo = 0;
+  };
 
   return (
-    <div className="flex flex-col items-center space-y-4 text-white">
-      <div className="text-center space-y-2">
-        <div className="flex justify-center space-x-8 text-sm">
-          <div>Score: <span className="text-yellow-400">{score.toLocaleString()}</span></div>
-          <div>Level: <span className="text-cyan-400">{level}</span></div>
-          <div>Lives: <span className="text-red-400">{'● '.repeat(lives)}</span></div>
-        </div>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-4">
+      <div className="relative bg-black rounded-lg shadow-2xl overflow-hidden">
+        <FadingCanvas 
+          ref={canvasRef} 
+          width={MAZE_WIDTH * CELL_SIZE}
+          height={MAZE_HEIGHT * CELL_SIZE}
+        />
         
-        {powerMode && (
-          <div className="flex justify-center items-center space-x-2">
-            <Zap className="w-4 h-4 text-yellow-400" />
-            <div className="text-yellow-400 text-sm">
-              Power Mode: {powerTimer.toFixed(1)}s
+        {gameOver && <GameOverBanner score={score} onRestart={resetGame} />}
+        
+        {paused && !gameOver && (
+          <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
+            <div className="text-white text-center">
+              <h2 className="text-4xl font-bold mb-4">PAUSED</h2>
+              <p className="text-xl">Press SPACE to continue</p>
+            </div>
+          </div>
+        )}
+        
+        {!gameOver && gameRef.current.gamePhase === 'ready' && (
+          <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
+            <div className="text-white text-center">
+              <h2 className="text-4xl font-bold mb-4">READY?</h2>
+              <p className="text-xl">Press any arrow key to start</p>
+              <p className="text-sm mt-2">Swipe on mobile</p>
             </div>
           </div>
         )}
       </div>
-
-      <div className="relative">
-        <canvas 
-          ref={canvasRef} 
-          className="border border-gray-600 rounded"
-          style={{ display: 'block', touchAction: 'none' }}
-        />
-        
-        {/* Touch feedback overlay */}
-        {touchState.showTouchFeedback && (
-          <div 
-            className="absolute pointer-events-none"
-            style={{
-              left: `${touchState.feedbackPosition?.x || 0}px`,
-              top: `${touchState.feedbackPosition?.y || 0}px`,
-              transform: 'translate(-50%, -50%)',
-              transition: 'opacity 0.2s ease-out'
-            }}
-          >
-            {/* Swipe direction indicator */}
-            {touchState.direction !== null && (
-              <div className="bg-yellow-400 text-black px-2 py-1 rounded text-xs font-bold">
-                {['→', '↑', '←', '↓'][touchState.direction]}
-              </div>
-            )}
-
-            {/* Touch ripple effect */}
-            <div 
-              className="absolute inset-0 bg-yellow-400 rounded-full opacity-30 animate-ping"
-              style={{
-                width: '40px',
-                height: '40px',
-                marginLeft: '-20px',
-                marginTop: '-20px'
-              }}
-            />
-          </div>
-        )}
-        
-        {gameOver && (
-          <GameOverBanner
-            score={score}
-            onRestart={resetGame}
-            message={`Level ${level} reached!`}
-          />
-        )}
-      </div>
-
-      <div className="flex space-x-4">
+      
+      <div className="mt-4 flex gap-4">
         <button
           onClick={() => setPaused(!paused)}
-          disabled={gameOver}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-4 py-2 rounded flex items-center space-x-2"
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
         >
-          {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-          <span>{paused ? 'Resume' : 'Pause'}</span>
+          {paused ? <Play size={20} /> : <Pause size={20} />}
+          {paused ? 'Resume' : 'Pause'}
         </button>
         
         <button
           onClick={resetGame}
-          className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded flex items-center space-x-2"
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
         >
-          <RotateCcw className="w-4 h-4" />
-          <span>Restart</span>
+          <RotateCcw size={20} />
+          Restart
         </button>
       </div>
-
-      <div className="text-xs text-gray-400 text-center max-w-md">
-        <p>Desktop: Use arrow keys or WASD to move</p>
-        <p>Mobile: Swipe anywhere on screen or tap where you want to go</p>
-        <p className="text-yellow-400 mt-1">
-          {touchState.isActive ? 'Touch detected...' : 'Touch controls active'}
-        </p>
-        <p className="mt-1">Power pellets make ghosts vulnerable. Eat all dots to advance levels!</p>
-        <div className="mt-2 text-red-400 font-mono">Debug: {debugInfo}</div>
+      
+      <div className="mt-4 text-white text-center">
+        <p className="text-sm opacity-75">Use arrow keys or WASD to move • Swipe on mobile</p>
+        <div className="flex gap-4 mt-2 justify-center">
+          <div className="flex items-center gap-1">
+            <span className="text-yellow-400">●</span> Pellet (10pts)
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-yellow-400 text-lg">●</span> Power Pellet (50pts)
+          </div>
+          <div className="flex items-center gap-1">
+            <Zap size={16} className="text-cyan-400" /> Speed
+          </div>
+          <div className="flex items-center gap-1">
+            <Shield size={16} className="text-green-400" /> Shield
+          </div>
+        </div>
       </div>
     </div>
   );

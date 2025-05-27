@@ -1,93 +1,152 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Dispatch, SetStateAction } from 'react';
 
-// TypeScript interfaces
-interface GameSettings {
-  version: number;
+export interface GameSettings {
   soundEnabled: boolean;
   volume: number;
   difficulty: 'easy' | 'normal' | 'hard';
-  theme: 'neon' | 'retro' | 'dark';
-  controls?: {
-    enableGamepad: boolean;
-    touchSensitivity: number;
-  };
+  theme: 'neon' | 'retro' | 'minimal';
 }
 
-// Migration logic for legacy settings
-const migrateSettings = (saved: any): GameSettings => {
-  // Validate and sanitize values
-  const sanitizeVolume = (vol: any): number => {
-    const num = parseFloat(vol);
-    return isNaN(num) ? 0.5 : Math.max(0, Math.min(1, num));
-  };
+export type UseSettingsReturn = [GameSettings, Dispatch<SetStateAction<GameSettings>>];
 
-  const sanitizeDifficulty = (diff: any): 'easy' | 'normal' | 'hard' => {
-    return ['easy', 'normal', 'hard'].includes(diff) ? diff : 'normal';
-  };
-
-  const sanitizeTheme = (theme: any): 'neon' | 'retro' | 'dark' => {
-    return ['neon', 'retro', 'dark'].includes(theme) ? theme : 'neon';
-  };
-
-  return {
-    version: 1,
-    soundEnabled: typeof saved.soundEnabled === 'boolean' ? saved.soundEnabled : true,
-    volume: sanitizeVolume(saved.volume),
-    difficulty: sanitizeDifficulty(saved.difficulty),
-    theme: sanitizeTheme(saved.theme),
-    controls: {
-      enableGamepad: saved.controls?.enableGamepad ?? true,
-      touchSensitivity: typeof saved.controls?.touchSensitivity === 'number' 
-        ? Math.max(0.1, Math.min(2.0, saved.controls.touchSensitivity))
-        : 1.0
-    }
-  };
+const DEFAULT_SETTINGS: GameSettings = {
+  soundEnabled: true,
+  volume: 0.5,
+  difficulty: 'normal',
+  theme: 'neon'
 };
 
-export const useSettings = (): [GameSettings, (settings: GameSettings) => void] => {  const [settings, setSettings] = useState<GameSettings>(() => {
-    try {
-      const saved = localStorage.getItem('retroGameSettings');
-      if (!saved) {
-        return {
-          version: 1,
-          soundEnabled: true,
-          volume: 0.5,
-          difficulty: 'normal',
-          theme: 'neon',
-          controls: {
-            enableGamepad: true,
-            touchSensitivity: 1.0
-          }
-        };
-      }
+const STORAGE_KEY = 'retroGameSettings';
+const MAX_STORAGE_SIZE = 1024 * 1024; // 1MB limit for settings
 
-      const parsed = JSON.parse(saved);
-      return migrateSettings(parsed);
-    } catch (error) {
-      console.warn('Failed to parse saved settings, using defaults:', error);
-      return {
-        version: 1,
-        soundEnabled: true,
-        volume: 0.5,
-        difficulty: 'normal',
-        theme: 'neon',
-        controls: {
-          enableGamepad: true,
-          touchSensitivity: 1.0
-        }
-      };
+// Validation function to ensure settings object has correct shape and types
+const validateSettings = (data: unknown): GameSettings | null => {
+  try {
+    if (!data || typeof data !== 'object') {
+      return null;
     }
-  });
+
+    const settings = data as Record<string, unknown>;
+
+    // Validate required fields and types
+    if (typeof settings.soundEnabled !== 'boolean') {
+      return null;
+    }
+
+    if (typeof settings.volume !== 'number' || 
+        settings.volume < 0 || 
+        settings.volume > 1) {
+      return null;
+    }
+
+    if (!['easy', 'normal', 'hard'].includes(settings.difficulty as string)) {
+      return null;
+    }
+
+    if (!['neon', 'retro', 'minimal'].includes(settings.theme as string)) {
+      return null;
+    }
+
+    return {
+      soundEnabled: settings.soundEnabled,
+      volume: settings.volume,
+      difficulty: settings.difficulty as 'easy' | 'normal' | 'hard',
+      theme: settings.theme as 'neon' | 'retro' | 'minimal'
+    };
+  } catch (error) {
+    console.error('Settings validation error:', error);
+    return null;
+  }
+};
+
+// Safe localStorage read with validation
+const loadSettings = (): GameSettings => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) {
+      return DEFAULT_SETTINGS;
+    }
+
+    // Check size to prevent processing huge strings
+    if (saved.length > MAX_STORAGE_SIZE) {
+      console.warn('Settings data exceeds size limit, using defaults');
+      localStorage.removeItem(STORAGE_KEY);
+      return DEFAULT_SETTINGS;
+    }
+
+    const parsed = JSON.parse(saved);
+    const validated = validateSettings(parsed);
+
+    if (!validated) {
+      console.warn('Invalid settings format, using defaults');
+      localStorage.removeItem(STORAGE_KEY);
+      return DEFAULT_SETTINGS;
+    }
+
+    return validated;
+  } catch (error) {
+    console.error('Failed to load settings:', error);
+    // Clear corrupted data
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (clearError) {
+      console.error('Failed to clear corrupted settings:', clearError);
+    }
+    return DEFAULT_SETTINGS;
+  }
+};
+
+// Safe localStorage write with error handling
+const saveSettings = (settings: GameSettings): void => {
+  try {
+    const data = JSON.stringify(settings);
+    
+    // Check if data is too large
+    if (data.length > MAX_STORAGE_SIZE) {
+      console.error('Settings data too large to save');
+      return;
+    }
+
+    localStorage.setItem(STORAGE_KEY, data);
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.name === 'QuotaExceededError') {
+        console.error('localStorage quota exceeded');
+        // Try to clear old data and retry
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+        } catch (retryError) {
+          console.error('Failed to save settings after clearing:', retryError);
+        }
+      } else {
+        console.error('Failed to save settings:', error);
+      }
+    }
+  }
+};
+
+export const useSettings = (): UseSettingsReturn => {
+  const [settings, setSettings] = useState<GameSettings>(loadSettings);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('retroGameSettings', JSON.stringify(settings));
-    } catch (error) {
-      console.warn('Failed to save settings to localStorage:', error);
+    // Validate settings before saving
+    const validated = validateSettings(settings);
+    if (validated) {
+      saveSettings(validated);
+    } else {
+      console.error('Invalid settings state, not saving');
     }
   }, [settings]);
 
-  return [settings, setSettings];
-};
+  // Wrapped setter that ensures valid state
+  const setSafeSettings: Dispatch<SetStateAction<GameSettings>> = (action) => {
+    setSettings((prev) => {
+      const newSettings = typeof action === 'function' ? action(prev) : action;
+      const validated = validateSettings(newSettings);
+      return validated || prev; // Keep previous state if validation fails
+    });
+  };
 
-export type { GameSettings };
+  return [settings, setSafeSettings];
+};

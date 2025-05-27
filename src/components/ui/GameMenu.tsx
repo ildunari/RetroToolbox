@@ -1,18 +1,40 @@
 import React from 'react';
 import { Trophy, Settings } from 'lucide-react';
 
+interface Game {
+  id: string;
+  name: string;
+  icon: string;
+}
+
+interface Stats {
+  totalScore: number;
+  highScores: Record<string, number>;
+}
+
+interface GameMenuProps {
+  games: Game[];
+  stats: Stats;
+  onGameSelect: (gameId: string) => void;
+  onShowSettings: () => void;
+}
+
+interface GameDetails {
+  color: string;
+  description: string;
+}
+
 // Game colors and descriptions
-const gameDetails = {
+const gameDetails: Record<string, GameDetails> = {
   snake: { color: 'from-green-400 to-green-600', description: 'Classic snake with power-ups' },
   pong: { color: 'from-blue-400 to-blue-600', description: 'Enhanced pong with AI' },
   breakout: { color: 'from-red-400 to-red-600', description: 'Destroy all bricks!' },
   tetris: { color: 'from-purple-400 to-purple-600', description: 'Fall block puzzle' },
   spaceInvaders: { color: 'from-yellow-400 to-yellow-600', description: 'Defend Earth!' },
-  pacman: { color: 'from-orange-400 to-orange-600', description: 'Collect dots, avoid ghosts!' },
-  stellarDrift: { color: 'from-indigo-400 to-indigo-600', description: 'Navigate through space!' }
+  pacman: { color: 'from-yellow-400 to-orange-600', description: 'Neon maze adventure!' }
 };
 
-export const GameMenu = ({ games, stats, onGameSelect, onShowSettings }) => (
+export const GameMenu: React.FC<GameMenuProps> = ({ games, stats, onGameSelect, onShowSettings }) => (
   <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4 flex flex-col items-center justify-center">
     <div className="absolute inset-0 overflow-hidden">
       <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
@@ -61,3 +83,5 @@ export const GameMenu = ({ games, stats, onGameSelect, onShowSettings }) => (
     </div>
   </div>
 );
+
+GameMenu.displayName = 'GameMenu';

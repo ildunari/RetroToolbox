@@ -2,10 +2,90 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
-import { GameProps } from '../../core/GameTypes';
 
-// Tetromino shapes
-const TETROMINOES = {
+
+
+// Interfaces
+interface Tetromino {
+  shape: number[][];
+  x: number;
+  y: number;
+  color: string;
+}
+
+type GameBoard = number[][];
+
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface BlockParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  color: string;
+  life: number;
+  maxLife: number;
+  size: number;
+  rotation: number;
+  rotationSpeed: number;
+  update: () => void;
+  draw: (ctx: CanvasRenderingContext2D) => void;
+}
+
+interface Shockwave {
+  x: number;
+  y: number;
+  radius: number;
+  maxRadius: number;
+  life: number;
+}
+
+interface TrailPosition {
+  x: number;
+  y: number;
+  piece: string;
+  rotation: number;
+  life: number;
+}
+
+interface Explosion {
+  lineY: number;
+  triggerTime: number;
+  blockData: (string | 0)[];
+}
+
+interface GameState {
+  board: GameBoard;
+  currentPiece: string | null;
+  currentPosition: Position;
+  currentRotation: number;
+  nextPiece: string | null;
+  holdPiece: string | null;
+  canHold: boolean;
+  dropTimer: number;
+  dropInterval: number;
+  particles: (Particle | BlockParticle)[];
+  shockwaves: Shockwave[];
+  trailPositions: TrailPosition[];
+  explosionQueue: Explosion[];
+  lastUpdate: number;
+  keys: Record<string, boolean>;
+  softDropTimer: number;
+}
+
+interface TetrisGameProps {
+  settings: {
+    soundEnabled: boolean;
+    volume: number;
+  };
+  updateHighScore: (game: string, score: number) => void;
+}
+
+// Tetromino definitions
+const TETROMINOES: Record<string, number[][][]> = {
   I: [
     [[1, 1, 1, 1]],
     [[1], [1], [1], [1]]
@@ -41,7 +121,7 @@ const TETROMINOES = {
   ]
 };
 
-const COLORS = {
+const COLORS: Record<string, string> = {
   I: '#00f5ff', // Cyan - keep this cool color
   O: '#39ff14', // Electric lime instead of yellow
   T: '#9c88ff', // Purple - keep this
@@ -51,8 +131,19 @@ const COLORS = {
   L: '#00bfff'  // Deep sky blue instead of orange
 };
 
+const BOARD_WIDTH = 10;
+const BOARD_HEIGHT = 20;
+const CELL_SIZE = 25;
+
 // Enhanced drawing function with modern glow and sharp squares
-const drawGlowBlock = (ctx, x, y, color, size = CELL_SIZE, glowIntensity = 1) => {
+const drawGlowBlock = (
+  ctx: CanvasRenderingContext2D, 
+  x: number, 
+  y: number, 
+  color: string, 
+  size: number = CELL_SIZE, 
+  glowIntensity: number = 1
+): void => {
   // Create linear gradient for segmented square look
   const gradient = ctx.createLinearGradient(x, y, x, y + size);
   gradient.addColorStop(0, color + 'ff');
@@ -93,29 +184,7 @@ const drawGlowBlock = (ctx, x, y, color, size = CELL_SIZE, glowIntensity = 1) =>
   ctx.shadowBlur = 0;
 };
 
-const BOARD_WIDTH = 10;
-const BOARD_HEIGHT = 20;
-const CELL_SIZE = 25;
-
-interface TetrisPiece {
-  shape: number[][][];
-  color: string;
-  rotationIndex: number;
-}
-
-interface GameRef {
-  board: number[][];
-  currentPiece: TetrisPiece | null;
-  currentPosition: { x: number; y: number };
-  currentRotation: number;
-  nextPiece: TetrisPiece | null;
-  dropTime: number;
-  lastDrop: number;
-  particles: Particle[];
-  isPlacing: boolean;
-}
-
-export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) => {
+export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [score, setScore] = useState(0);
   const [lines, setLines] = useState(0);
@@ -123,8 +192,8 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
   
-  const gameRef = useRef({
-    board: Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0)),
+  const gameRef = useRef<GameState>({
+    board: Array(BOARD_HEIGHT).fill(null).map(() => Array(BOARD_WIDTH).fill(0)),
     currentPiece: null,
     currentPosition: { x: 0, y: 0 },
     currentRotation: 0,
@@ -140,10 +209,10 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     lastUpdate: 0,
     keys: {},
     softDropTimer: 0,
-    isPlacing: false,
   });
 
-  const getRandomPiece = useCallback(() => {
+  const getRandomPiece = useCallback((): string => {
+    // DEBUG CODE REMOVED - 2025-05-27
     const pieces = Object.keys(TETROMINOES);
     return pieces[Math.floor(Math.random() * pieces.length)];
   }, []);
@@ -162,16 +231,14 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     game.canHold = true;
     
     // Check if game over
-    if (isCollision(game.currentPiece, game.currentPosition, game.currentRotation, game.board)) {
-      if (!gameOver) { // Prevent double-triggering
-        setGameOver(true);
-        updateHighScore('tetris', score);
-        soundManager.playGameOver();
-      }
+    if (game.currentPiece && isCollision(game.currentPiece, game.currentPosition, game.currentRotation, game.board)) {
+      setGameOver(true);
+      updateHighScore('tetris', score);
+      soundManager.playGameOver();
     }
   }, [getRandomPiece, score, updateHighScore]);
 
-  const isCollision = (piece, position, rotation, board) => {
+  const isCollision = (piece: string, position: Position, rotation: number, board: GameBoard): boolean => {
     const shape = TETROMINOES[piece][rotation];
     
     for (let y = 0; y < shape.length; y++) {
@@ -195,22 +262,21 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
   };
 
   const placePiece = useCallback(() => {
+    console.log('🔴 PLACE PIECE CALLED');
     const game = gameRef.current;
-    if (game.isPlacing) return; // Prevent race condition
-    game.isPlacing = true;
+    if (!game.currentPiece) return;
     
-    try {
-      const shape = TETROMINOES[game.currentPiece][game.currentRotation];
-      
-      // Place piece on board
-      for (let y = 0; y < shape.length; y++) {
-        for (let x = 0; x < shape[y].length; x++) {
-          if (shape[y][x]) {
-            const boardX = game.currentPosition.x + x;
-            const boardY = game.currentPosition.y + y;
+    const shape = TETROMINOES[game.currentPiece][game.currentRotation];
+    
+    // Place piece on board
+    for (let y = 0; y < shape.length; y++) {
+      for (let x = 0; x < shape[y].length; x++) {
+        if (shape[y][x]) {
+          const boardX = game.currentPosition.x + x;
+          const boardY = game.currentPosition.y + y;
           
           if (boardY >= 0) {
-            game.board[boardY][boardX] = game.currentPiece;
+            game.board[boardY][boardX] = game.currentPiece as any;
           }
         }
       }
@@ -230,7 +296,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     });
     
     // Check for completed lines
-    const completedLines = [];
+    const completedLines: number[] = [];
     for (let y = BOARD_HEIGHT - 1; y >= 0; y--) {
       if (game.board[y].every(cell => cell !== 0)) {
         completedLines.push(y);
@@ -238,13 +304,15 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     }
     
     if (completedLines.length > 0) {
+      console.log('🎯 LINES DETECTED:', completedLines, 'Total:', completedLines.length);
+      
       // Queue serialized explosions - start from bottom line and work up
       completedLines.sort((a, b) => b - a); // Sort descending (bottom to top)
       
       // Store block data for explosions before clearing
       const explosionData = completedLines.map(lineY => ({
         lineY: lineY,
-        blockData: [...game.board[lineY]]
+        blockData: [...game.board[lineY]] as (string | 0)[]
       }));
       
       // Remove completed lines first from bottom to top
@@ -274,6 +342,8 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       const newScore = score + linePoints * level;
       const newLines = lines + completedLines.length;
       
+      console.log(`📊 SCORING: Cleared ${completedLines.length} lines, Points: ${linePoints}, New Score: ${newScore}, New Lines: ${newLines}`);
+      
       setScore(newScore);
       setLines(newLines);
       
@@ -289,17 +359,14 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       soundManager.playPowerUp();
     }
     
-      spawnPiece();
-    } finally {
-      game.isPlacing = false; // Always release placement lock
-    }
-  }, [score, lines, level, spawnPiece, updateHighScore]);
+    spawnPiece();
+  }, [score, lines, level, spawnPiece]);
 
-  const movePiece = useCallback((dx, dy, newRotation = null) => {
+  const movePiece = useCallback((dx: number, dy: number, newRotation: number | null = null): boolean => {
     const game = gameRef.current;
     if (!game.currentPiece) return false;
     
-    const newPosition = {
+    const newPosition: Position = {
       x: game.currentPosition.x + dx,
       y: game.currentPosition.y + dy
     };
@@ -331,7 +398,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     }
     
     // Try wall kicks
-    const kicks = [[-1, 0], [1, 0], [0, -1], [-2, 0], [2, 0]];
+    const kicks: [number, number][] = [[-1, 0], [1, 0], [0, -1], [-2, 0], [2, 0]];
     for (const [dx, dy] of kicks) {
       if (!isCollision(game.currentPiece, 
           { x: game.currentPosition.x + dx, y: game.currentPosition.y + dy }, 
@@ -378,6 +445,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     }
     
     setScore(prev => prev + dropDistance * 2);
+    console.log('🟡 HARD DROP calling placePiece');
     placePiece();
   }, [movePiece, placePiece]);
 
@@ -393,19 +461,13 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     if (!canvas) return;
     
     const ctx = canvas.getContext('2d');
-    let animationId;
+    if (!ctx) return;
+    
+    let animationId: number;
     
     const resizeCanvas = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const displayWidth = BOARD_WIDTH * CELL_SIZE + 200; // Extra space for UI
-      const displayHeight = BOARD_HEIGHT * CELL_SIZE;
-      
-      canvas.width = displayWidth * dpr;
-      canvas.height = displayHeight * dpr;
-      canvas.style.width = displayWidth + 'px';
-      canvas.style.height = displayHeight + 'px';
-      
-      ctx.scale(dpr, dpr);
+      canvas.width = BOARD_WIDTH * CELL_SIZE + 200; // Extra space for UI
+      canvas.height = BOARD_HEIGHT * CELL_SIZE;
     };
     
     resizeCanvas();
@@ -416,7 +478,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     window.addEventListener('blur', handleBlur);
     window.addEventListener('focus', handleFocus);
 
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (gameOver) return;
       
       // Prevent key repeat for critical actions
@@ -455,14 +517,14 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       }
     };
 
-    const handleKeyUp = (e) => {
+    const handleKeyUp = (e: KeyboardEvent) => {
       gameRef.current.keys[e.key] = false;
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
-    const gameLoop = (timestamp) => {
+    const gameLoop = (timestamp: number) => {
       if (gameOver) {
         animationId = requestAnimationFrame(gameLoop);
         return;
@@ -485,6 +547,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
             setScore(prev => prev + 1);
             game.dropTimer = 0;
           } else {
+            console.log('🔵 SOFT DROP calling placePiece');
             placePiece();
           }
           game.softDropTimer = 0;
@@ -495,6 +558,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       game.dropTimer += deltaTime;
       if (game.dropTimer >= game.dropInterval) {
         if (!movePiece(0, 1)) {
+          console.log('🟢 NORMAL DROP calling placePiece');
           placePiece();
         }
         game.dropTimer = 0;
@@ -502,10 +566,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
 
       // Update particles (handle both old Particle class and custom block particles)
       game.particles = game.particles.filter(particle => {
-        if (particle.update) {
-          particle.update();
-        } else {
-          // Old particle system fallback
+        if ('update' in particle) {
           particle.update();
         }
         return particle.life > 0;
@@ -517,7 +578,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
         if (currentTime >= explosion.triggerTime) {
           // Trigger explosion for this line
           for (let x = 0; x < BOARD_WIDTH; x++) {
-            const blockColor = explosion.blockData[x] ? COLORS[explosion.blockData[x]] : '#ffffff';
+            const blockColor = explosion.blockData[x] ? COLORS[explosion.blockData[x] as string] : '#ffffff';
             
             if (explosion.blockData[x]) { // Only explode if there was a block
               // Create block-like particles that look like mini tetromino pieces
@@ -526,7 +587,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
                 const speed = 25 + Math.random() * 35; // Slightly slower and more controlled
                 
                 // Create custom block particle
-                const blockParticle = {
+                const blockParticle: BlockParticle = {
                   x: x * CELL_SIZE + CELL_SIZE / 2,
                   y: explosion.lineY * CELL_SIZE + CELL_SIZE / 2,
                   vx: Math.cos(angle) * speed,
@@ -547,7 +608,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
                     this.life -= 0.016;
                   },
                   
-                  draw: function(ctx) {
+                  draw: function(ctx: CanvasRenderingContext2D) {
                     const alpha = Math.max(0, this.life / this.maxLife);
                     ctx.save();
                     ctx.translate(this.x, this.y);
@@ -654,7 +715,7 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
       for (let y = 0; y < BOARD_HEIGHT; y++) {
         for (let x = 0; x < BOARD_WIDTH; x++) {
           if (game.board[y][x]) {
-            drawGlowBlock(ctx, x * CELL_SIZE, y * CELL_SIZE, COLORS[game.board[y][x]], CELL_SIZE, 0.8);
+            drawGlowBlock(ctx, x * CELL_SIZE, y * CELL_SIZE, COLORS[game.board[y][x] as string], CELL_SIZE, 0.8);
           }
         }
       }
@@ -836,9 +897,8 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     setLines(0);
     setLevel(1);
     setGameOver(false);
-    setPaused(false);
     const game = gameRef.current;
-    game.board = Array(BOARD_HEIGHT).fill().map(() => Array(BOARD_WIDTH).fill(0));
+    game.board = Array(BOARD_HEIGHT).fill(null).map(() => Array(BOARD_WIDTH).fill(0));
     game.currentPiece = null;
     game.nextPiece = null;
     game.holdPiece = null;
@@ -846,12 +906,6 @@ export const TetrisGame: React.FC<GameProps> = ({ settings, updateHighScore }) =
     game.dropTimer = 0;
     game.dropInterval = 1000;
     game.particles = [];
-    game.shockwaves = [];
-    game.trailPositions = [];
-    game.explosionQueue = [];
-    game.isPlacing = false;
-    game.softDropTimer = 0;
-    game.keys = {};
     spawnPiece();
   };
 
