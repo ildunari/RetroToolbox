@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, Zap, Shield, Gauge } from 'lucide-react';
+import { Play, Pause, RotateCcw, Zap, Shield } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from '../ui/FadingCanvas';
@@ -82,6 +82,15 @@ const CELL_SIZE = 20;
 const MAZE_WIDTH = 28;
 const MAZE_HEIGHT = 31;
 
+// Starting positions for Pac-Man and ghosts
+const PACMAN_START = { row: 23, col: 14 };
+const GHOST_STARTS = [
+  { id: 'blinky', row: 14, col: 14, scatter: { row: 0, col: 25 }, color: '#ff0000', ai: 'blinky' },
+  { id: 'pinky', row: 14, col: 13, scatter: { row: 0, col: 2 }, color: '#ffb8ff', ai: 'pinky' },
+  { id: 'inky', row: 15, col: 14, scatter: { row: 35, col: 27 }, color: '#00ffff', ai: 'inky' },
+  { id: 'clyde', row: 14, col: 15, scatter: { row: 35, col: 0 }, color: '#ffb851', ai: 'clyde' },
+] as const;
+
 // Classic Pac-Man maze layout (0 = wall, 1 = pellet, 2 = power pellet, 3 = empty)
 const MAZE_TEMPLATE: number[][] = [
   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -128,10 +137,10 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   
   const gameRef = useRef<GameState>({
     pacman: {
-      position: { x: 14 * CELL_SIZE, y: 23 * CELL_SIZE },
-      gridPos: { row: 23, col: 14 },
-      targetGridPos: { row: 23, col: 14 },
-      previousGridPos: { row: 23, col: 14 },
+      position: gridToPixel(PACMAN_START),
+      gridPos: { ...PACMAN_START },
+      targetGridPos: { ...PACMAN_START },
+      previousGridPos: { ...PACMAN_START },
       direction: 'none',
       nextDirection: 'none',
       speed: 0.15,
@@ -181,63 +190,25 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     }
     
     // Initialize ghosts
-    game.ghosts = [
-      {
-        id: 'blinky',
-        position: { x: 14 * CELL_SIZE, y: 14 * CELL_SIZE },
-        gridPos: { row: 14, col: 14 },
-        targetGridPos: { row: 13, col: 14 },
-        color: '#ff0000',
-        mode: 'scatter',
-        speed: 0.1 + (game.level - 1) * 0.01,
-        aiType: 'blinky',
-        direction: 'up',
-        scatterTarget: { row: 0, col: 25 }
-      },
-      {
-        id: 'pinky',
-        position: { x: 13 * CELL_SIZE, y: 14 * CELL_SIZE },
-        gridPos: { row: 14, col: 13 },
-        targetGridPos: { row: 13, col: 13 },
-        color: '#ffb8ff',
-        mode: 'scatter',
-        speed: 0.1 + (game.level - 1) * 0.01,
-        aiType: 'pinky',
-        direction: 'up',
-        scatterTarget: { row: 0, col: 2 }
-      },
-      {
-        id: 'inky',
-        position: { x: 14 * CELL_SIZE, y: 15 * CELL_SIZE },
-        gridPos: { row: 15, col: 14 },
-        targetGridPos: { row: 14, col: 14 },
-        color: '#00ffff',
-        mode: 'scatter',
-        speed: 0.1 + (game.level - 1) * 0.01,
-        aiType: 'inky',
-        direction: 'up',
-        scatterTarget: { row: 35, col: 27 }
-      },
-      {
-        id: 'clyde',
-        position: { x: 15 * CELL_SIZE, y: 14 * CELL_SIZE },
-        gridPos: { row: 14, col: 15 },
-        targetGridPos: { row: 13, col: 15 },
-        color: '#ffb851',
-        mode: 'scatter',
-        speed: 0.1 + (game.level - 1) * 0.01,
-        aiType: 'clyde',
-        direction: 'up',
-        scatterTarget: { row: 35, col: 0 }
-      }
-    ];
+    game.ghosts = GHOST_STARTS.map(g => ({
+      id: g.id,
+      position: gridToPixel({ row: g.row, col: g.col }),
+      gridPos: { row: g.row, col: g.col },
+      targetGridPos: { row: g.row - 1, col: g.col },
+      color: g.color,
+      mode: 'scatter',
+      speed: 0.1 + (game.level - 1) * 0.01,
+      aiType: g.ai as Ghost['aiType'],
+      direction: 'up',
+      scatterTarget: g.scatter,
+    }));
     
     // Reset Pac-Man
     game.pacman = {
-      position: { x: 14 * CELL_SIZE, y: 23 * CELL_SIZE },
-      gridPos: { row: 23, col: 14 },
-      targetGridPos: { row: 23, col: 14 },
-      previousGridPos: { row: 23, col: 14 },
+      position: gridToPixel(PACMAN_START),
+      gridPos: { ...PACMAN_START },
+      targetGridPos: { ...PACMAN_START },
+      previousGridPos: { ...PACMAN_START },
       direction: 'none',
       nextDirection: 'none',
       speed: 0.15,
@@ -251,6 +222,31 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     game.frightenedTimer = 0;
     game.freezeTimer = 0;
     game.gamePhase = 'ready';
+  }, []);
+
+  const resetPositions = useCallback(() => {
+    const game = gameRef.current;
+    // Reset Pac-Man
+    game.pacman.position = gridToPixel(PACMAN_START);
+    game.pacman.gridPos = { ...PACMAN_START };
+    game.pacman.targetGridPos = { ...PACMAN_START };
+    game.pacman.previousGridPos = { ...PACMAN_START };
+    game.pacman.direction = 'none';
+    game.pacman.nextDirection = 'none';
+
+    // Reset ghosts
+    game.ghosts = GHOST_STARTS.map(g => ({
+      id: g.id,
+      position: gridToPixel({ row: g.row, col: g.col }),
+      gridPos: { row: g.row, col: g.col },
+      targetGridPos: { row: g.row - 1, col: g.col },
+      color: g.color,
+      mode: 'scatter',
+      speed: 0.1 + (game.level - 1) * 0.01,
+      aiType: g.ai as Ghost['aiType'],
+      direction: 'up',
+      scatterTarget: g.scatter,
+    }));
   }, []);
 
   // Create particles
@@ -366,11 +362,13 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     let touchStartY = 0;
 
     const handleTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
       const touchEndX = e.changedTouches[0].clientX;
       const touchEndY = e.changedTouches[0].clientY;
       
@@ -384,8 +382,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       }
     };
 
-    canvas.addEventListener('touchstart', handleTouchStart);
-    canvas.addEventListener('touchend', handleTouchEnd);
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+    canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
 
     return () => {
       canvas.removeEventListener('touchstart', handleTouchStart);
@@ -555,16 +553,16 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           pacman.gridPos.col !== pacman.previousGridPos.col) {
         const key = `${pacman.gridPos.row},${pacman.gridPos.col}`;
         if (game.pellets.has(key)) {
-        game.pellets.delete(key);
-        game.score += 10 * (game.combo + 1);
-        game.combo++;
-        game.comboTimer = 2;
-        setCombo(game.combo);
-        createParticles(pacman.position.x, pacman.position.y, '#ffff00', 5);
-        if (settings.soundEnabled) {
-          soundManager.playCollect();
+          game.pellets.delete(key);
+          game.score += 10 * (game.combo + 1);
+          game.combo++;
+          game.comboTimer = 2;
+          setCombo(game.combo);
+          createParticles(pacman.position.x, pacman.position.y, '#ffff00', 5);
+          if (settings.soundEnabled) {
+            soundManager.playCollect();
+          }
         }
-      }
       
       if (game.powerPellets.has(key)) {
         game.powerPellets.delete(key);
@@ -595,8 +593,28 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           }
           
           createParticles(pacman.position.x, pacman.position.y, '#00ff00', 20);
-          if (settings.soundEnabled) {
-            soundManager.playPowerUp();
+        if (settings.soundEnabled) {
+          soundManager.playPowerUp();
+        }
+        }
+
+        // Magnet pulls in nearby pellets
+        if (pacman.powerUpActive === 'magnet') {
+          for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+              const r = pacman.gridPos.row + dr;
+              const c = pacman.gridPos.col + dc;
+              if (r < 0 || r >= MAZE_HEIGHT || c < 0 || c >= MAZE_WIDTH) continue;
+              const k = `${r},${c}`;
+              if (game.pellets.has(k)) {
+                game.pellets.delete(k);
+                game.score += 10;
+              }
+              if (game.powerPellets.has(k)) {
+                game.powerPellets.delete(k);
+                game.score += 50;
+              }
+            }
           }
         }
       }
@@ -748,13 +766,10 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
                 soundManager.playGameOver();
               }
             } else {
-              // Reset positions
-              pacman.position = { x: 14 * CELL_SIZE, y: 23 * CELL_SIZE };
-              pacman.gridPos = { row: 23, col: 14 };
-              pacman.targetGridPos = { row: 23, col: 14 };
-              pacman.direction = 'none';
-              pacman.nextDirection = 'none';
-              
+              resetPositions();
+              game.combo = 0;
+              game.comboTimer = 0;
+              setCombo(0);
               if (settings.soundEnabled) {
                 soundManager.playGameOver();
               }
@@ -997,11 +1012,12 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     };
     
     animationId = requestAnimationFrame(gameLoop);
-    
+
     return () => {
       cancelAnimationFrame(animationId);
     };
-  }, [gameOver, paused, settings.soundEnabled, initializeGame, createParticles, updateHighScore, score]);
+    // intentionally run only once on mount
+  }, []);
 
   // Spawn power-ups periodically
   useEffect(() => {
@@ -1068,7 +1084,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           height={MAZE_HEIGHT * CELL_SIZE}
         />
         
-        {gameOver && <GameOverBanner score={score} onRestart={resetGame} />}
+        <GameOverBanner show={gameOver} />
         
         {paused && !gameOver && (
           <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
