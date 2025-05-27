@@ -211,6 +211,10 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
     softDropTimer: 0,
   });
 
+  // Touch interaction refs
+  const touchStartYRef = useRef(0);
+  const touchStartTimeRef = useRef(0);
+
   const getRandomPiece = useCallback((): string => {
     // DEBUG CODE REMOVED - 2025-05-27
     const pieces = Object.keys(TETROMINOES);
@@ -478,6 +482,32 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
     window.addEventListener('blur', handleBlur);
     window.addEventListener('focus', handleFocus);
 
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartYRef.current = e.touches[0].clientY;
+      touchStartTimeRef.current = performance.now();
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const deltaY = e.touches[0].clientY - touchStartYRef.current;
+      if (deltaY > 10) {
+        e.preventDefault();
+        gameRef.current.keys['ArrowDown'] = true;
+      } else {
+        gameRef.current.keys['ArrowDown'] = false;
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+      const deltaTime = performance.now() - touchStartTimeRef.current;
+      gameRef.current.keys['ArrowDown'] = false;
+      if (Math.abs(deltaY) < 10 && deltaTime < 200) {
+        rotatePiece();
+      } else if (deltaY > 50 && deltaTime < 200) {
+        hardDrop();
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (gameOver) return;
       
@@ -523,6 +553,9 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+    canvas.addEventListener('touchend', handleTouchEnd);
 
     const gameLoop = (timestamp: number) => {
       if (gameOver) {
@@ -886,6 +919,9 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
       window.removeEventListener('resize', resizeCanvas);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
+      canvas.removeEventListener('touchstart', handleTouchStart);
+      canvas.removeEventListener('touchmove', handleTouchMove);
+      canvas.removeEventListener('touchend', handleTouchEnd);
       if (animationId) {
         cancelAnimationFrame(animationId);
       }
@@ -951,8 +987,8 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
         />
         
         <div className="mt-4 text-center text-sm text-gray-400">
-          <p>Arrow Keys/WASD to move • Up/Space to rotate • Down to soft drop</p>
-          <p>Enter for hard drop • C to hold • P to pause</p>
+          <p>Arrow Keys/WASD to move • Tap to rotate • Swipe down to drop</p>
+          <p>Slow swipe down for soft drop • Enter for hard drop • C to hold • P to pause</p>
         </div>
         
         {paused && !gameOver && (
