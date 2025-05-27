@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, Zap, Shield, Gauge } from 'lucide-react';
+import { Play, Pause, RotateCcw, Zap, Shield } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from '../ui/FadingCanvas';
@@ -69,6 +69,9 @@ interface GameState {
   frightenedTimer: number;
   freezeTimer: number;
   lastUpdate: number;
+  mazeCacheCanvas: HTMLCanvasElement | null;
+  mazeCacheCtx: CanvasRenderingContext2D | null;
+  mazeCacheDirty: boolean;
 }
 
 interface PacManGameProps {
@@ -83,6 +86,54 @@ interface PacManGameProps {
 const CELL_SIZE = 20;
 const MAZE_WIDTH = 28;
 const MAZE_HEIGHT = 31;
+const MAX_PARTICLES = 100;
+
+// Particle pool for performance
+class ParticlePool {
+  private pool: Particle[] = [];
+  private activeParticles: Particle[] = [];
+
+  getParticle(x: number, y: number, vx: number, vy: number, color: string, life: number): Particle {
+    let particle = this.pool.pop();
+    if (!particle) {
+      particle = new Particle(x, y, vx, vy, color, life);
+    } else {
+      // Reset particle properties
+      particle.x = x;
+      particle.y = y;
+      particle.vx = vx;
+      particle.vy = vy;
+      particle.color = color;
+      particle.life = life;
+    }
+    this.activeParticles.push(particle);
+    return particle;
+  }
+
+  update(deltaTime: number): void {
+    for (let i = this.activeParticles.length - 1; i >= 0; i--) {
+      const particle = this.activeParticles[i];
+      particle.update(deltaTime);
+      if (particle.life <= 0) {
+        this.activeParticles.splice(i, 1);
+        this.pool.push(particle);
+      }
+    }
+  }
+
+  draw(ctx: CanvasRenderingContext2D): void {
+    this.activeParticles.forEach(particle => particle.draw(ctx));
+  }
+
+  getActiveCount(): number {
+    return this.activeParticles.length;
+  }
+
+  clear(): void {
+    this.pool.push(...this.activeParticles);
+    this.activeParticles = [];
+  }
+}
 
 // Classic Pac-Man maze layout (0 = wall, 1 = pellet, 2 = power pellet, 3 = empty)
 const MAZE_TEMPLATE: number[][] = [
@@ -119,6 +170,13 @@ const MAZE_TEMPLATE: number[][] = [
   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 ];
 
+// Create numeric key for grid position (more efficient than string concatenation)
+const getGridKey = (row: number, col: number): string => `${row * 1000 + col}`;
+const parseGridKey = (key: string): [number, number] => {
+  const num = parseInt(key);
+  return [Math.floor(num / 1000), num % 1000];
+};
+
 export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameOver, setGameOver] = useState(false);
@@ -127,6 +185,9 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   const [lives, setLives] = useState(3);
   const [level, setLevel] = useState(1);
   const [combo, setCombo] = useState(0);
+  const particlePoolRef = useRef(new ParticlePool());
+  const powerUpIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const animationIdRef = useRef<number | null>(null);
   
   const gameRef = useRef<GameState>({
     pacman: {
@@ -156,7 +217,10 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     gamePhase: 'ready',
     frightenedTimer: 0,
     freezeTimer: 0,
-    lastUpdate: 0
+    lastUpdate: 0,
+    mazeCacheCanvas: null,
+    mazeCacheCtx: null,
+    mazeCacheDirty: true
   });
 
   // Initialize game
@@ -166,7 +230,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     // Deep copy maze template
     game.maze = MAZE_TEMPLATE.map(row => [...row]);
     
-    // Initialize pellets
+    // Initialize pellets with numeric keys
     game.pellets.clear();
     game.powerPellets.clear();
     game.powerUps.clear();
@@ -175,9 +239,9 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       for (let col = 0; col < MAZE_WIDTH; col++) {
         const cell = game.maze[row][col];
         if (cell === 1) {
-          game.pellets.add(`${row},${col}`);
+          game.pellets.add(getGridKey(row, col));
         } else if (cell === 2) {
-          game.powerPellets.add(`${row},${col}`);
+          game.powerPellets.add(getGridKey(row, col));
         }
       }
     }
@@ -249,25 +313,83 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       powerUpTimer: 0
     };
     
-    game.particles = [];
+    particlePoolRef.current.clear();
     game.frightenedTimer = 0;
     game.freezeTimer = 0;
     game.gamePhase = 'ready';
+    game.mazeCacheDirty = true;
   }, []);
 
-  // Create particles
+  // Create particles with pooling
   const createParticles = useCallback((x: number, y: number, color: string, count: number = 10) => {
-    const particles = gameRef.current.particles;
-    for (let i = 0; i < count; i++) {
-      const angle = (Math.PI * 2 * i) / count;
-      particles.push(new Particle(
+    const pool = particlePoolRef.current;
+    // Limit particles to prevent performance issues
+    const availableSlots = MAX_PARTICLES - pool.getActiveCount();
+    const actualCount = Math.min(count, availableSlots);
+    
+    for (let i = 0; i < actualCount; i++) {
+      const angle = (Math.PI * 2 * i) / actualCount;
+      pool.getParticle(
         x, y,
         Math.cos(angle) * 100,
         Math.sin(angle) * 100,
         color,
         0.8
-      ));
+      );
     }
+  }, []);
+
+  // Cache maze rendering
+  const renderMazeCache = useCallback(() => {
+    const game = gameRef.current;
+    
+    if (!game.mazeCacheCanvas) {
+      game.mazeCacheCanvas = document.createElement('canvas');
+      game.mazeCacheCanvas.width = MAZE_WIDTH * CELL_SIZE;
+      game.mazeCacheCanvas.height = MAZE_HEIGHT * CELL_SIZE;
+      game.mazeCacheCtx = game.mazeCacheCanvas.getContext('2d');
+    }
+    
+    const ctx = game.mazeCacheCtx;
+    if (!ctx || !game.mazeCacheDirty) return;
+    
+    // Clear cache
+    ctx.clearRect(0, 0, game.mazeCacheCanvas.width, game.mazeCacheCanvas.height);
+    
+    // Draw maze without shadow effects for performance
+    ctx.strokeStyle = '#0044ff';
+    ctx.lineWidth = 2;
+    
+    for (let row = 0; row < MAZE_HEIGHT; row++) {
+      for (let col = 0; col < MAZE_WIDTH; col++) {
+        if (game.maze[row][col] === 0) {
+          const x = col * CELL_SIZE;
+          const y = row * CELL_SIZE;
+          
+          // Draw walls with proper connections
+          ctx.beginPath();
+          if (row > 0 && game.maze[row - 1][col] === 0) {
+            ctx.moveTo(x + CELL_SIZE / 2, y);
+            ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
+          }
+          if (row < MAZE_HEIGHT - 1 && game.maze[row + 1][col] === 0) {
+            ctx.moveTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
+            ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE);
+          }
+          if (col > 0 && game.maze[row][col - 1] === 0) {
+            ctx.moveTo(x, y + CELL_SIZE / 2);
+            ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
+          }
+          if (col < MAZE_WIDTH - 1 && game.maze[row][col + 1] === 0) {
+            ctx.moveTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
+            ctx.lineTo(x + CELL_SIZE, y + CELL_SIZE / 2);
+          }
+          ctx.stroke();
+        }
+      }
+    }
+    
+    game.mazeCacheDirty = false;
   }, []);
 
   // Grid movement helpers
@@ -349,7 +471,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       
       if (nextDir !== 'none') {
         game.pacman.nextDirection = nextDir;
-        if (game.gamePhase === 'ready') {
+        if (game.gamePhase === 'ready' && game.phaseTimer <= 0) {
           game.gamePhase = 'playing';
         }
       }
@@ -359,7 +481,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, []);
 
-  // Touch controls
+  // Touch controls with proper cleanup
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -384,6 +506,10 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       } else {
         gameRef.current.pacman.nextDirection = dy > 0 ? 'down' : 'up';
       }
+      
+      if (gameRef.current.gamePhase === 'ready') {
+        gameRef.current.gamePhase = 'playing';
+      }
     };
 
     canvas.addEventListener('touchstart', handleTouchStart);
@@ -395,7 +521,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     };
   }, []);
 
-  // Game loop
+  // Game loop with proper animation frame cancellation
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -403,7 +529,11 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    let animationId: number;
+    // Cancel any existing animation frame
+    if (animationIdRef.current !== null) {
+      cancelAnimationFrame(animationIdRef.current);
+      animationIdRef.current = null;
+    }
     
     canvas.width = CANVAS_CONFIG.pacman.width;
     canvas.height = CANVAS_CONFIG.pacman.height;
@@ -419,20 +549,52 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         game.lastUpdate = timestamp;
         
         if (deltaTime > 0.1) {
-          animationId = requestAnimationFrame(gameLoop);
+          animationIdRef.current = requestAnimationFrame(gameLoop);
           return;
         }
         
-        // Update Pac-Man
-        updatePacMan(deltaTime);
-        
-        // Update ghosts
-        updateGhosts(deltaTime);
+        // Only update game objects during playing phase
+        if (game.gamePhase === 'playing') {
+          // Update Pac-Man
+          updatePacMan(deltaTime);
+          
+          // Update ghosts
+          updateGhosts(deltaTime);
+        }
         
         // Update particles
-        game.particles = game.particles.filter(p => {
-          p.update(deltaTime);
-          return p.life > 0;
+        particlePoolRef.current.update(deltaTime);
+        
+        // Update wave patterns (scatter/chase)
+        if (game.gamePhase === 'playing') {
+          game.waveTimer += deltaTime;
+          
+          // Wave patterns based on level
+          const wavePattern = getWavePattern(game.level);
+          let totalTime = 0;
+          let currentMode: 'scatter' | 'chase' = 'scatter';
+          
+          for (const [mode, duration] of wavePattern) {
+            if (game.waveTimer < totalTime + duration) {
+              currentMode = mode;
+              break;
+            }
+            totalTime += duration;
+          }
+          
+          // Reset wave timer if we've gone through all patterns
+          if (game.waveTimer >= totalTime) {
+            game.waveTimer = game.waveTimer % totalTime;
+          }
+          
+          game.waveMode = currentMode;
+        }
+        
+        // Update ghost exit timers
+        game.ghosts.forEach(ghost => {
+          if (ghost.exitTimer > 0) {
+            ghost.exitTimer -= deltaTime;
+          }
         });
         
         // Update timers
@@ -485,7 +647,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       // Render
       render(ctx);
       
-      animationId = requestAnimationFrame(gameLoop);
+      animationIdRef.current = requestAnimationFrame(gameLoop);
     };
     
     const updatePacMan = (deltaTime: number) => {
@@ -539,6 +701,17 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
             break;
         }
         
+        // Handle tunnel wrap-around for Pac-Man
+        if (pacman.position.x < -CELL_SIZE / 2) {
+          pacman.position.x = MAZE_WIDTH * CELL_SIZE - CELL_SIZE / 2;
+          pacman.gridPos = { row: pacman.gridPos.row, col: MAZE_WIDTH - 1 };
+          pacman.previousGridPos = { row: pacman.gridPos.row, col: 0 };
+        } else if (pacman.position.x > MAZE_WIDTH * CELL_SIZE + CELL_SIZE / 2) {
+          pacman.position.x = CELL_SIZE / 2;
+          pacman.gridPos = { row: pacman.gridPos.row, col: 0 };
+          pacman.previousGridPos = { row: pacman.gridPos.row, col: MAZE_WIDTH - 1 };
+        }
+        
         // Snap to grid if we can't move further
         if (!canMove(pacman.gridPos, pacman.direction)) {
           const gridCenter = gridToPixel(pacman.gridPos);
@@ -551,36 +724,40 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       // Collect pellets only when entering a new grid cell
       if (pacman.gridPos.row !== pacman.previousGridPos.row || 
           pacman.gridPos.col !== pacman.previousGridPos.col) {
-        const key = `${pacman.gridPos.row},${pacman.gridPos.col}`;
+        const key = getGridKey(pacman.gridPos.row, pacman.gridPos.col);
         if (game.pellets.has(key)) {
-        game.pellets.delete(key);
-        game.score += 10 * (game.combo + 1);
-        game.combo++;
-        game.comboTimer = 2;
-        setCombo(game.combo);
-        createParticles(pacman.position.x, pacman.position.y, '#ffff00', 5);
-        if (settings.soundEnabled) {
-          soundManager.playCollect();
-        }
-      }
-      
-      if (game.powerPellets.has(key)) {
-        game.powerPellets.delete(key);
-        game.score += 50 * (game.combo + 1);
-        game.frightenedTimer = 8;
-        game.ghosts.forEach(ghost => {
-          if (ghost.mode !== 'eaten') {
-            ghost.mode = 'frightened';
+          game.pellets.delete(key);
+          game.score += 10 * (game.combo + 1);
+          game.combo++;
+          game.comboTimer = 2;
+          setCombo(game.combo);
+          game.globalDotCounter++;
+          game.pelletsEaten++;
+          createParticles(pacman.position.x, pacman.position.y, '#ffff00', 5);
+          if (settings.soundEnabled) {
+            soundManager.playCollect();
           }
-        });
-        createParticles(pacman.position.x, pacman.position.y, '#ff00ff', 15);
-        if (settings.soundEnabled) {
-          soundManager.playPowerUp();
         }
+        
+        if (game.powerPellets.has(key)) {
+          game.powerPellets.delete(key);
+          game.score += 50 * (game.combo + 1);
+          game.globalDotCounter++;
+          game.pelletsEaten++;
+          game.frightenedTimer = Math.max(8 - (game.level - 1) * 0.5, 2); // Decrease frightened time per level (min 2s)
+          game.ghosts.forEach(ghost => {
+            if (ghost.mode !== 'eaten' && ghost.mode !== 'in_house' && ghost.mode !== 'exiting') {
+              ghost.mode = 'frightened';
+            }
+          });
+          createParticles(pacman.position.x, pacman.position.y, '#ff00ff', 15);
+          if (settings.soundEnabled) {
+            soundManager.playPowerUp();
+          }
         }
         
         // Collect power-ups
-        const powerUpKey = `${pacman.gridPos.row},${pacman.gridPos.col}`;
+        const powerUpKey = getGridKey(pacman.gridPos.row, pacman.gridPos.col);
         if (game.powerUps.has(powerUpKey)) {
           const powerUp = game.powerUps.get(powerUpKey)!;
           game.powerUps.delete(powerUpKey);
@@ -621,35 +798,57 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         // If at grid center, choose next direction
         if (distToCenter < 2) {
-          // Choose next direction
-          const possibleDirs: Direction[] = ['up', 'down', 'left', 'right'];
-          const validDirs = possibleDirs.filter(dir => {
-            if (dir === getOppositeDirection(ghost.direction)) return false;
-            return canMove(ghost.gridPos, dir);
-          });
-          
-          if (validDirs.length > 0) {
-            // Choose direction based on AI
-            let bestDir = validDirs[0];
-            let bestDistance = Infinity;
+          // Special handling for ghost house and exiting
+          if (ghost.mode === 'in_house' || ghost.mode === 'exiting') {
+            const possibleDirs: Direction[] = ['up', 'down', 'left', 'right'];
+            const validDirs = possibleDirs.filter(dir => canMove(ghost.gridPos, dir));
             
-            validDirs.forEach(dir => {
-              const nextPos = getNextGridPos(ghost.gridPos, dir);
-              const dist = getDistance(nextPos, ghost.mode === 'scatter' ? ghost.scatterTarget : game.pacman.gridPos);
-              
-              if (ghost.mode === 'frightened') {
-                // Random movement when frightened
-                if (Math.random() < 0.5) {
-                  bestDir = dir;
-                }
-              } else if (dist < bestDistance) {
-                bestDistance = dist;
-                bestDir = dir;
+            if (ghost.mode === 'exiting') {
+              // Move to center then up
+              if (ghost.gridPos.col < 14) {
+                ghost.direction = 'right';
+              } else if (ghost.gridPos.col > 14) {
+                ghost.direction = 'left';
+              } else {
+                ghost.direction = 'up';
               }
-            });
+            } else {
+              // Bounce in house
+              if (!canMove(ghost.gridPos, ghost.direction)) {
+                ghost.direction = getOppositeDirection(ghost.direction);
+              }
+            }
+          } else {
+            // Use A* pathfinding for normal movement
+            const target = ghost.targetGridPos;
+            const path = findPath(ghost.gridPos, target, game.maze);
             
-            ghost.direction = bestDir;
-            ghost.targetGridPos = getNextGridPos(ghost.gridPos, ghost.direction);
+            if (path.length > 1) {
+              // Get next step in path
+              const nextStep = path[1];
+              
+              // Determine direction to next step
+              if (nextStep.row < ghost.gridPos.row) {
+                ghost.direction = 'up';
+              } else if (nextStep.row > ghost.gridPos.row) {
+                ghost.direction = 'down';
+              } else if (nextStep.col < ghost.gridPos.col) {
+                ghost.direction = 'left';
+              } else if (nextStep.col > ghost.gridPos.col) {
+                ghost.direction = 'right';
+              }
+            } else if (ghost.mode === 'frightened') {
+              // Random valid direction when frightened and no path
+              const possibleDirs: Direction[] = ['up', 'down', 'left', 'right'];
+              const validDirs = possibleDirs.filter(dir => {
+                if (dir === getOppositeDirection(ghost.direction)) return false;
+                return canMove(ghost.gridPos, dir);
+              });
+              
+              if (validDirs.length > 0) {
+                ghost.direction = validDirs[Math.floor(Math.random() * validDirs.length)];
+              }
+            }
           }
         }
         
@@ -774,75 +973,44 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       
-      // Add glow effect
-      ctx.shadowBlur = 20;
-      
-      // Draw maze
-      ctx.strokeStyle = '#0044ff';
-      ctx.lineWidth = 2;
-      ctx.shadowColor = '#0044ff';
-      
-      for (let row = 0; row < MAZE_HEIGHT; row++) {
-        for (let col = 0; col < MAZE_WIDTH; col++) {
-          if (game.maze[row][col] === 0) {
-            const x = col * CELL_SIZE;
-            const y = row * CELL_SIZE;
-            
-            // Draw walls with proper connections
-            ctx.beginPath();
-            if (row > 0 && game.maze[row - 1][col] === 0) {
-              ctx.moveTo(x + CELL_SIZE / 2, y);
-              ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
-            }
-            if (row < MAZE_HEIGHT - 1 && game.maze[row + 1][col] === 0) {
-              ctx.moveTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
-              ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE);
-            }
-            if (col > 0 && game.maze[row][col - 1] === 0) {
-              ctx.moveTo(x, y + CELL_SIZE / 2);
-              ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
-            }
-            if (col < MAZE_WIDTH - 1 && game.maze[row][col + 1] === 0) {
-              ctx.moveTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2);
-              ctx.lineTo(x + CELL_SIZE, y + CELL_SIZE / 2);
-            }
-            ctx.stroke();
-          }
-        }
+      // Render cached maze (no shadows for performance)
+      renderMazeCache();
+      if (game.mazeCacheCanvas) {
+        ctx.drawImage(game.mazeCacheCanvas, 0, 0);
       }
       
-      // Draw pellets
+      // Draw pellets (minimal shadow)
       ctx.fillStyle = '#ffffff';
       ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 5;
+      ctx.shadowBlur = 3;
       game.pellets.forEach(key => {
-        const [row, col] = key.split(',').map(Number);
+        const [row, col] = parseGridKey(key);
         ctx.beginPath();
         ctx.arc(col * CELL_SIZE + CELL_SIZE / 2, row * CELL_SIZE + CELL_SIZE / 2, 2, 0, Math.PI * 2);
         ctx.fill();
       });
       
-      // Draw power pellets
+      // Draw power pellets (reduced shadow)
       ctx.fillStyle = '#ffff00';
       ctx.shadowColor = '#ffff00';
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 5;
       game.powerPellets.forEach(key => {
-        const [row, col] = key.split(',').map(Number);
+        const [row, col] = parseGridKey(key);
         const pulse = Math.sin(Date.now() / 200) * 2 + 6;
         ctx.beginPath();
         ctx.arc(col * CELL_SIZE + CELL_SIZE / 2, row * CELL_SIZE + CELL_SIZE / 2, pulse, 0, Math.PI * 2);
         ctx.fill();
       });
       
-      // Draw power-ups
+      // Draw power-ups (minimal shadow)
+      ctx.shadowBlur = 8;
       game.powerUps.forEach((powerUp, key) => {
-        const [row, col] = key.split(',').map(Number);
+        const [row, col] = parseGridKey(key);
         const x = col * CELL_SIZE + CELL_SIZE / 2;
         const y = row * CELL_SIZE + CELL_SIZE / 2;
         
         ctx.fillStyle = '#00ff00';
         ctx.shadowColor = '#00ff00';
-        ctx.shadowBlur = 15;
         ctx.font = '16px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -850,11 +1018,10 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       });
       
       // Draw particles
-      game.particles.forEach(particle => {
-        particle.draw(ctx);
-      });
+      ctx.shadowBlur = 0;
+      particlePoolRef.current.draw(ctx);
       
-      // Draw ghosts
+      // Draw ghosts (reduced shadow)
       game.ghosts.forEach(ghost => {
         ctx.save();
         ctx.translate(ghost.position.x, ghost.position.y);
@@ -870,7 +1037,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           ctx.shadowColor = ghost.color;
         }
         
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 10;
         
         // Ghost body
         ctx.beginPath();
@@ -885,6 +1052,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         // Eyes
         if (ghost.mode !== 'eaten') {
+          ctx.shadowBlur = 0;
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
           ctx.arc(-3, -4, 2, 0, Math.PI * 2);
@@ -901,13 +1069,13 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         ctx.restore();
       });
       
-      // Draw Pac-Man
+      // Draw Pac-Man (reduced shadow)
       ctx.save();
       ctx.translate(game.pacman.position.x, game.pacman.position.y);
       
       // Power-up effects
       if (game.pacman.powerUpActive) {
-        ctx.shadowBlur = 30;
+        ctx.shadowBlur = 15;
         switch (game.pacman.powerUpActive) {
           case 'speed':
             ctx.shadowColor = '#00ffff';
@@ -921,7 +1089,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         }
       } else {
         ctx.shadowColor = '#ffff00';
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 10;
       }
       
       ctx.fillStyle = '#ffff00';
@@ -960,7 +1128,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       if (game.combo > 0) {
         ctx.fillStyle = '#ffff00';
         ctx.shadowColor = '#ffff00';
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 10;
         ctx.font = 'bold 24px Arial';
         ctx.textAlign = 'center';
         ctx.fillText(`${game.combo}x COMBO!`, canvas.width / 2, 50);
@@ -973,17 +1141,99 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       ctx.textAlign = 'left';
       ctx.fillText(`Score: ${game.score}`, 10, 20);
       ctx.fillText(`Level: ${game.level}`, 10, 40);
-      ctx.textAlign = 'right';
-      ctx.fillText(`Lives: ${game.lives}`, canvas.width - 10, 20);
+      
+      // Draw lives visually
+      ctx.fillStyle = '#ffff00';
+      for (let i = 0; i < game.lives - 1; i++) { // -1 because current life is playing
+        ctx.beginPath();
+        ctx.arc(canvas.width - 30 - (i * 25), 20, 8, 0.2 * Math.PI, 1.8 * Math.PI);
+        ctx.lineTo(canvas.width - 30 - (i * 25), 20);
+        ctx.closePath();
+        ctx.fill();
+      }
       
       // Draw power-up indicator
       if (game.pacman.powerUpActive) {
+        ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'center';
         ctx.fillText(`Power: ${game.pacman.powerUpActive.toUpperCase()} ${Math.ceil(game.pacman.powerUpTimer)}s`, 
                      canvas.width / 2, 20);
       }
+      
+      // Draw invincibility indicator
+      if (game.pacman.invincibleTimer > 0) {
+        ctx.globalAlpha = 0.5 + Math.sin(Date.now() / 100) * 0.5;
+        ctx.fillStyle = '#00ff00';
+        ctx.textAlign = 'center';
+        ctx.fillText('INVINCIBLE', canvas.width / 2, 40);
+        ctx.globalAlpha = 1;
+      }
+      
+      // Draw phase messages
+      if (game.gamePhase === 'levelComplete') {
+        ctx.fillStyle = '#00ff00';
+        ctx.shadowColor = '#00ff00';
+        ctx.shadowBlur = 20;
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`LEVEL ${game.level} COMPLETE!`, canvas.width / 2, canvas.height / 2 - 40);
+        ctx.font = 'bold 24px Arial';
+        ctx.fillText(`+${1000 * game.level} BONUS`, canvas.width / 2, canvas.height / 2);
+      } else if (game.gamePhase === 'dying') {
+        ctx.fillStyle = '#ff0000';
+        ctx.shadowColor = '#ff0000';
+        ctx.shadowBlur = 20;
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('OUCH!', canvas.width / 2, canvas.height / 2);
+      } else if (game.gamePhase === 'ready' && game.phaseTimer > 0) {
+        ctx.fillStyle = '#ffff00';
+        ctx.shadowColor = '#ffff00';
+        ctx.shadowBlur = 20;
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('READY!', canvas.width / 2, canvas.height / 2);
+      }
     };
     
+    const getWavePattern = (level: number): Array<['scatter' | 'chase', number]> => {
+      // Wave patterns get more aggressive at higher levels
+      if (level === 1) {
+        return [
+          ['scatter', 7],
+          ['chase', 20],
+          ['scatter', 7],
+          ['chase', 20],
+          ['scatter', 5],
+          ['chase', 20],
+          ['scatter', 5],
+          ['chase', Infinity]
+        ];
+      } else if (level <= 4) {
+        return [
+          ['scatter', 7],
+          ['chase', 20],
+          ['scatter', 7],
+          ['chase', 20],
+          ['scatter', 5],
+          ['chase', 1033],
+          ['scatter', 1/60],
+          ['chase', Infinity]
+        ];
+      } else {
+        return [
+          ['scatter', 5],
+          ['chase', 20],
+          ['scatter', 5],
+          ['chase', 20],
+          ['scatter', 5],
+          ['chase', 1037],
+          ['scatter', 1/60],
+          ['chase', Infinity]
+        ];
+      }
+    };
+
     const getDirectionAngle = (direction: Direction): number => {
       switch (direction) {
         case 'right': return 0;
@@ -994,27 +1244,40 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       }
     };
     
-    animationId = requestAnimationFrame(gameLoop);
+    animationIdRef.current = requestAnimationFrame(gameLoop);
     
     return () => {
-      cancelAnimationFrame(animationId);
+      if (animationIdRef.current !== null) {
+        cancelAnimationFrame(animationIdRef.current);
+        animationIdRef.current = null;
+      }
     };
-  }, [gameOver, paused, settings.soundEnabled, initializeGame, createParticles, updateHighScore, score]);
+  }, [gameOver, paused, settings.soundEnabled, initializeGame, createParticles, updateHighScore, score, renderMazeCache]);
 
-  // Spawn power-ups periodically
+  // Spawn power-ups periodically with proper cleanup
   useEffect(() => {
+    if (paused || gameOver) {
+      // Clear interval when paused or game over
+      if (powerUpIntervalRef.current) {
+        clearInterval(powerUpIntervalRef.current);
+        powerUpIntervalRef.current = null;
+      }
+      return;
+    }
+
     const spawnPowerUp = () => {
       const game = gameRef.current;
-      if (game.gamePhase !== 'playing' || paused || gameOver) return;
+      if (game.gamePhase !== 'playing') return;
       
       // Find empty spots
       const emptySpots: GridPosition[] = [];
       for (let row = 0; row < MAZE_HEIGHT; row++) {
         for (let col = 0; col < MAZE_WIDTH; col++) {
+          const key = getGridKey(row, col);
           if (game.maze[row][col] !== 0 && 
-              !game.pellets.has(`${row},${col}`) &&
-              !game.powerPellets.has(`${row},${col}`) &&
-              !game.powerUps.has(`${row},${col}`)) {
+              !game.pellets.has(key) &&
+              !game.powerPellets.has(key) &&
+              !game.powerUps.has(key)) {
             emptySpots.push({ row, col });
           }
         }
@@ -1030,7 +1293,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         ];
         const powerUp = types[Math.floor(Math.random() * types.length)];
         
-        game.powerUps.set(`${spot.row},${spot.col}`, {
+        game.powerUps.set(getGridKey(spot.row, spot.col), {
           type: powerUp.type,
           gridPos: spot,
           duration: 5,
@@ -1039,22 +1302,25 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       }
     };
     
-    const interval = setInterval(spawnPowerUp, 15000);
-    return () => clearInterval(interval);
+    powerUpIntervalRef.current = setInterval(spawnPowerUp, 15000);
+    
+    return () => {
+      if (powerUpIntervalRef.current) {
+        clearInterval(powerUpIntervalRef.current);
+        powerUpIntervalRef.current = null;
+      }
+    };
   }, [paused, gameOver]);
 
   const resetGame = () => {
-    initializeGame();
+    initializeGame(true); // Reset everything
     setGameOver(false);
     setPaused(false);
     setScore(0);
     setLives(3);
     setLevel(1);
     setCombo(0);
-    gameRef.current.score = 0;
-    gameRef.current.lives = 3;
-    gameRef.current.level = 1;
-    gameRef.current.combo = 0;
+    gameRef.current.lastUpdate = 0;
   };
 
   return (
@@ -1067,7 +1333,23 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           <FadingCanvas ref={canvasRef} />
         </ResponsiveCanvas>
         
-        {gameOver && <GameOverBanner score={score} onRestart={resetGame} />}
+        {gameOver && (
+          <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
+            <div className="text-white text-center">
+              <h2 className="text-4xl font-bold mb-4">GAME OVER</h2>
+              <p className="text-2xl mb-4">Score: {score}</p>
+              <p className="text-lg mb-2">Level Reached: {level}</p>
+              <button
+                onClick={resetGame}
+                className="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+              >
+                Play Again
+              </button>
+            </div>
+          </div>
+        )}
+        
+        <GameOverBanner show={gameOver} />
         
         {paused && !gameOver && (
           <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
