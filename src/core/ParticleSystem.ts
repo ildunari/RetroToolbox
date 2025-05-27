@@ -6,6 +6,10 @@ export class Particle {
   public color: string;
   public life: number;
   public maxLife: number;
+  public size?: number;
+  public growthRate?: number;
+  public text?: string;
+  public fontSize?: number;
 
   constructor(x: number, y: number, vx: number, vy: number, color: string, life: number) {
     this.x = x;
@@ -21,12 +25,40 @@ export class Particle {
     this.x += this.vx * deltaTime;
     this.y += this.vy * deltaTime;
     this.life -= deltaTime;
+    
+    if (this.size && this.growthRate) {
+      this.size += this.growthRate * deltaTime;
+      if (this.size < 0) this.size = 0;
+    }
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
     const alpha = this.life / this.maxLife;
-    ctx.fillStyle = `${this.color}${Math.floor(alpha * 255).toString(16).padStart(2, '0')}`;
-    ctx.fillRect(this.x - 2, this.y - 2, 4, 4);
+    
+    if (this.text && this.fontSize) {
+      // Draw text particle
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = this.color;
+      ctx.font = `bold ${this.fontSize}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.text, this.x, this.y);
+      ctx.restore();
+    } else if (this.size) {
+      // Draw sized particle
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      // Draw default particle
+      ctx.fillStyle = `${this.color}${Math.floor(alpha * 255).toString(16).padStart(2, '0')}`;
+      ctx.fillRect(this.x - 2, this.y - 2, 4, 4);
+    }
   }
 
   isDead(): boolean {

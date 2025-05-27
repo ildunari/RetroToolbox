@@ -8,6 +8,7 @@ import { BreakoutGame } from './components/games/BreakoutGame';
 import { TetrisGame } from './components/games/TetrisGame';
 import { SpaceInvadersGame } from './components/games/SpaceInvadersGame';
 import { PacManGame } from './components/games/PacManGame';
+import { NeonJumpGame } from './components/games/NeonJumpGame';
 import { useSettings } from './hooks/useSettings';
 import { useStats } from './hooks/useStats';
 import { cleanupInputManager } from './core/InputManager';
@@ -18,7 +19,8 @@ const gameComponents = {
   breakout: BreakoutGame,
   tetris: TetrisGame,
   spaceInvaders: SpaceInvadersGame,
-  pacman: PacManGame
+  pacman: PacManGame,
+  neonJump: NeonJumpGame
 };
 
 const games = [
@@ -27,7 +29,8 @@ const games = [
   { id: 'breakout', name: 'BRICK BREAKER', icon: '🧱' },
   { id: 'tetris', name: 'TETRIS REMIX', icon: '🔲' },
   { id: 'spaceInvaders', name: 'SPACE DEFENSE', icon: '👾' },
-  { id: 'pacman', name: 'PAC-MAN NEON', icon: '👻' }
+  { id: 'pacman', name: 'PAC-MAN NEON', icon: '👻' },
+  { id: 'neonJump', name: 'NEON JUMP', icon: '🚀' }
 ];
 
 function App() {
@@ -106,8 +109,8 @@ function App() {
       )}
       
       {selectedGame ? (
-        <div>
-          <div className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 flex items-center justify-between">
+        <div className="h-screen flex flex-col">
+          <div className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 flex items-center justify-between flex-shrink-0">
             <button
               onClick={() => setSelectedGame(null)}
               className="flex items-center gap-2 text-white hover:text-gray-300 transition-colors"
@@ -126,12 +129,14 @@ function App() {
               <Settings size={24} />
             </button>
           </div>
-          {GameComponent && (
-            <GameComponent 
-              settings={settings} 
-              updateHighScore={updateHighScore}
-            />
-          )}
+          <div className="flex-1 overflow-hidden">
+            {GameComponent && (
+              <GameComponent 
+                settings={settings} 
+                updateHighScore={updateHighScore}
+              />
+            )}
+          </div>
         </div>
       ) : (
         <GameMenu 

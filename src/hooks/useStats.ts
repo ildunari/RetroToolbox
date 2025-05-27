@@ -47,7 +47,8 @@ const DEFAULT_STATS: GameStats = {
 };
 
 const STORAGE_KEY = 'retroGameStats';
-const MAX_STORAGE_SIZE = 2 * 1024 * 1024; // 2MB limit for statsconst MAX_ACHIEVEMENTS = 1000; // Prevent unlimited growth
+const MAX_STORAGE_SIZE = 2 * 1024 * 1024; // 2MB limit for stats
+const MAX_ACHIEVEMENTS = 1000; // Prevent unlimited growth
 
 const VALID_GAME_TYPES: GameType[] = ['snake', 'pong', 'breakout', 'tetris', 'spaceInvaders', 'pacman'];
 

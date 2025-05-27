@@ -87,6 +87,13 @@ interface GameState {
   levelCompleteTimer: number;
   qualityLevel: 'high' | 'medium' | 'low';
   showDPad: boolean;
+  fruit: {
+    type: string;
+    position: GridPosition | null;
+    points: number;
+    timer: number;
+  } | null;
+  fruitSpawnCount: number;
 }
 
 interface PacManGameProps {
@@ -212,7 +219,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       previousGridPos: { row: 23, col: 14 },
       direction: 'none',
       nextDirection: 'none',
-      speed: 0.15,
+      speed: 0.15 + (game.level - 1) * 0.01,
       mouthOpen: true,
       mouthTimer: 0,
       powerUpActive: null,
@@ -249,7 +256,9 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     deathTimer: 0,
     levelCompleteTimer: 0,
     qualityLevel: 'high',
-    showDPad: false
+    showDPad: false,
+    fruit: null,
+    fruitSpawnCount: 0
   });
 
   // Initialize game
@@ -339,7 +348,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       previousGridPos: { row: 23, col: 14 },
       direction: 'none',
       nextDirection: 'none',
-      speed: 0.15,
+      speed: 0.15 + (game.level - 1) * 0.01,
       mouthOpen: true,
       mouthTimer: 0,
       powerUpActive: null,
@@ -361,6 +370,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     game.ghostScoreMultiplier = 1;
     game.deathTimer = 0;
     game.levelCompleteTimer = 0;
+    game.fruit = null;
+    game.fruitSpawnCount = 0;
   }, []);
 
   // Create particles with pooling
@@ -548,6 +559,9 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         game.pacman.nextDirection = nextDir;
         if (game.gamePhase === 'ready') {
           game.gamePhase = 'playing';
+          if (settings.soundEnabled) {
+            soundManager.startGhostSiren('normal');
+          }
         }
       }
     };
@@ -567,6 +581,47 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     const handleTouchStart = (e: TouchEvent) => {
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
+      
+      // Check if touch is on D-pad
+      if (gameRef.current.showDPad && gameRef.current.gamePhase === 'playing') {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.touches[0].clientX - rect.left;
+        const y = e.touches[0].clientY - rect.top;
+        
+        // Scale coordinates to canvas size
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const canvasX = x * scaleX;
+        const canvasY = y * scaleY;
+        
+        const dpadSize = 120;
+        const dpadX = 50;
+        const dpadY = canvas.height - dpadSize - 50;
+        const buttonSize = dpadSize / 3;
+        
+        // Check each D-pad button
+        if (canvasX >= dpadX + buttonSize && canvasX <= dpadX + buttonSize * 2 &&
+            canvasY >= dpadY && canvasY <= dpadY + buttonSize) {
+          // Up button
+          gameRef.current.pacman.nextDirection = 'up';
+          e.preventDefault();
+        } else if (canvasX >= dpadX + buttonSize && canvasX <= dpadX + buttonSize * 2 &&
+                   canvasY >= dpadY + buttonSize * 2 && canvasY <= dpadY + buttonSize * 3) {
+          // Down button
+          gameRef.current.pacman.nextDirection = 'down';
+          e.preventDefault();
+        } else if (canvasX >= dpadX && canvasX <= dpadX + buttonSize &&
+                   canvasY >= dpadY + buttonSize && canvasY <= dpadY + buttonSize * 2) {
+          // Left button
+          gameRef.current.pacman.nextDirection = 'left';
+          e.preventDefault();
+        } else if (canvasX >= dpadX + buttonSize * 2 && canvasX <= dpadX + buttonSize * 3 &&
+                   canvasY >= dpadY + buttonSize && canvasY <= dpadY + buttonSize * 2) {
+          // Right button
+          gameRef.current.pacman.nextDirection = 'right';
+          e.preventDefault();
+        }
+      }
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
@@ -584,6 +639,9 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       
       if (gameRef.current.gamePhase === 'ready') {
         gameRef.current.gamePhase = 'playing';
+        if (settings.soundEnabled) {
+          soundManager.startGhostSiren('normal');
+        }
       }
     };
 
@@ -700,6 +758,9 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
                 ghost.mode = 'chase';
               }
             });
+            if (settings.soundEnabled) {
+              soundManager.startGhostSiren('normal');
+            }
           }
         }
         
@@ -771,6 +832,44 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         // Check collisions
         checkCollisions();
         
+        // Spawn fruit bonus items
+        if (!game.fruit && game.fruitSpawnCount < 2) {
+          const pelletsNeeded = game.fruitSpawnCount === 0 ? 70 : 170;
+          if (game.pelletsEaten >= pelletsNeeded) {
+            const fruitTypes = [
+              { type: '🍒', points: 100 },  // Cherry
+              { type: '🍓', points: 300 },  // Strawberry
+              { type: '🍊', points: 500 },  // Orange
+              { type: '🍎', points: 700 },  // Apple
+              { type: '🍈', points: 1000 }, // Melon
+              { type: '🔔', points: 3000 }, // Bell
+              { type: '🔑', points: 5000 }  // Key
+            ];
+            
+            const fruitIndex = Math.min(game.level - 1, fruitTypes.length - 1);
+            const selectedFruit = fruitTypes[fruitIndex];
+            
+            game.fruit = {
+              type: selectedFruit.type,
+              position: { row: 17, col: 14 }, // Center of maze
+              points: selectedFruit.points,
+              timer: 10 // Fruit stays for 10 seconds
+            };
+            game.fruitSpawnCount++;
+            
+            // Spawn effect
+            createParticles(14 * CELL_SIZE, 17 * CELL_SIZE, '#ff00ff', 20);
+          }
+        }
+        
+        // Update fruit timer
+        if (game.fruit) {
+          game.fruit.timer -= deltaTime;
+          if (game.fruit.timer <= 0) {
+            game.fruit = null;
+          }
+        }
+        
         // Check win condition
         if (game.pellets.size === 0 && game.powerPellets.size === 0 && game.gamePhase === 'playing') {
           game.gamePhase = 'levelComplete';
@@ -783,7 +882,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           
           createParticles(game.pacman.position.x, game.pacman.position.y, '#00ff00', 50);
           if (settings.soundEnabled) {
-            soundManager.playPowerUp(); // Play victory sound
+            soundManager.playLevelComplete();
+            soundManager.stopGhostSiren(); // Stop siren when level complete
           }
         }
         
@@ -885,7 +985,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           game.pelletsEaten++;
           createParticles(pacman.position.x, pacman.position.y, '#ffff00', 5);
           if (settings.soundEnabled) {
-            soundManager.playCollect();
+            soundManager.playEatPellet();
           }
         }
         
@@ -904,7 +1004,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           });
           createParticles(pacman.position.x, pacman.position.y, '#ff00ff', 15);
           if (settings.soundEnabled) {
-            soundManager.playPowerUp();
+            soundManager.playPowerPellet();
+            soundManager.startGhostSiren('frightened');
           }
         }
         
@@ -928,6 +1029,34 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           if (settings.soundEnabled) {
             soundManager.playPowerUp();
           }
+        }
+        
+        // Collect fruit bonus
+        if (game.fruit && game.fruit.position &&
+            pacman.gridPos.row === game.fruit.position.row &&
+            pacman.gridPos.col === game.fruit.position.col) {
+          game.score += game.fruit.points;
+          setScore(game.score);
+          
+          // Show points with text particle
+          const textParticle = new Particle(
+            pacman.position.x,
+            pacman.position.y - 10,
+            0,
+            -50,
+            '#ffffff',
+            1.5
+          );
+          textParticle.text = `${game.fruit.points}`;
+          textParticle.fontSize = 16;
+          game.particles.push(textParticle);
+          
+          createParticles(pacman.position.x, pacman.position.y, '#ff00ff', 30);
+          if (settings.soundEnabled) {
+            soundManager.playFruitCollect();
+          }
+          
+          game.fruit = null;
         }
         
         // Magnet power-up: auto-collect nearby pellets
@@ -1347,6 +1476,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
               updateHighScore('pacman', game.score);
               if (settings.soundEnabled) {
                 soundManager.playGameOver();
+                soundManager.stopGhostSiren(); // Stop siren on game over
               }
             } else {
               // Start death sequence
@@ -1354,7 +1484,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
               game.deathTimer = 1.5; // 1.5 second death animation
               
               if (settings.soundEnabled) {
-                soundManager.playGameOver();
+                soundManager.playDeath();
+                soundManager.stopGhostSiren(); // Stop siren during death
               }
             }
           } else if (pacman.shieldHits > 0 && ghost.mode !== 'eaten') {
@@ -1418,6 +1549,28 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         ctx.fillText(powerUp.icon, x, y);
       });
       
+      // Draw fruit bonus
+      if (game.fruit && game.fruit.position) {
+        const x = game.fruit.position.col * CELL_SIZE + CELL_SIZE / 2;
+        const y = game.fruit.position.row * CELL_SIZE + CELL_SIZE / 2;
+        
+        // Pulsing effect
+        const pulse = Math.sin(Date.now() * 0.005) * 2 + 12;
+        
+        ctx.shadowColor = '#ff00ff';
+        ctx.shadowBlur = 10;
+        ctx.font = `${pulse}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(game.fruit.type, x, y);
+        
+        // Draw point value below fruit
+        ctx.font = '10px Arial';
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowBlur = 5;
+        ctx.fillText(`${game.fruit.points}`, x, y + 15);
+      }
+      
       // Draw particles
       ctx.shadowBlur = 0;
       particlePoolRef.current.draw(ctx);
@@ -1427,13 +1580,37 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         ctx.save();
         ctx.translate(ghost.position.x, ghost.position.y);
         
+        // Apply frozen effect if freeze power-up is active
+        if (game.freezeTimer > 0 && ghost.mode !== 'eaten') {
+          // Frozen ghosts have blue tint and ice particles
+          ctx.globalAlpha = 0.8;
+          
+          // Draw ice crystals around ghost
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowColor = '#00ffff';
+          ctx.shadowBlur = 5;
+          for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI * 2 * i) / 6 + Date.now() * 0.001;
+            const x = Math.cos(angle) * 12;
+            const y = Math.sin(angle) * 12;
+            ctx.beginPath();
+            ctx.arc(x, y, 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        
         if (ghost.mode === 'frightened') {
           ctx.fillStyle = game.frightenedTimer < 2 ? '#ffffff' : '#0000ff';
           ctx.shadowColor = '#0000ff';
-          ctx.shadowBlur = 10;
+          ctx.shadowBlur = game.qualityLevel !== 'low' ? 10 : 0;
         } else if (ghost.mode === 'eaten') {
           ctx.fillStyle = '#ffffff';
           ctx.shadowBlur = 0;
+        } else if (game.freezeTimer > 0) {
+          // Frozen ghosts appear blue-tinted
+          ctx.fillStyle = '#88ccff';
+          ctx.shadowColor = '#00ffff';
+          ctx.shadowBlur = game.qualityLevel !== 'low' ? 15 : 0;
         } else {
           ctx.fillStyle = ghost.color;
           ctx.shadowBlur = 0;
@@ -1466,6 +1643,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           ctx.fill();
         }
         
+        ctx.globalAlpha = 1; // Reset alpha
         ctx.restore();
       });
       
@@ -1479,8 +1657,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         ctx.globalAlpha = flash ? 0.5 : 1.0;
       }
       
-      // Power-up effects (shadow only when power-up active)
-      if (game.pacman.powerUpActive) {
+      // Power-up effects (shadow only when power-up active and quality allows)
+      if (game.pacman.powerUpActive && game.qualityLevel !== 'low') {
         ctx.shadowBlur = 15;
         switch (game.pacman.powerUpActive) {
           case 'speed':
@@ -1540,14 +1718,35 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       
       ctx.restore();
       
-      // Draw combo meter
+      // Draw combo meter with expiration bar
       if (game.combo > 0) {
+        // Combo text
         ctx.fillStyle = '#ffff00';
         ctx.shadowColor = '#ffff00';
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = game.qualityLevel !== 'low' ? 10 : 0;
         ctx.font = 'bold 24px Arial';
         ctx.textAlign = 'center';
         ctx.fillText(`${game.combo}x COMBO!`, canvas.width / 2, 50);
+        
+        // Combo expiration bar
+        const barWidth = 100;
+        const barHeight = 6;
+        const barX = canvas.width / 2 - barWidth / 2;
+        const barY = 60;
+        
+        // Background
+        ctx.fillStyle = '#333333';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Timer bar
+        const timerProgress = game.comboTimer / 2; // 2 seconds max
+        ctx.fillStyle = timerProgress > 0.3 ? '#ffff00' : '#ff0000';
+        ctx.fillRect(barX, barY, barWidth * timerProgress, barHeight);
+        
+        // Border
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
       }
       
       // Draw HUD
@@ -1568,12 +1767,81 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         ctx.fill();
       }
       
-      // Draw power-up indicator
+      // Draw power-up indicator with visual countdown
       if (game.pacman.powerUpActive) {
+        const powerUpY = 80;
+        
+        // Power-up name and icon
         ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 18px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(`Power: ${game.pacman.powerUpActive.toUpperCase()} ${Math.ceil(game.pacman.powerUpTimer)}s`, 
-                     canvas.width / 2, 20);
+        
+        let powerUpIcon = '';
+        let powerUpColor = '#ffffff';
+        switch (game.pacman.powerUpActive) {
+          case 'speed':
+            powerUpIcon = '⚡';
+            powerUpColor = '#00ffff';
+            break;
+          case 'shield':
+            powerUpIcon = '🛡️';
+            powerUpColor = '#00ff00';
+            break;
+          case 'magnet':
+            powerUpIcon = '🧲';
+            powerUpColor = '#ff00ff';
+            break;
+          case 'freeze':
+            powerUpIcon = '❄️';
+            powerUpColor = '#00ffff';
+            break;
+        }
+        
+        ctx.fillText(`${powerUpIcon} ${game.pacman.powerUpActive.toUpperCase()}`, canvas.width / 2, powerUpY);
+        
+        // Circular countdown timer
+        const timerRadius = 20;
+        const timerX = canvas.width / 2;
+        const timerY = powerUpY + 25;
+        
+        // Background circle
+        ctx.strokeStyle = '#333333';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(timerX, timerY, timerRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Timer arc
+        const maxDuration = 5; // Max power-up duration
+        const progress = game.pacman.powerUpTimer / maxDuration;
+        ctx.strokeStyle = powerUpColor;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(timerX, timerY, timerRadius, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * progress));
+        ctx.stroke();
+        
+        // Timer text
+        ctx.fillStyle = powerUpColor;
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(Math.ceil(game.pacman.powerUpTimer).toString(), timerX, timerY);
+      }
+      
+      // Draw freeze timer if active
+      if (game.freezeTimer > 0) {
+        ctx.fillStyle = '#00ffff';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(`❄️ FREEZE: ${Math.ceil(game.freezeTimer)}s`, canvas.width - 10, 60);
+      }
+      
+      // Draw shield indicator
+      if (game.pacman.shieldHits > 0) {
+        ctx.fillStyle = '#00ff00';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText(`🛡️ SHIELD: ${game.pacman.shieldHits}`, canvas.width - 10, 80);
       }
       
       // Draw invincibility indicator
@@ -1609,6 +1877,52 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         ctx.font = 'bold 36px Arial';
         ctx.textAlign = 'center';
         ctx.fillText('READY!', canvas.width / 2, canvas.height / 2);
+      }
+      
+      // Draw virtual D-pad for mobile
+      if (game.showDPad && game.gamePhase === 'playing') {
+        const dpadSize = 120;
+        const dpadX = 50;
+        const dpadY = canvas.height - dpadSize - 50;
+        const buttonSize = dpadSize / 3;
+        
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        
+        // Up button
+        ctx.fillRect(dpadX + buttonSize, dpadY, buttonSize, buttonSize);
+        ctx.strokeRect(dpadX + buttonSize, dpadY, buttonSize, buttonSize);
+        
+        // Down button
+        ctx.fillRect(dpadX + buttonSize, dpadY + buttonSize * 2, buttonSize, buttonSize);
+        ctx.strokeRect(dpadX + buttonSize, dpadY + buttonSize * 2, buttonSize, buttonSize);
+        
+        // Left button
+        ctx.fillRect(dpadX, dpadY + buttonSize, buttonSize, buttonSize);
+        ctx.strokeRect(dpadX, dpadY + buttonSize, buttonSize, buttonSize);
+        
+        // Right button
+        ctx.fillRect(dpadX + buttonSize * 2, dpadY + buttonSize, buttonSize, buttonSize);
+        ctx.strokeRect(dpadX + buttonSize * 2, dpadY + buttonSize, buttonSize, buttonSize);
+        
+        // Draw arrows
+        ctx.globalAlpha = 0.6;
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        // Up arrow
+        ctx.fillText('▲', dpadX + buttonSize * 1.5, dpadY + buttonSize * 0.5);
+        // Down arrow
+        ctx.fillText('▼', dpadX + buttonSize * 1.5, dpadY + buttonSize * 2.5);
+        // Left arrow
+        ctx.fillText('◄', dpadX + buttonSize * 0.5, dpadY + buttonSize * 1.5);
+        // Right arrow
+        ctx.fillText('►', dpadX + buttonSize * 2.5, dpadY + buttonSize * 1.5);
+        
+        ctx.globalAlpha = 1;
       }
     };
     
@@ -1715,6 +2029,35 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           duration: 5,
           icon: powerUp.icon
         });
+        
+        // Create spawn effect particles
+        const spawnX = spot.col * CELL_SIZE + CELL_SIZE / 2;
+        const spawnY = spot.row * CELL_SIZE + CELL_SIZE / 2;
+        
+        // Sparkle effect
+        for (let i = 0; i < 15; i++) {
+          const angle = (Math.PI * 2 * i) / 15;
+          const speed = 50 + Math.random() * 50;
+          particlePoolRef.current.getParticle(
+            spawnX, spawnY,
+            Math.cos(angle) * speed,
+            Math.sin(angle) * speed,
+            '#00ff00',
+            1.0
+          );
+        }
+        
+        // Pulse effect
+        const pulseParticle = particlePoolRef.current.getParticle(
+          spawnX, spawnY,
+          0, 0,
+          '#00ff00',
+          0.8
+        );
+        if (pulseParticle) {
+          pulseParticle.size = 20;
+          pulseParticle.growthRate = -15; // Shrinking effect
+        }
       }
     };
     
@@ -1737,6 +2080,18 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     setLevel(1);
     setCombo(0);
     gameRef.current.lastUpdate = 0;
+  };
+
+  const togglePause = () => {
+    setPaused(!paused);
+    if (settings.soundEnabled) {
+      if (!paused) {
+        soundManager.stopGhostSiren();
+      } else if (gameRef.current.gamePhase === 'playing') {
+        const anyFrightened = gameRef.current.ghosts.some(g => g.mode === 'frightened');
+        soundManager.startGhostSiren(anyFrightened ? 'frightened' : 'normal');
+      }
+    }
   };
 
   return (
@@ -1791,7 +2146,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       
       <div className="mt-2 flex gap-4">
         <button
-          onClick={() => setPaused(!paused)}
+          onClick={togglePause}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
         >
           {paused ? <Play size={20} /> : <Pause size={20} />}
