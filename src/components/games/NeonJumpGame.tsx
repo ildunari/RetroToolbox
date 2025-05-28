@@ -518,6 +518,7 @@ interface GameState {
   parallaxOffsets: number[];
   upgrades: UpgradeState;
   showShop: boolean;
+  worldBounds: { width: number; height: number };
   
   // CHECKPOINT 5: Visual Excellence Systems
   backgroundLayers: BackgroundLayer[];
@@ -783,8 +784,9 @@ const MAX_FALL_SPEED = 15;
 const AIR_CONTROL = 0.8;
 const COYOTE_TIME = 6; // frames
 const JUMP_BUFFER_TIME = 6; // frames
-const CAMERA_SMOOTH = 0.1;
-const CAMERA_LOOK_AHEAD = 100;
+const CAMERA_SMOOTH = 0.3; // Increased from 0.1 for faster following
+const CAMERA_LOOK_AHEAD = 120; // Slightly more look-ahead
+const CAMERA_DEADZONE_Y = 50; // Add deadzone to reduce minor adjustments
 
 // Platform Constants
 const PLATFORM_WIDTH = 80;
@@ -867,26 +869,23 @@ class ParticleManager {
   private nextId = 0;
   private readonly maxParticles = 1000;
   private particleQualityMultiplier: number = 1.0; // Added for quality control
+  private cleanupTimer = 0;
+  private readonly CLEANUP_INTERVAL = 60; // frames
 
   public setParticleQualityMultiplier(multiplier: number): void {
     this.particleQualityMultiplier = Math.max(0.1, Math.min(1.0, multiplier)); // Clamp between 0.1 and 1.0
   }
 
   createParticle(config: Partial<EnhancedParticle>): EnhancedParticle | null {
-    // Hard limit enforcement
-    if (this.particles.length >= this.maxParticles) {
-      // Force cleanup of oldest particles
-      const toRemove = Math.floor(this.maxParticles * 0.1); // Remove 10%
-      for (let i = 0; i < toRemove; i++) {
-        const oldParticle = this.particles.shift();
-        if (oldParticle) {
-          oldParticle.active = false;
-          this.particlePool.push(oldParticle);
-        }
-      }
+    // Try to get from pool first
+    let particle = this.particlePool.pop();
+    
+    // If no pooled particle and at limit, reject creation
+    if (!particle && this.particles.length >= this.maxParticles) {
+      return null; // Don't create new particles when at limit
     }
     
-    let particle = this.particlePool.pop();
+    // Create new particle if needed
     if (!particle && this.particles.length < this.maxParticles) {
       particle = {
         id: this.nextId++,
@@ -925,6 +924,13 @@ class ParticleManager {
   }
 
   update(deltaTime: number): void {
+    // Periodic cleanup instead of emergency cleanup
+    this.cleanupTimer += deltaTime;
+    if (this.cleanupTimer >= this.CLEANUP_INTERVAL) {
+      this.cleanupTimer = 0;
+      this.performScheduledCleanup();
+    }
+    
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const particle = this.particles[i];
       if (!particle.active) continue;
@@ -1094,6 +1100,22 @@ class ParticleManager {
         this.particlePool.push(oldParticle);
       }
     }
+  }
+
+  private performScheduledCleanup(): void {
+    // Remove dead particles proactively
+    const activeParticles = [];
+    for (const particle of this.particles) {
+      if (particle.active && particle.life > 0) {
+        activeParticles.push(particle);
+      } else {
+        particle.active = false;
+        if (this.particlePool.length < 500) { // Limit pool size
+          this.particlePool.push(particle);
+        }
+      }
+    }
+    this.particles = activeParticles;
   }
 }
 
@@ -1474,27 +1496,52 @@ class BackgroundManager {
 // CHECKPOINT 6: AUDIO & POLISH MANAGER CLASSES
 
 class AudioManager {
-  private audioContext: AudioContext;
-  private masterGainNode: GainNode;
-  private effectsGainNode: GainNode;
-  private musicGainNode: GainNode;
-  private uiGainNode: GainNode;
+  private audioContext: AudioContext | null = null;
+  private masterGainNode: GainNode | null = null;
+  private effectsGainNode: GainNode | null = null;
+  private musicGainNode: GainNode | null = null;
+  private uiGainNode: GainNode | null = null;
   private activeSounds: Map<string, SoundInstance> = new Map();
   private soundEffects: Map<string, AudioEffect[]> = new Map();
-  private convolver: ConvolverNode;
-  private compressor: DynamicsCompressorNode;
+  private convolver: ConvolverNode | null = null;
+  private compressor: DynamicsCompressorNode | null = null;
   private enabled: boolean = true;
   private nextId: number = 0;
+  private initialized = false;
 
   constructor() {
-    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    
-    // Resume if suspended (common on iOS)
-    if (this.audioContext.state === 'suspended') {
-      document.addEventListener('click', () => {
+    // Lazy initialization - audio context created on first use
+  }
+
+  get audioContextReady(): AudioContext | null {
+    return this.audioContext;
+  }
+
+  get musicGainNodeReady(): GainNode | null {
+    return this.musicGainNode;
+  }
+
+  private ensureContext(): AudioContext {
+    if (!this.audioContext || !this.initialized) {
+      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      this.initializeNodes();
+      this.initialized = true;
+      
+      // Resume if suspended (common on iOS)
+      if (this.audioContext.state === 'suspended') {
         this.audioContext.resume();
-      }, { once: true });
+      }
     }
+    
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume();
+    }
+    
+    return this.audioContext;
+  }
+
+  private initializeNodes(): void {
+    if (!this.audioContext) return;
     
     this.masterGainNode = this.audioContext.createGain();
     this.effectsGainNode = this.audioContext.createGain();
@@ -1539,38 +1586,33 @@ class AudioManager {
   async playTone(frequency: number, duration: number, type: OscillatorType = 'sine', volume: number = 0.3): Promise<string> {
     if (!this.enabled) return '';
     
-    // Ensure context is running
-    if (this.audioContext.state === 'suspended') {
-      try {
-        await this.audioContext.resume();
-      } catch (e) {
-        console.warn('Failed to resume audio context:', e);
-        return '';
-      }
-    }
-    
-    const id = `tone_${this.nextId++}`;
-    const oscillator = this.audioContext.createOscillator();
-    const gainNode = this.audioContext.createGain();
+    try {
+      const ctx = this.ensureContext();
+      
+      const id = `tone_${this.nextId++}`;
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
     
     oscillator.type = type;
-    oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+    oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
     
-    gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-    gainNode.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + 0.01);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
+    gainNode.gain.setValueAtTime(0, ctx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
     
     oscillator.connect(gainNode);
-    gainNode.connect(this.effectsGainNode);
+    if (this.effectsGainNode) {
+      gainNode.connect(this.effectsGainNode);
+    }
     
-    oscillator.start(this.audioContext.currentTime);
-    oscillator.stop(this.audioContext.currentTime + duration);
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + duration);
     
     const soundInstance: SoundInstance = {
       id,
       source: oscillator,
       gainNode,
-      startTime: this.audioContext.currentTime,
+      startTime: ctx.currentTime,
       duration,
       volume,
       loop: false,
@@ -1584,6 +1626,10 @@ class AudioManager {
     };
     
     return id;
+    } catch (e) {
+      console.warn('Audio playback failed:', e);
+      return '';
+    }
   }
 
   playSynthSound(config: SynthConfig, duration: number, volume: number = 0.3): string {
@@ -1844,13 +1890,13 @@ class AudioManager {
 }
 
 class MusicManager {
-  private audioContext: AudioContext;
-  private musicGainNode: GainNode;
+  private audioContext: AudioContext | null;
+  private musicGainNode: GainNode | null;
   private state: MusicState;
   private updateInterval: number = 100; // ms
   private lastUpdate: number = 0;
 
-  constructor(audioContext: AudioContext, musicGainNode: GainNode) {
+  constructor(audioContext: AudioContext | null, musicGainNode: GainNode | null) {
     this.audioContext = audioContext;
     this.musicGainNode = musicGainNode;
     
@@ -1864,10 +1910,20 @@ class MusicManager {
       crossfadeProgress: 0
     };
     
-    this.initializeMusicLayers();
+    // Layers will be initialized when audio context is set
+  }
+
+  setAudioContext(audioContext: AudioContext, musicGainNode: GainNode): void {
+    this.audioContext = audioContext;
+    this.musicGainNode = musicGainNode;
+    if (this.audioContext && this.musicGainNode) {
+      this.initializeMusicLayers();
+    }
   }
 
   private initializeMusicLayers(): void {
+    if (!this.audioContext || !this.musicGainNode) return;
+    
     // Create procedural music buffers for different layers
     const themes = ['low', 'mid', 'high', 'danger', 'boss'];
     const categories = ['ambient', 'percussion', 'melody', 'bass'];
@@ -6610,6 +6666,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const [showShop, setShowShop] = useState(false);
   const [contextLost, setContextLost] = useState(false);
   const [managersReady, setManagersReady] = useState(false);
+  const [canvasSize, setCanvasSize] = useState({ width: 400, height: 600 });
   const animationIdRef = useRef<number | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const touchStartRef = useRef<Vector2D | null>(null);
@@ -6622,7 +6679,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   
   // CHECKPOINT 6: Audio & Polish Managers
   const audioManagerRef = useRef<AudioManager>(new AudioManager());
-  const musicManagerRef = useRef<MusicManager>(new MusicManager(audioManagerRef.current.audioContext, audioManagerRef.current.musicGainNode));
+  const musicManagerRef = useRef<MusicManager>(new MusicManager(null, null));
   const uiManagerRef = useRef<UIManager | null>(null);
   const scoreManagerRef = useRef<ScoreManager>(new ScoreManager());
   const performanceManagerRef = useRef<PerformanceManager | null>(null);
@@ -6641,6 +6698,28 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const themeChangeHandlerRef = useRef<(e: any) => void>();
   const qualityChangeHandlerRef = useRef<(e: any) => void>();
   const memoryOptimizeHandlerRef = useRef<() => void>();
+  
+  // Calculate responsive canvas size
+  const calculateCanvasSize = useCallback(() => {
+    const maxWidth = window.innerWidth - 32; // 16px padding on each side
+    const maxHeight = window.innerHeight - 200; // Leave room for UI
+    
+    // Maintain aspect ratio (2:3 for vertical game)
+    const aspectRatio = 2/3;
+    let width = Math.min(maxWidth, 600); // Cap at 600px wide
+    let height = width / aspectRatio;
+    
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * aspectRatio;
+    }
+    
+    // Minimum size
+    width = Math.max(width, 320);
+    height = Math.max(height, 480);
+    
+    return { width: Math.floor(width), height: Math.floor(height) };
+  }, []);
   
   // Initialize game state
   const gameRef = useRef<GameState>({
@@ -6709,6 +6788,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       enemyRadar: 0
     },
     showShop: false,
+    worldBounds: { width: 400, height: 600 },
     
     // CHECKPOINT 5: Visual Excellence Systems
     backgroundLayers: [],
@@ -6824,6 +6904,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // Platform generation with reachability guarantee
   const generateNextPlatform = useCallback(() => {
     const game = gameRef.current;
+    const player = game.player;
     
     // Find the highest platform
     let highestPlatform = game.platforms[0];
@@ -6833,11 +6914,20 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       }
     }
     
+    // Predict player trajectory
+    const predictedVelY = Math.min(player.velocity.y + GRAVITY * 30, MAX_FALL_SPEED);
+    const predictedHeight = Math.abs(predictedVelY * 30); // 30 frames ahead
+    
+    // Adjust gap based on player state
+    const dynamicGapY = player.velocity.y < 0 ? 
+      MAX_PLATFORM_GAP_Y * 0.8 : // Jumping, make easier
+      MAX_PLATFORM_GAP_Y * 0.6;  // Falling, make much easier
+    
     // Calculate reachable zone from highest platform
-    const minY = highestPlatform.y - MAX_PLATFORM_GAP_Y;
+    const minY = highestPlatform.y - dynamicGapY;
     const maxY = highestPlatform.y - MIN_PLATFORM_GAP;
-    const minX = Math.max(50, highestPlatform.x - MAX_PLATFORM_GAP_X);
-    const maxX = Math.min(350, highestPlatform.x + MAX_PLATFORM_GAP_X);
+    const minX = Math.max(50, highestPlatform.x - MAX_PLATFORM_GAP_X * 0.8);
+    const maxX = Math.min(game.worldBounds.width - 50, highestPlatform.x + MAX_PLATFORM_GAP_X * 0.8);
     
     // Generate new platform position
     const newX = minX + Math.random() * (maxX - minX);
@@ -8691,10 +8781,22 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // Update camera
   const updateCamera = useCallback(() => {
     const game = gameRef.current;
-    const targetY = game.player.position.y - CAMERA_LOOK_AHEAD;
+    const player = game.player;
     
-    // Smooth camera movement
-    game.camera.y += (targetY - game.camera.y) * CAMERA_SMOOTH;
+    // Enhanced camera with X-axis following for moving platforms
+    const targetX = player.position.x - 200; // Center player horizontally
+    const targetY = player.position.y - CAMERA_LOOK_AHEAD;
+    
+    // Apply deadzone to reduce jitter
+    const deltaY = targetY - game.camera.y;
+    if (Math.abs(deltaY) > CAMERA_DEADZONE_Y) {
+      game.camera.y += deltaY * CAMERA_SMOOTH;
+    }
+    
+    // Smooth X following with bounds
+    const deltaX = targetX - game.camera.x;
+    game.camera.x += deltaX * CAMERA_SMOOTH * 0.5;
+    game.camera.x = Math.max(-100, Math.min(100, game.camera.x)); // Limit X movement
     
     // Camera only moves up
     if (game.camera.y > 0) {
@@ -10470,13 +10572,31 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     });
   }, [purchaseUpgrade]);
 
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      const newSize = calculateCanvasSize();
+      setCanvasSize(newSize);
+    };
+    
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [calculateCanvasSize]);
+
   // Setup and cleanup
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    canvas.width = 400;
-    canvas.height = 400;
+    canvas.width = canvasSize.width;
+    canvas.height = canvasSize.height;
+    
+    // Update game world bounds
+    gameRef.current.worldBounds = {
+      width: canvasSize.width,
+      height: canvasSize.height
+    };
     
     // CHECKPOINT 6: Initialize Canvas-Dependent Managers
     uiManagerRef.current = new UIManager(canvas);
@@ -10663,7 +10783,18 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         cancelAnimationFrame(animationIdRef.current);
       }
     };
-  }, [initializePlatforms, handleKeyDown, handleKeyUp, handleTouchStart, handleTouchMove, handleTouchEnd]);
+  }, [initializePlatforms, handleKeyDown, handleKeyUp, handleTouchStart, handleTouchMove, handleTouchEnd, canvasSize]);
+
+  // Initialize MusicManager when audio is ready
+  useEffect(() => {
+    if (gameStarted && audioManagerRef.current.audioContextReady && musicManagerRef.current) {
+      const ctx = audioManagerRef.current.audioContextReady;
+      const musicGain = audioManagerRef.current.musicGainNodeReady;
+      if (ctx && musicGain) {
+        musicManagerRef.current.setAudioContext(ctx, musicGain);
+      }
+    }
+  }, [gameStarted]);
 
   // Start game loop when game starts
   useEffect(() => {
@@ -10712,10 +10843,11 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         {managersReady && !gameStarted && !gameOver && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-75">
             <h2 className="text-4xl font-bold text-cyan-400 mb-4 animate-pulse">NEON JUMP</h2>
-            <p className="text-white mb-8">Press Arrow Keys to Start</p>
+            <p className="text-white mb-8">Press Arrow Keys or WASD to Start</p>
             <div className="text-gray-400 text-sm">
-              <p>← → Move</p>
-              <p>↑ or SPACE Jump</p>
+              <p>← → or A D - Move</p>
+              <p>↑ or W or SPACE - Jump</p>
+              <p>ESC - Pause</p>
             </div>
           </div>
         )}
