@@ -3534,6 +3534,12 @@ class MobileOptimizationManager {
 
   async initializePWACapabilities(): Promise<void> {
     if (!this.mobileOpt.pwaCapabilities.serviceWorkerEnabled) return;
+    
+    // Skip service worker registration in development
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      console.log('PWA Service Worker registration skipped in development');
+      return;
+    }
 
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
@@ -3574,8 +3580,11 @@ class MobileOptimizationManager {
           }
         };
 
-        battery.addEventListener('levelchange', updateBatteryOptimization);
-        battery.addEventListener('chargingchange', updateBatteryOptimization);
+        // Check if battery is a valid object with addEventListener
+        if (battery && typeof battery.addEventListener === 'function') {
+          battery.addEventListener('levelchange', updateBatteryOptimization);
+          battery.addEventListener('chargingchange', updateBatteryOptimization);
+        }
         updateBatteryOptimization();
 
       } catch (error) {
@@ -6095,6 +6104,8 @@ class ProductionReadinessManager {
 
   constructor() {
     this.production = this.initializeProduction();
+    // Set cache headers after production object is initialized
+    this.production.deployment.cacheHeaders = this.generateCacheHeaders();
     this.setupVersionManagement();
     this.initializeBuildOptimization();
     this.setupMonitoring();
@@ -6128,7 +6139,7 @@ class ProductionReadinessManager {
       deployment: {
         environment: this.detectEnvironment(),
         cdnEnabled: false,
-        cacheHeaders: this.generateCacheHeaders(),
+        cacheHeaders: {}, // Will be set after initialization
         rollbackProcedure: false,
         canaryDeployment: false
       }
@@ -6425,18 +6436,32 @@ class ProductionReadinessManager {
 
   private applyCacheHeaders(): void {
     // This would typically be done at the server level
-    // For client-side, we can at least set meta tags
+    // For client-side, we can at least set meta tags for allowed headers
     const cacheHeaders = this.production.deployment.cacheHeaders;
     
+    // Skip headers that can only be set server-side
+    const clientAllowedHeaders = ['Cache-Control', 'Expires', 'X-Content-Type-Options'];
+    
     Object.entries(cacheHeaders).forEach(([key, value]) => {
-      const meta = document.createElement('meta');
-      meta.httpEquiv = key;
-      meta.content = value;
-      document.head.appendChild(meta);
+      // Skip X-Frame-Options as it can only be set via HTTP headers
+      if (key === 'X-Frame-Options') return;
+      
+      if (clientAllowedHeaders.includes(key)) {
+        const meta = document.createElement('meta');
+        meta.httpEquiv = key;
+        meta.content = value;
+        document.head.appendChild(meta);
+      }
     });
   }
 
   private configureServiceWorker(): void {
+    // Skip service worker registration in development
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      console.log('Service Worker registration skipped in development');
+      return;
+    }
+    
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
         .then(registration => {
@@ -6669,25 +6694,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     lightingPoints: []
   });
 
-  // Initialize platforms
-  const initializePlatforms = useCallback(() => {
-    const game = gameRef.current;
-    game.platforms = [];
-    game.nextPlatformId = 0;
-    
-    // Create initial platform under player
-    const initialPlatform = createPlatform(
-      game.player.position.x - PLATFORM_WIDTH / 2,
-      game.player.position.y + game.player.height + 10,
-      'standard'
-    );
-    game.platforms.push(initialPlatform);
-    
-    // Generate initial platforms
-    for (let i = 0; i < 10; i++) {
-      generateNextPlatform();
-    }
-  }, [createPlatform, generateNextPlatform]);
+
 
   // Create platform with full properties
   const createPlatform = useCallback((x: number, y: number, type: Platform['type']): Platform => {
@@ -6763,6 +6770,30 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     return platform;
   }, []);
 
+  // Create coin with value and visual properties
+  const createCoin = useCallback((x: number, y: number, value?: number): Coin => {
+    const game = gameRef.current;
+    
+    // Determine coin value (rarer coins have higher value)
+    let coinValue = value || COIN_BASE_VALUE;
+    if (!value) {
+      const rand = Math.random();
+      if (rand < 0.1) coinValue = 10;      // 10% chance
+      else if (rand < 0.3) coinValue = 5;   // 20% chance
+      else coinValue = 1;                    // 70% chance
+    }
+    
+    return {
+      id: game.nextCoinId++,
+      position: { x, y },
+      value: coinValue,
+      collected: false,
+      active: true,
+      rotationAngle: Math.random() * Math.PI * 2,
+      floatOffset: Math.random() * Math.PI * 2
+    };
+  }, []);
+
   // Platform generation with reachability guarantee
   const generateNextPlatform = useCallback(() => {
     const game = gameRef.current;
@@ -6804,7 +6835,27 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       );
       game.coins.push(coin);
     }
-  }, [createPlatform]);
+  }, [createPlatform, createCoin]);
+
+  // Initialize platforms - now defined after createPlatform and generateNextPlatform
+  const initializePlatforms = useCallback(() => {
+    const game = gameRef.current;
+    game.platforms = [];
+    game.nextPlatformId = 0;
+    
+    // Create initial platform under player
+    const initialPlatform = createPlatform(
+      game.player.position.x - PLATFORM_WIDTH / 2,
+      game.player.position.y + game.player.height + 10,
+      'standard'
+    );
+    game.platforms.push(initialPlatform);
+    
+    // Generate initial platforms
+    for (let i = 0; i < 10; i++) {
+      generateNextPlatform();
+    }
+  }, [createPlatform, generateNextPlatform]);
 
   // Enemy creation factory
   const createEnemy = useCallback((type: EnemyType, x: number, y: number, platformY?: number): Enemy => {
@@ -6974,28 +7025,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   }, []);
 
   // Create coin
-  const createCoin = useCallback((x: number, y: number, value?: number): Coin => {
-    const game = gameRef.current;
-    
-    // Determine coin value (rarer coins have higher value)
-    let coinValue = value || COIN_BASE_VALUE;
-    if (!value) {
-      const rand = Math.random();
-      if (rand < 0.1) coinValue = 10;      // 10% chance
-      else if (rand < 0.3) coinValue = 5;   // 20% chance
-      else coinValue = 1;                    // 70% chance
-    }
-    
-    return {
-      id: game.nextCoinId++,
-      position: { x, y },
-      value: coinValue,
-      collected: false,
-      active: true,
-      rotationAngle: Math.random() * Math.PI * 2,
-      floatOffset: Math.random() * Math.PI * 2
-    };
-  }, []);
+
 
   // Enemy spawn system
   const spawnEnemies = useCallback(() => {
@@ -7067,7 +7097,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const enemy = createEnemy(selectedType, spawnX, spawnY, spawnPlatform.y);
     enemy.targetPlatform = spawnPlatform;
     game.enemies.push(enemy);
-  }, [createEnemy, spawnCoins]);
+  }, []);
 
   // Power-up spawn system
   const spawnPowerUps = useCallback(() => {
@@ -10078,11 +10108,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     screenEffectManagerRef.current.applyEffects(ctx, canvas);
     
     animationIdRef.current = requestAnimationFrame(gameLoop);
-  }, [gameStarted, paused, gameOver, updatePhysics, checkPlatformCollisions, 
-      checkEnemyCollisions, updatePlatforms, updateEnemies, updatePowerUps,
-      updateCoins, updateCamera, updateParticles, renderBackground, 
-      renderPlatforms, renderEnemies, renderPowerUps, renderCoins,
-      renderPlayer, renderParticles, renderUI]);
+  }, [gameStarted, paused, gameOver]);
 
   // CHECKPOINT 6: UI Action Handler
   const handleUIAction = useCallback((action: string) => {
@@ -10132,7 +10158,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         // This would integrate with the settings system
         break;
     }
-  }, [gameStarted, resetGame]);
+  }, [gameStarted]);
 
   // Reset game
   const resetGame = useCallback(() => {
@@ -10260,7 +10286,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         platformSight: 0,
         enemyRadar: 0
       };
-    }
     }
   }, []);
 
@@ -10627,7 +10652,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         cancelAnimationFrame(animationIdRef.current);
       }
     };
-  }, [gameStarted, paused, gameOver, gameLoop]);
+  }, [gameStarted, paused, gameOver]);
 
   // Update high score and save game data
   useEffect(() => {
