@@ -7853,13 +7853,14 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           player.health--;
           player.invulnerableTime = PLAYER_INVULNERABLE_TIME;
           player.hitFlashTime = PLAYER_HIT_FLASH_TIME;
-        
-        soundManager.playHit();
-        
-        if (player.health <= 0) {
-          player.state = 'death';
-          setGameOver(true);
-          soundManager.playGameOver();
+          
+          soundManager.playHit();
+          
+          if (player.health <= 0) {
+            player.state = 'death';
+            setGameOver(true);
+            soundManager.playGameOver();
+          }
         }
       }
     }
