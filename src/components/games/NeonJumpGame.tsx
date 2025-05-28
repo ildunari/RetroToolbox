@@ -5041,6 +5041,7 @@ class AdvancedPerformanceManager {
   private memoryMonitor: any = null;
   private qualityAdjustmentTimer: NodeJS.Timeout | null = null;
   private benchmark: any = null;
+  public frameTimeMonitor: any = null;
 
   constructor() {
     this.performance = this.initializePerformance();
@@ -5129,13 +5130,18 @@ class AdvancedPerformanceManager {
       }
     };
 
-    // Hook into requestAnimationFrame
-    const originalRAF = window.requestAnimationFrame;
-    window.requestAnimationFrame = (callback) => {
-      return originalRAF((time) => {
-        monitorFrameTime(time);
-        return callback(time);
-      });
+    // Create frame time monitor wrapper without overriding RAF
+    this.frameTimeMonitor = {
+      lastTime: 0,
+      wrap: (callback: FrameRequestCallback) => {
+        return (time: number) => {
+          if (this.frameTimeMonitor.lastTime) {
+            monitorFrameTime(time);
+          }
+          this.frameTimeMonitor.lastTime = time;
+          return callback(time);
+        };
+      }
     };
 
     // Memory monitoring
@@ -8778,6 +8784,237 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     game.coins = game.coins.filter(c => c.active && c.position.y < game.camera.y + 500);
   }, []);
 
+  // Unified collision detection using spatial grid
+  const updateSpatialGridForAllEntities = useCallback(() => {
+    if (!performanceManagerRef.current) return;
+    
+    const game = gameRef.current;
+    performanceManagerRef.current.clearSpatialGrid();
+    
+    // Add all entities to spatial grid
+    // Platforms
+    for (const platform of game.platforms) {
+      if (platform.active) {
+        performanceManagerRef.current.addToSpatialGrid(
+          platform,
+          platform.x,
+          platform.y,
+          platform.width,
+          platform.height
+        );
+      }
+    }
+    
+    // Enemies
+    for (const enemy of game.enemies) {
+      if (enemy.active) {
+        performanceManagerRef.current.addToSpatialGrid(
+          enemy,
+          enemy.position.x,
+          enemy.position.y,
+          enemy.width,
+          enemy.height
+        );
+      }
+    }
+    
+    // Coins
+    for (const coin of game.coins) {
+      if (coin.active && !coin.collected) {
+        performanceManagerRef.current.addToSpatialGrid(
+          coin,
+          coin.position.x - COIN_SIZE/2,
+          coin.position.y - COIN_SIZE/2,
+          COIN_SIZE,
+          COIN_SIZE
+        );
+      }
+    }
+    
+    // Power-ups
+    for (const powerUp of game.powerUps) {
+      if (powerUp.active && !powerUp.collected) {
+        performanceManagerRef.current.addToSpatialGrid(
+          powerUp,
+          powerUp.position.x - POWER_UP_SIZE/2,
+          powerUp.position.y - POWER_UP_SIZE/2,
+          POWER_UP_SIZE,
+          POWER_UP_SIZE
+        );
+      }
+    }
+  }, []);
+
+  // Optimized collision checks using spatial grid
+  const checkAllCollisions = useCallback(() => {
+    if (!performanceManagerRef.current) return;
+    
+    const game = gameRef.current;
+    const player = game.player;
+    
+    // Query nearby entities once
+    const queryBounds = {
+      x: player.position.x - 100,
+      y: player.position.y - 100,
+      width: player.width + 200,
+      height: player.height + 200
+    };
+    
+    const nearbyEntities = performanceManagerRef.current.queryNearbyEntities(
+      queryBounds.x,
+      queryBounds.y,
+      queryBounds.width,
+      queryBounds.height
+    );
+    
+    // Process collisions by type
+    for (const entity of nearbyEntities) {
+      if (!entity.active) continue;
+      
+      // Check if it's a coin
+      if ('value' in entity && 'collected' in entity) {
+        const coin = entity as Coin;
+        if (!coin.collected) {
+          const dx = coin.position.x - (player.position.x + player.width / 2);
+          const dy = coin.position.y - (player.position.y + player.height / 2);
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          
+          if (dist < COIN_COLLECT_RADIUS) {
+            coin.collected = true;
+            coin.active = false;
+            
+            // Collection effects...
+            const coinValue = coin.value * game.scoreMultiplier;
+            game.sessionCoins += coin.value;
+            game.totalCoins += coin.value;
+            game.score += coinValue * 10;
+            setScore(game.score);
+            
+            audioManagerRef.current.playCollect();
+            scoreManagerRef.current.addScore({
+              type: 'coin',
+              basePoints: coinValue * 10,
+              multiplier: game.scoreMultiplier,
+              position: { x: coin.position.x, y: coin.position.y }
+            });
+          }
+        }
+      }
+      
+      // Check if it's a power-up
+      else if ('powerType' in entity && 'collected' in entity) {
+        const powerUp = entity as PowerUp;
+        if (!powerUp.collected) {
+          const collision = player.position.x < powerUp.position.x + POWER_UP_SIZE &&
+                          player.position.x + player.width > powerUp.position.x &&
+                          player.position.y < powerUp.position.y + POWER_UP_SIZE &&
+                          player.position.y + player.height > powerUp.position.y;
+          
+          if (collision) {
+            handlePowerUpCollection(powerUp);
+          }
+        }
+      }
+      
+      // Check if it's an enemy
+      else if ('enemyType' in entity || 'type' in entity) {
+        const enemy = entity as Enemy;
+        if (player.invulnerableTime <= 0 && !player.isGhost) {
+          const enemyHit = player.position.x < enemy.position.x + enemy.width &&
+                          player.position.x + player.width > enemy.position.x &&
+                          player.position.y < enemy.position.y + enemy.height &&
+                          player.position.y + player.height > enemy.position.y;
+          
+          if (enemyHit) {
+            // Handle enemy collision...
+            const jumpingOn = player.velocity.y > 0 && 
+                            player.position.y < enemy.position.y &&
+                            !['electric-turret', 'pixel-knight'].includes(enemy.type);
+            
+            if (jumpingOn) {
+              handleEnemyBounce(enemy);
+            } else if (enemy.type !== 'plasma-ghost' && enemy.type !== 'void-orb') {
+              handlePlayerDamage();
+            }
+          }
+        }
+      }
+    }
+  }, [setScore]);
+
+  // Handle power-up collection
+  const handlePowerUpCollection = useCallback((powerUp: PowerUp) => {
+    const game = gameRef.current;
+    powerUp.collected = true;
+    powerUp.active = false;
+    
+    // Apply power-up effect
+    applyPowerUp(powerUp.powerType);
+    
+    // Visual and audio feedback
+    audioManagerRef.current.playPowerUp();
+    particleManagerRef.current.createExplosion(
+      powerUp.position.x,
+      powerUp.position.y,
+      '#00ff00',
+      20
+    );
+  }, [applyPowerUp]);
+
+  // Handle enemy bounce
+  const handleEnemyBounce = useCallback((enemy: Enemy) => {
+    const game = gameRef.current;
+    const player = game.player;
+    
+    player.velocity.y = BASE_JUMP_FORCE * 0.8;
+    enemy.health--;
+    
+    if (enemy.health <= 0) {
+      enemy.active = false;
+      game.score += 50;
+      setScore(game.score);
+      
+      audioManagerRef.current.playEnemyHit();
+      scoreManagerRef.current.addScore({
+        type: 'enemy',
+        basePoints: 50,
+        multiplier: 1,
+        position: { x: enemy.position.x, y: enemy.position.y }
+      });
+      
+      if (gameFeelManagerRef.current) {
+        gameFeelManagerRef.current.cameraShake(1, 150);
+        gameFeelManagerRef.current.timeFreeze(100);
+      }
+    }
+  }, [setScore]);
+
+  // Handle player damage
+  const handlePlayerDamage = useCallback(() => {
+    const game = gameRef.current;
+    const player = game.player;
+    
+    if (player.shield) {
+      player.shield = false;
+      player.invulnerableTime = 60;
+      audioManagerRef.current.playHit();
+      return;
+    }
+    
+    player.lives--;
+    if (player.lives <= 0) {
+      handleGameOver();
+    } else {
+      player.invulnerableTime = 120;
+      audioManagerRef.current.playHit();
+      
+      if (gameFeelManagerRef.current) {
+        gameFeelManagerRef.current.cameraShake(3, 300);
+        gameFeelManagerRef.current.timeFreeze(200);
+      }
+    }
+  }, [handleGameOver]);
+
   // Update camera
   const updateCamera = useCallback(() => {
     const game = gameRef.current;
@@ -10121,7 +10358,11 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     updateEnemies(deltaTime);
     updatePowerUps(deltaTime);
     updateCoins(deltaTime);
-    checkEnemyCollisions();
+    
+    // Update spatial grid and check all collisions
+    updateSpatialGridForAllEntities();
+    checkAllCollisions();
+    
     updateCamera();
     updateParticles(deltaTime);
     
@@ -10236,7 +10477,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // CHECKPOINT 5: Apply Screen Effects and Post-Processing
     screenEffectManagerRef.current.applyEffects(ctx, canvas);
     
-    animationIdRef.current = requestAnimationFrame(gameLoop);
+    // Use wrapped RAF if available for performance monitoring
+    const nextFrame = advancedPerformanceManagerRef.current?.frameTimeMonitor?.wrap(gameLoop) || gameLoop;
+    animationIdRef.current = requestAnimationFrame(nextFrame);
   }, [gameStarted, paused, gameOver]);
 
   // CHECKPOINT 6: UI Action Handler
@@ -10345,11 +10588,21 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // Save/Load system
   const saveGameData = useCallback(() => {
     const game = gameRef.current;
+    
+    // Sanitize data before saving
     const saveData = {
-      totalCoins: game.totalCoins,
-      upgrades: game.upgrades,
-      highScore: highScore,
-      version: 1 // Add versioning
+      totalCoins: Math.max(0, Math.min(999999, Math.floor(game.totalCoins))),
+      upgrades: {
+        jumpHeight: Math.max(0, Math.min(5, Math.floor(game.upgrades.jumpHeight || 0))),
+        airControl: Math.max(0, Math.min(5, Math.floor(game.upgrades.airControl || 0))),
+        coinMagnet: Math.max(0, Math.min(5, Math.floor(game.upgrades.coinMagnet || 0))),
+        startingHeight: Math.max(0, Math.min(5, Math.floor(game.upgrades.startingHeight || 0))),
+        powerUpDuration: Math.max(0, Math.min(5, Math.floor(game.upgrades.powerUpDuration || 0))),
+        platformSight: Math.max(0, Math.min(5, Math.floor(game.upgrades.platformSight || 0))),
+        enemyRadar: Math.max(0, Math.min(5, Math.floor(game.upgrades.enemyRadar || 0)))
+      },
+      highScore: Math.max(0, Math.min(9999999, Math.floor(highScore))),
+      version: 1
     };
     
     try {
@@ -10370,6 +10623,61 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
   }, [highScore]);
 
+  // Save data validation schema
+  const SAVE_SCHEMA = {
+    version: 1,
+    fields: {
+      totalCoins: { type: 'number', min: 0, max: 999999 },
+      highScore: { type: 'number', min: 0, max: 9999999 },
+      upgrades: {
+        type: 'object',
+        fields: {
+          jumpHeight: { type: 'number', min: 0, max: 5 },
+          airControl: { type: 'number', min: 0, max: 5 },
+          coinMagnet: { type: 'number', min: 0, max: 5 },
+          startingHeight: { type: 'number', min: 0, max: 5 },
+          powerUpDuration: { type: 'number', min: 0, max: 5 },
+          platformSight: { type: 'number', min: 0, max: 5 },
+          enemyRadar: { type: 'number', min: 0, max: 5 }
+        }
+      }
+    }
+  };
+
+  const validateSaveData = useCallback((data: any): boolean => {
+    if (!data || typeof data !== 'object') return false;
+    if (data.version !== SAVE_SCHEMA.version) return false;
+    
+    // Validate totalCoins
+    if (typeof data.totalCoins !== 'number' || 
+        data.totalCoins < SAVE_SCHEMA.fields.totalCoins.min ||
+        data.totalCoins > SAVE_SCHEMA.fields.totalCoins.max) {
+      return false;
+    }
+    
+    // Validate highScore
+    if (typeof data.highScore !== 'number' || 
+        data.highScore < SAVE_SCHEMA.fields.highScore.min ||
+        data.highScore > SAVE_SCHEMA.fields.highScore.max) {
+      return false;
+    }
+    
+    // Validate upgrades
+    if (!data.upgrades || typeof data.upgrades !== 'object') return false;
+    
+    const upgradeFields = SAVE_SCHEMA.fields.upgrades.fields;
+    for (const [key, schema] of Object.entries(upgradeFields)) {
+      const value = data.upgrades[key];
+      if (typeof value !== schema.type || 
+          value < schema.min || 
+          value > schema.max) {
+        return false;
+      }
+    }
+    
+    return true;
+  }, []);
+
   const loadGameData = useCallback(() => {
     const game = gameRef.current;
     try {
@@ -10377,23 +10685,28 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       if (savedData) {
         const data = JSON.parse(savedData);
         
-        // Version check
-        if (data.version !== 1) {
-          console.warn('Save data version mismatch');
-          // Handle migration if needed
+        // Validate save data
+        if (!validateSaveData(data)) {
+          console.warn('Invalid save data detected, using defaults');
+          // Reset to defaults if invalid
+          game.totalCoins = 0;
+          game.upgrades = {
+            jumpHeight: 0,
+            airControl: 0,
+            coinMagnet: 0,
+            startingHeight: 0,
+            powerUpDuration: 0,
+            platformSight: 0,
+            enemyRadar: 0
+          };
+          setHighScore(0);
+          return;
         }
         
-        game.totalCoins = data.totalCoins || 0;
-        game.upgrades = data.upgrades || {
-          jumpHeight: 0,
-          airControl: 0,
-          coinMagnet: 0,
-          startingHeight: 0,
-          powerUpDuration: 0,
-          platformSight: 0,
-          enemyRadar: 0
-        };
-        setHighScore(data.highScore || 0);
+        // Safe to use validated data
+        game.totalCoins = data.totalCoins;
+        game.upgrades = { ...data.upgrades }; // Clone to prevent external modification
+        setHighScore(data.highScore);
         
         // Apply starting height upgrade
         if (game.upgrades.startingHeight > 0) {
@@ -10800,7 +11113,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   useEffect(() => {
     if (gameStarted && !paused && !gameOver) {
       gameRef.current.lastUpdate = performance.now();
-      animationIdRef.current = requestAnimationFrame(gameLoop);
+      const wrappedLoop = advancedPerformanceManagerRef.current?.frameTimeMonitor?.wrap(gameLoop) || gameLoop;
+      animationIdRef.current = requestAnimationFrame(wrappedLoop);
     } else if (animationIdRef.current) {
       cancelAnimationFrame(animationIdRef.current);
     }
