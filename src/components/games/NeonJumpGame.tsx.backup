@@ -867,22 +867,9 @@ class ParticleManager {
   private nextId = 0;
   private readonly maxParticles = 1000;
 
-  createParticle(config: Partial<EnhancedParticle>): EnhancedParticle | null {
-    // Hard limit enforcement
-    if (this.particles.length >= this.maxParticles) {
-      // Force cleanup of oldest particles
-      const toRemove = Math.floor(this.maxParticles * 0.1); // Remove 10%
-      for (let i = 0; i < toRemove; i++) {
-        const oldParticle = this.particles.shift();
-        if (oldParticle) {
-          oldParticle.active = false;
-          this.particlePool.push(oldParticle);
-        }
-      }
-    }
-    
+  createParticle(config: Partial<EnhancedParticle>): EnhancedParticle {
     let particle = this.particlePool.pop();
-    if (!particle && this.particles.length < this.maxParticles) {
+    if (!particle) {
       particle = {
         id: this.nextId++,
         type: 'spark',
@@ -907,15 +894,15 @@ class ParticleManager {
       };
     }
     
-    if (!particle) return null; // Reject if at limit
-    
     Object.assign(particle, config);
     particle.active = true;
     particle.life = particle.maxLife;
     particle.trail = [];
     particle.id = this.nextId++;
     
-    this.particles.push(particle);
+    if (this.particles.length < this.maxParticles) {
+      this.particles.push(particle);
+    }
     return particle;
   }
 
@@ -1466,14 +1453,6 @@ class AudioManager {
 
   constructor() {
     this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    
-    // Resume if suspended (common on iOS)
-    if (this.audioContext.state === 'suspended') {
-      document.addEventListener('click', () => {
-        this.audioContext.resume();
-      }, { once: true });
-    }
-    
     this.masterGainNode = this.audioContext.createGain();
     this.effectsGainNode = this.audioContext.createGain();
     this.musicGainNode = this.audioContext.createGain();
@@ -1514,18 +1493,8 @@ class AudioManager {
     this.convolver.buffer = impulse;
   }
 
-  async playTone(frequency: number, duration: number, type: OscillatorType = 'sine', volume: number = 0.3): Promise<string> {
+  playTone(frequency: number, duration: number, type: OscillatorType = 'sine', volume: number = 0.3): string {
     if (!this.enabled) return '';
-    
-    // Ensure context is running
-    if (this.audioContext.state === 'suspended') {
-      try {
-        await this.audioContext.resume();
-      } catch (e) {
-        console.warn('Failed to resume audio context:', e);
-        return '';
-      }
-    }
     
     const id = `tone_${this.nextId++}`;
     const oscillator = this.audioContext.createOscillator();
@@ -6556,8 +6525,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const [paused, setPaused] = useState(false);
   const [highScore, setHighScore] = useState(0);
   const [showShop, setShowShop] = useState(false);
-  const [contextLost, setContextLost] = useState(false);
-  const [managersReady, setManagersReady] = useState(false);
   const animationIdRef = useRef<number | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const touchStartRef = useRef<Vector2D | null>(null);
@@ -6584,11 +6551,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const advancedPerformanceManagerRef = useRef<AdvancedPerformanceManager>(new AdvancedPerformanceManager());
   const extensibilityFrameworkManagerRef = useRef<ExtensibilityFrameworkManager>(new ExtensibilityFrameworkManager());
   const productionReadinessManagerRef = useRef<ProductionReadinessManager>(new ProductionReadinessManager());
-  
-  // Event handler refs for proper cleanup
-  const themeChangeHandlerRef = useRef<(e: any) => void>();
-  const qualityChangeHandlerRef = useRef<(e: any) => void>();
-  const memoryOptimizeHandlerRef = useRef<() => void>();
   
   // Initialize game state
   const gameRef = useRef<GameState>({
@@ -7174,13 +7136,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     if (gameOver) return;
     keysRef.current.add(e.key.toLowerCase());
     
-    if (!gameStarted && managersReady && ['arrowleft', 'arrowright', 'arrowup', 'a', 'd', 'w', ' '].includes(e.key.toLowerCase())) {
+    if (!gameStarted && ['arrowleft', 'arrowright', 'arrowup', 'a', 'd', 'w', ' '].includes(e.key.toLowerCase())) {
       setGameStarted(true);
       if (uiManagerRef.current) {
         uiManagerRef.current.showMenu('none');
       }
     }
-  }, [gameStarted, gameOver, paused, managersReady]);
+  }, [gameStarted, gameOver, paused]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     keysRef.current.delete(e.key.toLowerCase());
@@ -7651,30 +7613,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Skip if player is invulnerable
     if (player.invulnerableTime > 0) return;
     
-    // Use spatial grid to get only nearby enemies
-    let enemiesToCheck: Enemy[] = [];
-    
-    if (performanceManagerRef.current) {
-      const nearbyEntities = performanceManagerRef.current.queryNearbyEntities(
-        player.position.x - 50, 
-        player.position.y - 50, 
-        player.width + 100, 
-        player.height + 100
-      );
-      
-      // Filter to get only enemies
-      for (const entity of nearbyEntities) {
-        if ('type' in entity && entity.active && game.enemies.includes(entity)) {
-          enemiesToCheck.push(entity as Enemy);
-        }
-      }
-    } else {
-      // Fallback to all enemies if performance manager not ready
-      enemiesToCheck = game.enemies;
-    }
-    
     // Check enemy collisions
-    for (const enemy of enemiesToCheck) {
+    for (const enemy of game.enemies) {
       if (!enemy.active) continue;
       
       const enemyHit = player.position.x < enemy.position.x + enemy.width &&
@@ -8346,33 +8286,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Remove inactive enemies and projectiles
     game.enemies = game.enemies.filter(e => e.active && e.position.y < game.camera.y + ENEMY_DESPAWN_DISTANCE);
     game.projectiles = game.projectiles.filter(p => p.active);
-    
-    // Clear and rebuild spatial grid for active enemies
-    if (performanceManagerRef.current) {
-      performanceManagerRef.current.clearSpatialGrid();
-      
-      // Add active enemies to spatial grid
-      for (const enemy of game.enemies) {
-        if (enemy.active) {
-          performanceManagerRef.current.addToSpatialGrid(
-            enemy, 
-            enemy.position.x, 
-            enemy.position.y, 
-            enemy.width, 
-            enemy.height
-          );
-        }
-      }
-      
-      // Also add player for enemy AI queries
-      performanceManagerRef.current.addToSpatialGrid(
-        player,
-        player.position.x,
-        player.position.y,
-        player.width,
-        player.height
-      );
-    }
   }, [spawnEnemies, createProjectile]);
 
   // Update power-ups
@@ -10192,41 +10105,17 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const saveData = {
       totalCoins: game.totalCoins,
       upgrades: game.upgrades,
-      highScore: highScore,
-      version: 1 // Add versioning
+      highScore: highScore
     };
-    
-    try {
-      const serialized = JSON.stringify(saveData);
-      localStorage.setItem('neonJump_saveData', serialized);
-    } catch (e: any) {
-      console.error('Failed to save game:', e);
-      // Try to clear old data if quota exceeded
-      if (e.name === 'QuotaExceededError') {
-        try {
-          localStorage.removeItem('neonJump_saveData_old');
-          localStorage.setItem('neonJump_saveData', serialized);
-        } catch (e2) {
-          console.error('Still cannot save after cleanup:', e2);
-          // Could show user notification here
-        }
-      }
-    }
+    localStorage.setItem('neonJump_saveData', JSON.stringify(saveData));
   }, [highScore]);
 
   const loadGameData = useCallback(() => {
     const game = gameRef.current;
-    try {
-      const savedData = localStorage.getItem('neonJump_saveData');
-      if (savedData) {
+    const savedData = localStorage.getItem('neonJump_saveData');
+    if (savedData) {
+      try {
         const data = JSON.parse(savedData);
-        
-        // Version check
-        if (data.version !== 1) {
-          console.warn('Save data version mismatch');
-          // Handle migration if needed
-        }
-        
         game.totalCoins = data.totalCoins || 0;
         game.upgrades = data.upgrades || {
           jumpHeight: 0,
@@ -10245,21 +10134,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           game.player.position.y -= startingHeight;
           game.camera.y = -startingHeight + CAMERA_LOOK_AHEAD;
         }
+      } catch (e) {
+        console.error('Failed to load save data:', e);
       }
-    } catch (e) {
-      console.error('Failed to load save data:', e);
-      // Initialize with defaults
-      game.totalCoins = 0;
-      game.upgrades = {
-        jumpHeight: 0,
-        airControl: 0,
-        coinMagnet: 0,
-        startingHeight: 0,
-        powerUpDuration: 0,
-        platformSight: 0,
-        enemyRadar: 0
-      };
-    }
     }
   }, []);
 
@@ -10436,15 +10313,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Integrate CHECKPOINT 7 systems with existing settings
     retroToolboxIntegrationManagerRef.current.updateGameSettings(settings);
     
-    // Check if all managers are ready
-    if (canvasRef.current && 
-        particleManagerRef.current && 
-        audioManagerRef.current &&
-        uiManagerRef.current &&
-        performanceManagerRef.current) {
-      setManagersReady(true);
-    }
-    
     // Subscribe to RetroToolbox theme changes
     const unsubscribeSettings = retroToolboxIntegrationManagerRef.current.subscribeToSettings((newSettings) => {
       // Update game settings when RetroToolbox settings change
@@ -10463,33 +10331,24 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
     
     // Set up CHECKPOINT 7 event listeners
-    themeChangeHandlerRef.current = (e: any) => {
+    window.addEventListener('neonjump-theme-change', (e: any) => {
       // Apply theme changes to game rendering
       const theme = e.detail;
       // Implementation would update game colors based on theme
-    };
+    });
     
-    qualityChangeHandlerRef.current = (e: any) => {
+    window.addEventListener('neonjump-quality-change', (e: any) => {
       // Apply quality changes to game systems
       const { level, settings: qualitySettings } = e.detail;
-      if (particleManagerRef.current) {
-        particleManagerRef.current.setParticleMultiplier(qualitySettings.particles);
-      }
+      particleManagerRef.current.setParticleMultiplier(qualitySettings.particles);
       // Update other quality-dependent systems
-    };
+    });
     
-    memoryOptimizeHandlerRef.current = () => {
+    window.addEventListener('neonjump-memory-optimize', () => {
       // Trigger memory optimization across all systems
-      if (particleManagerRef.current) {
-        particleManagerRef.current.clearInactiveParticles();
-      }
+      particleManagerRef.current.clearInactiveParticles();
       // Clear other pools as needed
-    };
-    
-    // Register the event listeners
-    window.addEventListener('neonjump-theme-change', themeChangeHandlerRef.current);
-    window.addEventListener('neonjump-quality-change', qualityChangeHandlerRef.current);
-    window.addEventListener('neonjump-memory-optimize', memoryOptimizeHandlerRef.current);
+    });
     
     // Set up UI event listeners
     canvas.addEventListener('ui-action', (e: any) => {
@@ -10505,29 +10364,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Initialize game
     initializePlatforms();
     loadGameData();
-    
-    // Canvas context loss handling
-    const handleContextLost = (e: Event) => {
-      e.preventDefault();
-      console.warn('Canvas context lost');
-      setPaused(true);
-      setContextLost(true);
-    };
-
-    const handleContextRestored = () => {
-      console.log('Canvas context restored');
-      setContextLost(false);
-      // Reinitialize rendering resources if needed
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext('2d');
-        if (ctx) {
-          // Restore any cached images, patterns, etc.
-        }
-      }
-    };
-
-    canvas.addEventListener('contextlost', handleContextLost);
-    canvas.addEventListener('contextrestored', handleContextRestored);
     
     // Event listeners
     window.addEventListener('keydown', handleKeyDown);
@@ -10546,8 +10382,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       canvas.removeEventListener('touchstart', handleTouchStart as any);
       canvas.removeEventListener('touchmove', handleTouchMove as any);
       canvas.removeEventListener('touchend', handleTouchEnd);
-      canvas.removeEventListener('contextlost', handleContextLost);
-      canvas.removeEventListener('contextrestored', handleContextRestored);
       
       // CHECKPOINT 7: Cleanup Production-Ready Managers
       if (mobileOptimizationManagerRef.current) {
@@ -10560,51 +10394,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       productionReadinessManagerRef.current.cleanup();
       
       // Remove CHECKPOINT 7 event listeners
-      if (themeChangeHandlerRef.current) {
-        window.removeEventListener('neonjump-theme-change', themeChangeHandlerRef.current);
-      }
-      if (qualityChangeHandlerRef.current) {
-        window.removeEventListener('neonjump-quality-change', qualityChangeHandlerRef.current);
-      }
-      if (memoryOptimizeHandlerRef.current) {
-        window.removeEventListener('neonjump-memory-optimize', memoryOptimizeHandlerRef.current);
-      }
-      
-      // Add missing manager cleanups
-      if (particleManagerRef.current) {
-        particleManagerRef.current.clear();
-      }
-      if (screenEffectManagerRef.current) {
-        screenEffectManagerRef.current.clear();
-      }
-      if (audioManagerRef.current) {
-        audioManagerRef.current.stopAllSounds();
-        audioManagerRef.current.setEnabled(false);
-      }
-      if (musicManagerRef.current) {
-        musicManagerRef.current.stop();
-      }
-      if (uiManagerRef.current) {
-        uiManagerRef.current.cleanup?.();
-      }
-      if (scoreManagerRef.current) {
-        scoreManagerRef.current.reset();
-      }
-      if (performanceManagerRef.current) {
-        performanceManagerRef.current.cleanup();
-      }
-      if (gameFeelManagerRef.current) {
-        gameFeelManagerRef.current.reset();
-      }
-      
-      // Clear all game state
-      gameRef.current.particles = [];
-      gameRef.current.enemies = [];
-      gameRef.current.platforms = [];
-      gameRef.current.powerUps = [];
-      gameRef.current.coins = [];
-      gameRef.current.projectiles = [];
-      gameRef.current.activePowerUps = [];
+      window.removeEventListener('neonjump-theme-change', () => {});
+      window.removeEventListener('neonjump-quality-change', () => {});
+      window.removeEventListener('neonjump-memory-optimize', () => {});
       
       if (animationIdRef.current) {
         cancelAnimationFrame(animationIdRef.current);
@@ -10650,28 +10442,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           style={{ imageRendering: 'pixelated' }}
         />
         
-        {!managersReady && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
-            <p className="text-white">Initializing...</p>
-          </div>
-        )}
-        
-        {managersReady && !gameStarted && !gameOver && (
+        {!gameStarted && !gameOver && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-75">
             <h2 className="text-4xl font-bold text-cyan-400 mb-4 animate-pulse">NEON JUMP</h2>
             <p className="text-white mb-8">Press Arrow Keys to Start</p>
             <div className="text-gray-400 text-sm">
               <p>← → Move</p>
               <p>↑ or SPACE Jump</p>
-            </div>
-          </div>
-        )}
-        
-        {contextLost && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
-            <div className="text-center">
-              <p className="text-2xl text-white">Graphics context lost</p>
-              <p className="text-gray-400">Please wait...</p>
             </div>
           </div>
         )}
