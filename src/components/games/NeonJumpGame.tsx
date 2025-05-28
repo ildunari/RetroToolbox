@@ -866,6 +866,11 @@ class ParticleManager {
   private particlePool: EnhancedParticle[] = [];
   private nextId = 0;
   private readonly maxParticles = 1000;
+  private particleQualityMultiplier: number = 1.0; // Added for quality control
+
+  public setParticleQualityMultiplier(multiplier: number): void {
+    this.particleQualityMultiplier = Math.max(0.1, Math.min(1.0, multiplier)); // Clamp between 0.1 and 1.0
+  }
 
   createParticle(config: Partial<EnhancedParticle>): EnhancedParticle | null {
     // Hard limit enforcement
@@ -1033,8 +1038,9 @@ class ParticleManager {
   }
 
   createExplosion(x: number, y: number, color: string = '#ff6600', count: number = 30): void {
-    for (let i = 0; i < count; i++) {
-      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+    const adjustedCount = Math.floor(count * this.particleQualityMultiplier);
+    for (let i = 0; i < adjustedCount; i++) {
+      const angle = (Math.PI * 2 * i) / adjustedCount + Math.random() * 0.5;
       const speed = 3 + Math.random() * 5;
       this.createParticle({
         type: 'spark',
@@ -1054,6 +1060,8 @@ class ParticleManager {
   }
 
   createTrail(x: number, y: number, vx: number, vy: number, color: string): void {
+    // Only create trail particles if quality allows for some density
+    if (this.particleQualityMultiplier < 0.3 && Math.random() > this.particleQualityMultiplier * 2) return;
     this.createParticle({
       type: 'trail',
       position: { x, y },
@@ -1072,6 +1080,20 @@ class ParticleManager {
       this.particlePool.push(p);
     });
     this.particles.length = 0;
+  }
+
+  public clearAgedParticles(percentageToRemove: number = 0.2): void {
+    const numToRemove = Math.floor(this.particles.length * percentageToRemove);
+    if (numToRemove <= 0) return;
+
+    // console.log(`ParticleManager: Forcing removal of ${numToRemove} aged particles.`);
+    for (let i = 0; i < numToRemove; i++) {
+      const oldParticle = this.particles.shift(); // Removes from the beginning (oldest)
+      if (oldParticle) {
+        oldParticle.active = false;
+        this.particlePool.push(oldParticle);
+      }
+    }
   }
 }
 
@@ -2492,6 +2514,11 @@ class UIManager {
     if (!enabled) {
       this.particleEffects = [];
     }
+  }
+
+  public cleanup(): void {
+    this.particleEffects = [];
+    // console.log("UIManager cleaned up.");
   }
 }
 
@@ -10499,7 +10526,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       // Apply quality changes to game systems
       const { level, settings: qualitySettings } = e.detail;
       if (particleManagerRef.current) {
-        particleManagerRef.current.setParticleMultiplier(qualitySettings.particles);
+        particleManagerRef.current.setParticleQualityMultiplier(qualitySettings.particles);
       }
       // Update other quality-dependent systems
     };
@@ -10507,7 +10534,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     memoryOptimizeHandlerRef.current = () => {
       // Trigger memory optimization across all systems
       if (particleManagerRef.current) {
-        particleManagerRef.current.clearInactiveParticles();
+        particleManagerRef.current.clearAgedParticles(0.2); // Remove 20% of oldest particles
       }
       // Clear other pools as needed
     };
