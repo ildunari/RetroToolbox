@@ -8942,6 +8942,51 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
   }, [setScore]);
 
+  // Apply power-up effects to player
+  const applyPowerUp = useCallback((powerUpType: PowerUp['powerType']) => {
+    const game = gameRef.current;
+    const player = game.player;
+    
+    // Apply power-up effect
+    const duration = POWER_UP_BASE_DURATION + game.upgrades.powerUpDuration * UPGRADE_POWER_UP_DURATION;
+    const activePowerUp: ActivePowerUp = {
+      type: powerUpType,
+      duration,
+      maxDuration: duration,
+      effectStrength: 1
+    };
+    
+    // Remove existing power-up of same type
+    game.activePowerUps = game.activePowerUps.filter(p => p.type !== powerUpType);
+    game.activePowerUps.push(activePowerUp);
+    
+    // Apply immediate effects
+    switch (powerUpType) {
+      case 'speed-boost':
+        player.speedMultiplier = SPEED_BOOST_MULTIPLIER;
+        break;
+      case 'shield-bubble':
+        player.hasShield = true;
+        break;
+      case 'magnet-field':
+        player.magnetRadius = MAGNET_BASE_RADIUS + game.upgrades.coinMagnet * UPGRADE_COIN_MAGNET_RADIUS;
+        break;
+      case 'rocket-boost':
+        player.velocity.y = ROCKET_BOOST_FORCE;
+        player.rocketBoostActive = true;
+        break;
+      case 'platform-freezer':
+        game.platformsFrozen = true;
+        break;
+      case 'ghost-mode':
+        player.isGhost = true;
+        break;
+      case 'score-multiplier':
+        game.scoreMultiplier = SCORE_MULTIPLIER_VALUE;
+        break;
+    }
+  }, []);
+
   // Handle power-up collection
   const handlePowerUpCollection = useCallback((powerUp: PowerUp) => {
     const game = gameRef.current;
