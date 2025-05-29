@@ -8987,6 +8987,25 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
   }, []);
 
+  // Handle game over
+  const handleGameOver = useCallback(() => {
+    const game = gameRef.current;
+    
+    setGameOver(true);
+    
+    // Enhanced Game Over Audio and UI
+    audioManagerRef.current.playGameOver();
+    if (uiManagerRef.current) {
+      uiManagerRef.current.showMenu('gameOver');
+    }
+    
+    // Save high score with enhanced data
+    const finalScore = scoreManagerRef.current.getScore();
+    game.score = finalScore;
+    updateHighScore(finalScore);
+    scoreManagerRef.current.saveHighScore();
+  }, [updateHighScore]);
+
   // Handle power-up collection
   const handlePowerUpCollection = useCallback((powerUp: PowerUp) => {
     const game = gameRef.current;
