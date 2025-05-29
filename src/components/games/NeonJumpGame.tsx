@@ -4444,7 +4444,7 @@ class RetroToolboxIntegrationManager {
 
   setupThemeSync(): void {
     // Watch for theme changes in the parent application
-    this.themeObserver = new MutationObserver((mutations) => {
+    this.themeObserver = new MutationObserver((mutations: MutationRecord[]) => {
       mutations.forEach((mutation) => {
         if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
           this.updateThemeFromParent();
@@ -5352,11 +5352,13 @@ class AdvancedPerformanceManager {
     if (gl) {
       const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
       if (debugInfo) {
-        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-        if (renderer.includes('GTX') || renderer.includes('RTX') || renderer.includes('RX')) {
-          gpuTier = 'high';
-        } else if (renderer.includes('Intel') && !renderer.includes('HD Graphics')) {
-          gpuTier = 'medium';
+        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) as string;
+        if (renderer && typeof renderer === 'string') {
+          if (renderer.includes('GTX') || renderer.includes('RTX') || renderer.includes('RX')) {
+            gpuTier = 'high';
+          } else if (renderer.includes('Intel') && !renderer.includes('HD Graphics')) {
+            gpuTier = 'medium';
+          }
         }
       }
     }
@@ -6450,7 +6452,9 @@ class ProductionReadinessManager {
       versionElement.style.display = 'none';
       document.body.appendChild(versionElement);
     }
-    versionElement.textContent = this.versionInfo.getFullVersion();
+    if (versionElement instanceof HTMLElement) {
+      versionElement.textContent = this.versionInfo.getFullVersion();
+    }
   }
 
   initializeBuildOptimization(): void {
@@ -6620,7 +6624,7 @@ class ProductionReadinessManager {
       memoryUsage: 512 * 1024 * 1024 // 512MB
     };
 
-    const threshold = thresholds[metric];
+    const threshold = thresholds[metric as keyof typeof thresholds];
     if (threshold && (
       (metric === 'averageFPS' && value < threshold) ||
       (metric !== 'averageFPS' && value > threshold)
