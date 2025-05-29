@@ -2,10 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
-import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
-import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
-import { CANVAS_CONFIG } from "../../core/CanvasConfig";
 
 // Types and Interfaces
 interface Vector2D {
@@ -333,6 +330,8 @@ interface Player {
   maxHealth: number;
   invulnerableTime: number;
   hitFlashTime: number;
+  lives: number; // Add missing lives property
+  shield: boolean; // Add missing shield property
   
   // Power-up effects
   speedMultiplier: number;
@@ -429,8 +428,8 @@ interface Projectile {
 }
 
 // Power-up types
-type PowerUpType = 'speed-boost' | 'shield-bubble' | 'magnet-field' | 'rocket-boost' | 
-                   'platform-freezer' | 'ghost-mode' | 'score-multiplier';
+type PowerUpType = 'speed' | 'shield' | 'magnet' | 'rocket' | 
+                   'freeze' | 'ghost' | 'multiplier';
 
 interface PowerUp {
   id: number;
@@ -444,6 +443,7 @@ interface PowerUp {
   glowIntensity: number;
   rotationAngle: number;
   floatOffset: number;
+  powerType?: PowerUpType; // Add this field for backward compatibility
 }
 
 interface ActivePowerUp {
@@ -518,6 +518,7 @@ interface GameState {
   parallaxOffsets: number[];
   upgrades: UpgradeState;
   showShop: boolean;
+  worldBounds: { width: number; height: number };
   
   // CHECKPOINT 5: Visual Excellence Systems
   backgroundLayers: BackgroundLayer[];
@@ -783,8 +784,9 @@ const MAX_FALL_SPEED = 15;
 const AIR_CONTROL = 0.8;
 const COYOTE_TIME = 6; // frames
 const JUMP_BUFFER_TIME = 6; // frames
-const CAMERA_SMOOTH = 0.1;
-const CAMERA_LOOK_AHEAD = 100;
+const CAMERA_SMOOTH = 0.3; // Increased from 0.1 for faster following
+const CAMERA_LOOK_AHEAD = 120; // Slightly more look-ahead
+const CAMERA_DEADZONE_Y = 50; // Add deadzone to reduce minor adjustments
 
 // Platform Constants
 const PLATFORM_WIDTH = 80;
@@ -866,10 +868,25 @@ class ParticleManager {
   private particlePool: EnhancedParticle[] = [];
   private nextId = 0;
   private readonly maxParticles = 1000;
+  private particleQualityMultiplier: number = 1.0; // Added for quality control
+  private cleanupTimer = 0;
+  private readonly CLEANUP_INTERVAL = 60; // frames
 
-  createParticle(config: Partial<EnhancedParticle>): EnhancedParticle {
+  public setParticleQualityMultiplier(multiplier: number): void {
+    this.particleQualityMultiplier = Math.max(0.1, Math.min(1.0, multiplier)); // Clamp between 0.1 and 1.0
+  }
+
+  createParticle(config: Partial<EnhancedParticle>): EnhancedParticle | null {
+    // Try to get from pool first
     let particle = this.particlePool.pop();
-    if (!particle) {
+    
+    // If no pooled particle and at limit, reject creation
+    if (!particle && this.particles.length >= this.maxParticles) {
+      return null; // Don't create new particles when at limit
+    }
+    
+    // Create new particle if needed
+    if (!particle && this.particles.length < this.maxParticles) {
       particle = {
         id: this.nextId++,
         type: 'spark',
@@ -894,19 +911,31 @@ class ParticleManager {
       };
     }
     
+    if (!particle) return null; // Reject if at limit
+    
     Object.assign(particle, config);
     particle.active = true;
     particle.life = particle.maxLife;
-    particle.trail = [];
+    // CRITICAL FIX: Ensure trail array is properly initialized/cleared
+    if (!particle.trail || !Array.isArray(particle.trail)) {
+      particle.trail = [];
+    } else {
+      particle.trail.length = 0; // Clear existing array instead of replacing
+    }
     particle.id = this.nextId++;
     
-    if (this.particles.length < this.maxParticles) {
-      this.particles.push(particle);
-    }
+    this.particles.push(particle);
     return particle;
   }
 
   update(deltaTime: number): void {
+    // Periodic cleanup instead of emergency cleanup
+    this.cleanupTimer += deltaTime;
+    if (this.cleanupTimer >= this.CLEANUP_INTERVAL) {
+      this.cleanupTimer = 0;
+      this.performScheduledCleanup();
+    }
+    
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const particle = this.particles[i];
       if (!particle.active) continue;
@@ -943,7 +972,13 @@ class ParticleManager {
       // Remove dead particles
       if (particle.life <= 0) {
         particle.active = false;
-        this.particlePool.push(particle);
+        // CRITICAL FIX: Clear trail array before returning to pool
+        if (particle.trail && Array.isArray(particle.trail)) {
+          particle.trail.length = 0;
+        }
+        if (this.particlePool.length < 500) { // Limit pool size to prevent memory bloat
+          this.particlePool.push(particle);
+        }
         this.particles.splice(i, 1);
       }
     }
@@ -1020,8 +1055,9 @@ class ParticleManager {
   }
 
   createExplosion(x: number, y: number, color: string = '#ff6600', count: number = 30): void {
-    for (let i = 0; i < count; i++) {
-      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+    const adjustedCount = Math.floor(count * this.particleQualityMultiplier);
+    for (let i = 0; i < adjustedCount; i++) {
+      const angle = (Math.PI * 2 * i) / adjustedCount + Math.random() * 0.5;
       const speed = 3 + Math.random() * 5;
       this.createParticle({
         type: 'spark',
@@ -1041,6 +1077,8 @@ class ParticleManager {
   }
 
   createTrail(x: number, y: number, vx: number, vy: number, color: string): void {
+    // Only create trail particles if quality allows for some density
+    if (this.particleQualityMultiplier < 0.3 && Math.random() > this.particleQualityMultiplier * 2) return;
     this.createParticle({
       type: 'trail',
       position: { x, y },
@@ -1059,6 +1097,36 @@ class ParticleManager {
       this.particlePool.push(p);
     });
     this.particles.length = 0;
+  }
+
+  public clearAgedParticles(percentageToRemove: number = 0.2): void {
+    const numToRemove = Math.floor(this.particles.length * percentageToRemove);
+    if (numToRemove <= 0) return;
+
+    // console.log(`ParticleManager: Forcing removal of ${numToRemove} aged particles.`);
+    for (let i = 0; i < numToRemove; i++) {
+      const oldParticle = this.particles.shift(); // Removes from the beginning (oldest)
+      if (oldParticle) {
+        oldParticle.active = false;
+        this.particlePool.push(oldParticle);
+      }
+    }
+  }
+
+  private performScheduledCleanup(): void {
+    // Remove dead particles proactively
+    const activeParticles = [];
+    for (const particle of this.particles) {
+      if (particle.active && particle.life > 0) {
+        activeParticles.push(particle);
+      } else {
+        particle.active = false;
+        if (this.particlePool.length < 500) { // Limit pool size
+          this.particlePool.push(particle);
+        }
+      }
+    }
+    this.particles = activeParticles;
   }
 }
 
@@ -1439,20 +1507,70 @@ class BackgroundManager {
 // CHECKPOINT 6: AUDIO & POLISH MANAGER CLASSES
 
 class AudioManager {
-  private audioContext: AudioContext;
-  private masterGainNode: GainNode;
-  private effectsGainNode: GainNode;
-  private musicGainNode: GainNode;
-  private uiGainNode: GainNode;
+  private audioContext: AudioContext | null = null;
+  private masterGainNode: GainNode | null = null;
+  private effectsGainNode: GainNode | null = null;
+  private musicGainNode: GainNode | null = null;
+  private uiGainNode: GainNode | null = null;
   private activeSounds: Map<string, SoundInstance> = new Map();
   private soundEffects: Map<string, AudioEffect[]> = new Map();
-  private convolver: ConvolverNode;
-  private compressor: DynamicsCompressorNode;
+  private convolver: ConvolverNode | null = null;
+  private compressor: DynamicsCompressorNode | null = null;
   private enabled: boolean = true;
   private nextId: number = 0;
+  private initialized = false;
+  private contextCreationInProgress = false; // CRITICAL FIX: Track context creation to prevent race conditions
 
   constructor() {
-    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    // Lazy initialization - audio context created on first use
+  }
+
+  get audioContextReady(): AudioContext | null {
+    return this.audioContext;
+  }
+
+  get musicGainNodeReady(): GainNode | null {
+    return this.musicGainNode;
+  }
+
+  private ensureContext(): AudioContext {
+    // CRITICAL FIX: Prevent race condition in AudioContext creation
+    if (this.contextCreationInProgress) {
+      // If creation is in progress, wait briefly and return existing context if available
+      if (this.audioContext) {
+        return this.audioContext;
+      }
+      // If no context yet, create a basic one to prevent errors
+      console.warn('AudioContext creation race condition detected, returning temporary context');
+      return new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    
+    if (!this.audioContext || !this.initialized) {
+      this.contextCreationInProgress = true;
+      try {
+        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        this.initializeNodes();
+        this.initialized = true;
+        
+        // Resume if suspended (common on iOS)
+        if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume();
+        }
+      } finally {
+        this.contextCreationInProgress = false;
+      }
+    }
+    
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      this.audioContext.resume();
+    }
+    
+    return this.audioContext!;
+  }
+
+  private initializeNodes(): void {
+    if (!this.audioContext) return;
+    
     this.masterGainNode = this.audioContext.createGain();
     this.effectsGainNode = this.audioContext.createGain();
     this.musicGainNode = this.audioContext.createGain();
@@ -1479,6 +1597,8 @@ class AudioManager {
   }
 
   private generateImpulseResponse(): void {
+    if (!this.audioContext || !this.convolver) return;
+    
     const length = this.audioContext.sampleRate * 2;
     const impulse = this.audioContext.createBuffer(2, length, this.audioContext.sampleRate);
     
@@ -1493,31 +1613,36 @@ class AudioManager {
     this.convolver.buffer = impulse;
   }
 
-  playTone(frequency: number, duration: number, type: OscillatorType = 'sine', volume: number = 0.3): string {
+  async playTone(frequency: number, duration: number, type: OscillatorType = 'sine', volume: number = 0.3): Promise<string> {
     if (!this.enabled) return '';
     
-    const id = `tone_${this.nextId++}`;
-    const oscillator = this.audioContext.createOscillator();
-    const gainNode = this.audioContext.createGain();
+    try {
+      const ctx = this.ensureContext();
+      
+      const id = `tone_${this.nextId++}`;
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
     
     oscillator.type = type;
-    oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+    oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
     
-    gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-    gainNode.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + 0.01);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
+    gainNode.gain.setValueAtTime(0, ctx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
     
     oscillator.connect(gainNode);
-    gainNode.connect(this.effectsGainNode);
+    if (this.effectsGainNode) {
+      gainNode.connect(this.effectsGainNode);
+    }
     
-    oscillator.start(this.audioContext.currentTime);
-    oscillator.stop(this.audioContext.currentTime + duration);
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + duration);
     
     const soundInstance: SoundInstance = {
       id,
       source: oscillator,
       gainNode,
-      startTime: this.audioContext.currentTime,
+      startTime: ctx.currentTime,
       duration,
       volume,
       loop: false,
@@ -1531,129 +1656,151 @@ class AudioManager {
     };
     
     return id;
+    } catch (e) {
+      console.warn('Audio playback failed:', e);
+      return '';
+    }
   }
 
   playSynthSound(config: SynthConfig, duration: number, volume: number = 0.3): string {
     if (!this.enabled) return '';
     
-    const id = `synth_${this.nextId++}`;
-    const oscillator = this.audioContext.createOscillator();
-    const gainNode = this.audioContext.createGain();
-    const filterNode = this.audioContext.createBiquadFilter();
-    
-    oscillator.type = config.oscillatorType;
-    oscillator.frequency.setValueAtTime(config.frequency, this.audioContext.currentTime);
-    oscillator.detune.setValueAtTime(config.detune, this.audioContext.currentTime);
-    
-    if (config.filter) {
-      filterNode.type = config.filter.type;
-      filterNode.frequency.setValueAtTime(config.filter.frequency, this.audioContext.currentTime);
-      filterNode.Q.setValueAtTime(config.filter.q, this.audioContext.currentTime);
+    try {
+      const ctx = this.ensureContext();
+      if (!this.effectsGainNode) return '';
+      
+      const id = `synth_${this.nextId++}`;
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      const filterNode = ctx.createBiquadFilter();
+      
+      oscillator.type = config.oscillatorType;
+      oscillator.frequency.setValueAtTime(config.frequency, ctx.currentTime);
+      oscillator.detune.setValueAtTime(config.detune, ctx.currentTime);
+      
+      if (config.filter) {
+        filterNode.type = config.filter.type;
+        filterNode.frequency.setValueAtTime(config.filter.frequency, ctx.currentTime);
+        filterNode.Q.setValueAtTime(config.filter.q, ctx.currentTime);
+      }
+      
+      // ADSR Envelope
+      const { attack, decay, sustain, release } = config.envelope;
+      const now = ctx.currentTime;
+      
+      gainNode.gain.setValueAtTime(0, now);
+      gainNode.gain.linearRampToValueAtTime(volume, now + attack);
+      gainNode.gain.exponentialRampToValueAtTime(volume * sustain, now + attack + decay);
+      gainNode.gain.setValueAtTime(volume * sustain, now + duration - release);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      
+      oscillator.connect(config.filter ? filterNode : gainNode);
+      if (config.filter) filterNode.connect(gainNode);
+      gainNode.connect(this.effectsGainNode);
+      
+      oscillator.start(now);
+      oscillator.stop(now + duration);
+      
+      const soundInstance: SoundInstance = {
+        id,
+        source: oscillator,
+        gainNode,
+        startTime: now,
+        duration,
+        volume,
+        loop: false,
+        category: 'sfx'
+      };
+      
+      this.activeSounds.set(id, soundInstance);
+      
+      oscillator.onended = () => {
+        this.activeSounds.delete(id);
+      };
+      
+      return id;
+    } catch (e) {
+      console.warn('Synth sound playback failed:', e);
+      return '';
     }
-    
-    // ADSR Envelope
-    const { attack, decay, sustain, release } = config.envelope;
-    const now = this.audioContext.currentTime;
-    
-    gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(volume, now + attack);
-    gainNode.gain.exponentialRampToValueAtTime(volume * sustain, now + attack + decay);
-    gainNode.gain.setValueAtTime(volume * sustain, now + duration - release);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
-    
-    oscillator.connect(config.filter ? filterNode : gainNode);
-    if (config.filter) filterNode.connect(gainNode);
-    gainNode.connect(this.effectsGainNode);
-    
-    oscillator.start(now);
-    oscillator.stop(now + duration);
-    
-    const soundInstance: SoundInstance = {
-      id,
-      source: oscillator,
-      gainNode,
-      startTime: now,
-      duration,
-      volume,
-      loop: false,
-      category: 'sfx'
-    };
-    
-    this.activeSounds.set(id, soundInstance);
-    
-    oscillator.onended = () => {
-      this.activeSounds.delete(id);
-    };
-    
-    return id;
   }
 
   playPositional(frequency: number, duration: number, position: Vector2D, listenerPosition: Vector2D, volume: number = 0.3): string {
     if (!this.enabled) return '';
     
-    const id = `pos_${this.nextId++}`;
-    const oscillator = this.audioContext.createOscillator();
-    const gainNode = this.audioContext.createGain();
-    const pannerNode = this.audioContext.createPanner();
-    
-    // Configure 3D audio
-    pannerNode.panningModel = 'HRTF';
-    pannerNode.distanceModel = 'inverse';
-    pannerNode.refDistance = 1;
-    pannerNode.maxDistance = 1000;
-    pannerNode.rolloffFactor = 1;
-    pannerNode.coneInnerAngle = 360;
-    pannerNode.coneOuterAngle = 0;
-    pannerNode.coneOuterGain = 0;
-    
-    // Set positions
-    pannerNode.positionX.setValueAtTime(position.x, this.audioContext.currentTime);
-    pannerNode.positionY.setValueAtTime(position.y, this.audioContext.currentTime);
-    pannerNode.positionZ.setValueAtTime(0, this.audioContext.currentTime);
-    
-    if (this.audioContext.listener.positionX) {
-      this.audioContext.listener.positionX.setValueAtTime(listenerPosition.x, this.audioContext.currentTime);
-      this.audioContext.listener.positionY.setValueAtTime(listenerPosition.y, this.audioContext.currentTime);
-      this.audioContext.listener.positionZ.setValueAtTime(0, this.audioContext.currentTime);
+    try {
+      const ctx = this.ensureContext();
+      if (!this.effectsGainNode) return '';
+      
+      const id = `pos_${this.nextId++}`;
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      const pannerNode = ctx.createPanner();
+      
+      // Configure 3D audio
+      pannerNode.panningModel = 'HRTF';
+      pannerNode.distanceModel = 'inverse';
+      pannerNode.refDistance = 1;
+      pannerNode.maxDistance = 1000;
+      pannerNode.rolloffFactor = 1;
+      pannerNode.coneInnerAngle = 360;
+      pannerNode.coneOuterAngle = 0;
+      pannerNode.coneOuterGain = 0;
+      
+      // Set positions
+      pannerNode.positionX.setValueAtTime(position.x, ctx.currentTime);
+      pannerNode.positionY.setValueAtTime(position.y, ctx.currentTime);
+      pannerNode.positionZ.setValueAtTime(0, ctx.currentTime);
+      
+      if (ctx.listener.positionX) {
+        ctx.listener.positionX.setValueAtTime(listenerPosition.x, ctx.currentTime);
+        ctx.listener.positionY.setValueAtTime(listenerPosition.y, ctx.currentTime);
+        ctx.listener.positionZ.setValueAtTime(0, ctx.currentTime);
+      }
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
+      
+      gainNode.gain.setValueAtTime(0, ctx.currentTime);
+      gainNode.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(pannerNode);
+      pannerNode.connect(this.effectsGainNode);
+      
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + duration);
+      
+      const soundInstance: SoundInstance = {
+        id,
+        source: oscillator,
+        gainNode,
+        pannerNode,
+        startTime: ctx.currentTime,
+        duration,
+        volume,
+        position,
+        loop: false,
+        category: 'sfx'
+      };
+      
+      this.activeSounds.set(id, soundInstance);
+      
+      oscillator.onended = () => {
+        this.activeSounds.delete(id);
+      };
+      
+      return id;
+    } catch (e) {
+      console.warn('Positional audio playback failed:', e);
+      return '';
     }
-    
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
-    
-    gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-    gainNode.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + 0.01);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(pannerNode);
-    pannerNode.connect(this.effectsGainNode);
-    
-    oscillator.start(this.audioContext.currentTime);
-    oscillator.stop(this.audioContext.currentTime + duration);
-    
-    const soundInstance: SoundInstance = {
-      id,
-      source: oscillator,
-      gainNode,
-      pannerNode,
-      startTime: this.audioContext.currentTime,
-      duration,
-      volume,
-      position,
-      loop: false,
-      category: 'sfx'
-    };
-    
-    this.activeSounds.set(id, soundInstance);
-    
-    oscillator.onended = () => {
-      this.activeSounds.delete(id);
-    };
-    
-    return id;
   }
 
   duck(intensity: number, duration: number): void {
+    if (!this.musicGainNode || !this.audioContext) return;
+    
     const now = this.audioContext.currentTime;
     const targetVolume = 1 - intensity;
     
@@ -1662,20 +1809,33 @@ class AudioManager {
   }
 
   setVolume(category: 'master' | 'effects' | 'music' | 'ui', volume: number): void {
+    // Don't try to set volume if audio context isn't initialized yet
+    if (!this.audioContext || !this.masterGainNode) {
+      return;
+    }
+    
     const clampedVolume = Math.max(0, Math.min(1, volume));
     
     switch (category) {
       case 'master':
-        this.masterGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        if (this.masterGainNode) {
+          this.masterGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        }
         break;
       case 'effects':
-        this.effectsGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        if (this.effectsGainNode) {
+          this.effectsGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        }
         break;
       case 'music':
-        this.musicGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        if (this.musicGainNode) {
+          this.musicGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        }
         break;
       case 'ui':
-        this.uiGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        if (this.uiGainNode) {
+          this.uiGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        }
         break;
     }
   }
@@ -1791,13 +1951,13 @@ class AudioManager {
 }
 
 class MusicManager {
-  private audioContext: AudioContext;
-  private musicGainNode: GainNode;
+  private audioContext: AudioContext | null;
+  private musicGainNode: GainNode | null;
   private state: MusicState;
   private updateInterval: number = 100; // ms
   private lastUpdate: number = 0;
 
-  constructor(audioContext: AudioContext, musicGainNode: GainNode) {
+  constructor(audioContext: AudioContext | null, musicGainNode: GainNode | null) {
     this.audioContext = audioContext;
     this.musicGainNode = musicGainNode;
     
@@ -1811,10 +1971,20 @@ class MusicManager {
       crossfadeProgress: 0
     };
     
-    this.initializeMusicLayers();
+    // Layers will be initialized when audio context is set
+  }
+
+  setAudioContext(audioContext: AudioContext, musicGainNode: GainNode): void {
+    this.audioContext = audioContext;
+    this.musicGainNode = musicGainNode;
+    if (this.audioContext && this.musicGainNode) {
+      this.initializeMusicLayers();
+    }
   }
 
   private initializeMusicLayers(): void {
+    if (!this.audioContext || !this.musicGainNode) return;
+    
     // Create procedural music buffers for different layers
     const themes = ['low', 'mid', 'high', 'danger', 'boss'];
     const categories = ['ambient', 'percussion', 'melody', 'bass'];
@@ -2120,7 +2290,9 @@ class MusicManager {
   }
 
   setVolume(volume: number): void {
-    this.musicGainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+    if (this.musicGainNode && this.audioContext) {
+      this.musicGainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+    }
   }
 
   stop(): void {
@@ -2274,13 +2446,16 @@ class UIManager {
     
     // Update particles
     this.particleEffects = this.particleEffects.filter(particle => {
-      particle.x += particle.vx * deltaTime / 16;
-      particle.y += particle.vy * deltaTime / 16;
-      particle.alpha -= deltaTime / 2000;
-      
-      return particle.alpha > 0 && 
-             particle.x > -50 && particle.x < this.canvas.width + 50 &&
-             particle.y > -50 && particle.y < this.canvas.height + 50;
+      if (particle && particle.x !== undefined && particle.y !== undefined) {
+        particle.x += particle.vx * deltaTime / 16;
+        particle.y += particle.vy * deltaTime / 16;
+        particle.alpha -= deltaTime / 2000;
+        
+        return particle.alpha > 0 && 
+               particle.x > -50 && particle.x < this.canvas.width + 50 &&
+               particle.y > -50 && particle.y < this.canvas.height + 50;
+      }
+      return false;
     });
     
     // Add new particles occasionally for main menu
@@ -2332,13 +2507,15 @@ class UIManager {
     // Draw particles
     if (this.state.showParticles) {
       this.particleEffects.forEach(particle => {
-        this.ctx.save();
-        this.ctx.globalAlpha = particle.alpha * alpha;
-        this.ctx.fillStyle = particle.color;
-        this.ctx.beginPath();
-        this.ctx.arc(particle.x, particle.y, 2, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.restore();
+        if (particle) {
+          this.ctx.save();
+          this.ctx.globalAlpha = particle.alpha * alpha;
+          this.ctx.fillStyle = particle.color;
+          this.ctx.beginPath();
+          this.ctx.arc(particle.x, particle.y, 2, 0, Math.PI * 2);
+          this.ctx.fill();
+          this.ctx.restore();
+        }
       });
     }
     
@@ -2461,6 +2638,11 @@ class UIManager {
     if (!enabled) {
       this.particleEffects = [];
     }
+  }
+
+  public cleanup(): void {
+    this.particleEffects = [];
+    // console.log("UIManager cleaned up.");
   }
 }
 
@@ -2633,19 +2815,25 @@ class ScoreManager {
     
     // Update combo particles
     this.combo.particles = this.combo.particles.filter(particle => {
-      particle.x += particle.vx * deltaTime / 16;
-      particle.y += particle.vy * deltaTime / 16;
-      particle.alpha -= deltaTime / 1000;
-      return particle.alpha > 0;
+      if (particle && particle.x !== undefined && particle.y !== undefined) {
+        particle.x += particle.vx * deltaTime / 16;
+        particle.y += particle.vy * deltaTime / 16;
+        particle.alpha -= deltaTime / 1000;
+        return particle.alpha > 0;
+      }
+      return false;
     });
     
     // Update score display particles
     this.displayParticles = this.displayParticles.filter(particle => {
-      particle.x += particle.vx * deltaTime / 16;
-      particle.y += particle.vy * deltaTime / 16;
-      particle.timer -= deltaTime;
-      particle.alpha = Math.max(0, particle.timer / 2000);
-      return particle.timer > 0;
+      if (particle && particle.x !== undefined && particle.y !== undefined) {
+        particle.x += particle.vx * deltaTime / 16;
+        particle.y += particle.vy * deltaTime / 16;
+        particle.timer -= deltaTime;
+        particle.alpha = Math.max(0, particle.timer / 2000);
+        return particle.timer > 0;
+      }
+      return false;
     });
   }
 
@@ -2654,16 +2842,18 @@ class ScoreManager {
     
     // Render score particles
     this.displayParticles.forEach(particle => {
-      ctx.save();
-      ctx.globalAlpha = particle.alpha;
-      ctx.fillStyle = particle.color;
-      ctx.font = `bold ${particle.size}px monospace`;
-      ctx.textAlign = 'center';
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.strokeText(particle.text, particle.x - camera.x, particle.y - camera.y);
-      ctx.fillText(particle.text, particle.x - camera.x, particle.y - camera.y);
-      ctx.restore();
+      if (particle && particle.x !== undefined && particle.y !== undefined) {
+        ctx.save();
+        ctx.globalAlpha = particle.alpha;
+        ctx.fillStyle = particle.color;
+        ctx.font = `bold ${particle.size}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.strokeText(particle.text, particle.x - camera.x, particle.y - camera.y);
+        ctx.fillText(particle.text, particle.x - camera.x, particle.y - camera.y);
+        ctx.restore();
+      }
     });
     
     ctx.restore();
@@ -2705,13 +2895,15 @@ class ScoreManager {
     
     // Draw combo particles
     this.combo.particles.forEach(particle => {
-      ctx.save();
-      ctx.globalAlpha = particle.alpha * this.combo.displayAlpha;
-      ctx.fillStyle = '#ffaa00';
-      ctx.font = 'bold 12px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(particle.text, x + 80 + particle.x, y + particle.y);
-      ctx.restore();
+      if (particle && particle.x !== undefined && particle.y !== undefined) {
+        ctx.save();
+        ctx.globalAlpha = particle.alpha * this.combo.displayAlpha;
+        ctx.fillStyle = '#ffaa00';
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(particle.text, x + 80 + particle.x, y + particle.y);
+        ctx.restore();
+      }
     });
     
     ctx.restore();
@@ -2877,6 +3069,14 @@ class PerformanceManager {
 
   // Spatial Grid for Collision Optimization
   clearSpatialGrid(): void {
+    // CRITICAL FIX: Properly clear Set objects to prevent memory leaks
+    for (const key in this.spatialGrid.cells) {
+      if (this.spatialGrid.cells[key] instanceof Set) {
+        this.spatialGrid.cells[key].clear(); // Clear Set contents
+      }
+      delete this.spatialGrid.cells[key]; // Remove reference
+    }
+    // Create new cells object for clean slate
     this.spatialGrid.cells = {};
   }
 
@@ -2939,10 +3139,18 @@ class PerformanceManager {
         entity.active = false;
         entity.velocity = { x: 0, y: 0 };
         entity.alpha = 1;
+        // CRITICAL FIX: Properly clear trail array to prevent memory leaks
+        if (entity.trail && Array.isArray(entity.trail)) {
+          entity.trail.length = 0; // Clear existing array instead of creating new one
+        }
         break;
       case 'projectiles':
         entity.active = false;
         entity.velocity = { x: 0, y: 0 };
+        // CRITICAL FIX: Clear trail particles if they exist
+        if (entity.trailParticles && Array.isArray(entity.trailParticles)) {
+          entity.trailParticles.length = 0;
+        }
         break;
       case 'enemies':
         entity.health = entity.maxHealth || 1;
@@ -3494,15 +3702,23 @@ class MobileOptimizationManager {
     const canvasRect = this.canvas.getBoundingClientRect();
     Object.keys(this.mobileOpt.touchControls.touchAreas).forEach(area => {
       const touchArea = this.mobileOpt.touchControls.touchAreas[area];
-      touchArea.x = canvasRect.width * (touchArea.x as number);
-      touchArea.y = canvasRect.height * (touchArea.y as number);
-      touchArea.width = canvasRect.width * (touchArea.width as number);
-      touchArea.height = canvasRect.height * (touchArea.height as number);
+      if (touchArea && touchArea.x !== undefined && touchArea.y !== undefined) {
+        touchArea.x = canvasRect.width * (touchArea.x as number);
+        touchArea.y = canvasRect.height * (touchArea.y as number);
+        touchArea.width = canvasRect.width * (touchArea.width as number);
+        touchArea.height = canvasRect.height * (touchArea.height as number);
+      }
     });
   }
 
   async initializePWACapabilities(): Promise<void> {
     if (!this.mobileOpt.pwaCapabilities.serviceWorkerEnabled) return;
+    
+    // Skip service worker registration in development
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      console.log('PWA Service Worker registration skipped in development');
+      return;
+    }
 
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
@@ -3543,8 +3759,11 @@ class MobileOptimizationManager {
           }
         };
 
-        battery.addEventListener('levelchange', updateBatteryOptimization);
-        battery.addEventListener('chargingchange', updateBatteryOptimization);
+        // Check if battery is a valid object with addEventListener
+        if (battery && typeof battery.addEventListener === 'function') {
+          battery.addEventListener('levelchange', updateBatteryOptimization);
+          battery.addEventListener('chargingchange', updateBatteryOptimization);
+        }
         updateBatteryOptimization();
 
       } catch (error) {
@@ -4918,6 +5137,7 @@ class AdvancedPerformanceManager {
   private memoryMonitor: any = null;
   private qualityAdjustmentTimer: NodeJS.Timeout | null = null;
   private benchmark: any = null;
+  public frameTimeMonitor: any = null;
 
   constructor() {
     this.performance = this.initializePerformance();
@@ -5006,13 +5226,18 @@ class AdvancedPerformanceManager {
       }
     };
 
-    // Hook into requestAnimationFrame
-    const originalRAF = window.requestAnimationFrame;
-    window.requestAnimationFrame = (callback) => {
-      return originalRAF((time) => {
-        monitorFrameTime(time);
-        return callback(time);
-      });
+    // Create frame time monitor wrapper without overriding RAF
+    this.frameTimeMonitor = {
+      lastTime: 0,
+      wrap: (callback: FrameRequestCallback) => {
+        return (time: number) => {
+          if (this.frameTimeMonitor.lastTime) {
+            monitorFrameTime(time);
+          }
+          this.frameTimeMonitor.lastTime = time;
+          return callback(time);
+        };
+      }
     };
 
     // Memory monitoring
@@ -6064,6 +6289,8 @@ class ProductionReadinessManager {
 
   constructor() {
     this.production = this.initializeProduction();
+    // Set cache headers after production object is initialized
+    this.production.deployment.cacheHeaders = this.generateCacheHeaders();
     this.setupVersionManagement();
     this.initializeBuildOptimization();
     this.setupMonitoring();
@@ -6097,7 +6324,7 @@ class ProductionReadinessManager {
       deployment: {
         environment: this.detectEnvironment(),
         cdnEnabled: false,
-        cacheHeaders: this.generateCacheHeaders(),
+        cacheHeaders: {}, // Will be set after initialization
         rollbackProcedure: false,
         canaryDeployment: false
       }
@@ -6394,18 +6621,32 @@ class ProductionReadinessManager {
 
   private applyCacheHeaders(): void {
     // This would typically be done at the server level
-    // For client-side, we can at least set meta tags
+    // For client-side, we can at least set meta tags for allowed headers
     const cacheHeaders = this.production.deployment.cacheHeaders;
     
+    // Skip headers that can only be set server-side
+    const clientAllowedHeaders = ['Cache-Control', 'Expires', 'X-Content-Type-Options'];
+    
     Object.entries(cacheHeaders).forEach(([key, value]) => {
-      const meta = document.createElement('meta');
-      meta.httpEquiv = key;
-      meta.content = value;
-      document.head.appendChild(meta);
+      // Skip X-Frame-Options as it can only be set via HTTP headers
+      if (key === 'X-Frame-Options') return;
+      
+      if (clientAllowedHeaders.includes(key)) {
+        const meta = document.createElement('meta');
+        meta.httpEquiv = key;
+        meta.content = value;
+        document.head.appendChild(meta);
+      }
     });
   }
 
   private configureServiceWorker(): void {
+    // Skip service worker registration in development
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      console.log('Service Worker registration skipped in development');
+      return;
+    }
+    
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
         .then(registration => {
@@ -6525,6 +6766,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const [paused, setPaused] = useState(false);
   const [highScore, setHighScore] = useState(0);
   const [showShop, setShowShop] = useState(false);
+  const [contextLost, setContextLost] = useState(false);
+  const [managersReady, setManagersReady] = useState(false);
+  const [canvasSize, setCanvasSize] = useState({ width: 400, height: 600 });
   const animationIdRef = useRef<number | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const touchStartRef = useRef<Vector2D | null>(null);
@@ -6537,7 +6781,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   
   // CHECKPOINT 6: Audio & Polish Managers
   const audioManagerRef = useRef<AudioManager>(new AudioManager());
-  const musicManagerRef = useRef<MusicManager>(new MusicManager(audioManagerRef.current.audioContext, audioManagerRef.current.musicGainNode));
+  const musicManagerRef = useRef<MusicManager>(new MusicManager(null, null));
   const uiManagerRef = useRef<UIManager | null>(null);
   const scoreManagerRef = useRef<ScoreManager>(new ScoreManager());
   const performanceManagerRef = useRef<PerformanceManager | null>(null);
@@ -6551,6 +6795,33 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const advancedPerformanceManagerRef = useRef<AdvancedPerformanceManager>(new AdvancedPerformanceManager());
   const extensibilityFrameworkManagerRef = useRef<ExtensibilityFrameworkManager>(new ExtensibilityFrameworkManager());
   const productionReadinessManagerRef = useRef<ProductionReadinessManager>(new ProductionReadinessManager());
+  
+  // Event handler refs for proper cleanup
+  const themeChangeHandlerRef = useRef<(e: any) => void>();
+  const qualityChangeHandlerRef = useRef<(e: any) => void>();
+  const memoryOptimizeHandlerRef = useRef<() => void>();
+  
+  // Calculate responsive canvas size
+  const calculateCanvasSize = useCallback(() => {
+    const maxWidth = window.innerWidth - 32; // 16px padding on each side
+    const maxHeight = window.innerHeight - 200; // Leave room for UI
+    
+    // Maintain aspect ratio (2:3 for vertical game)
+    const aspectRatio = 2/3;
+    let width = Math.min(maxWidth, 600); // Cap at 600px wide
+    let height = width / aspectRatio;
+    
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * aspectRatio;
+    }
+    
+    // Minimum size
+    width = Math.max(width, 320);
+    height = Math.max(height, 480);
+    
+    return { width: Math.floor(width), height: Math.floor(height) };
+  }, []);
   
   // Initialize game state
   const gameRef = useRef<GameState>({
@@ -6619,6 +6890,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       enemyRadar: 0
     },
     showShop: false,
+    worldBounds: { width: 400, height: 600 },
     
     // CHECKPOINT 5: Visual Excellence Systems
     backgroundLayers: [],
@@ -6631,25 +6903,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     lightingPoints: []
   });
 
-  // Initialize platforms
-  const initializePlatforms = useCallback(() => {
-    const game = gameRef.current;
-    game.platforms = [];
-    game.nextPlatformId = 0;
-    
-    // Create initial platform under player
-    const initialPlatform = createPlatform(
-      game.player.position.x - PLATFORM_WIDTH / 2,
-      game.player.position.y + game.player.height + 10,
-      'standard'
-    );
-    game.platforms.push(initialPlatform);
-    
-    // Generate initial platforms
-    for (let i = 0; i < 10; i++) {
-      generateNextPlatform();
-    }
-  }, [createPlatform, generateNextPlatform]);
+
 
   // Create platform with full properties
   const createPlatform = useCallback((x: number, y: number, type: Platform['type']): Platform => {
@@ -6725,9 +6979,34 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     return platform;
   }, []);
 
+  // Create coin with value and visual properties
+  const createCoin = useCallback((x: number, y: number, value?: number): Coin => {
+    const game = gameRef.current;
+    
+    // Determine coin value (rarer coins have higher value)
+    let coinValue = value || COIN_BASE_VALUE;
+    if (!value) {
+      const rand = Math.random();
+      if (rand < 0.1) coinValue = 10;      // 10% chance
+      else if (rand < 0.3) coinValue = 5;   // 20% chance
+      else coinValue = 1;                    // 70% chance
+    }
+    
+    return {
+      id: game.nextCoinId++,
+      position: { x, y },
+      value: coinValue,
+      collected: false,
+      active: true,
+      rotationAngle: Math.random() * Math.PI * 2,
+      floatOffset: Math.random() * Math.PI * 2
+    };
+  }, []);
+
   // Platform generation with reachability guarantee
   const generateNextPlatform = useCallback(() => {
     const game = gameRef.current;
+    const player = game.player;
     
     // Find the highest platform
     let highestPlatform = game.platforms[0];
@@ -6737,11 +7016,20 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       }
     }
     
+    // Predict player trajectory
+    const predictedVelY = Math.min(player.velocity.y + GRAVITY * 30, MAX_FALL_SPEED);
+    const predictedHeight = Math.abs(predictedVelY * 30); // 30 frames ahead
+    
+    // Adjust gap based on player state
+    const dynamicGapY = player.velocity.y < 0 ? 
+      MAX_PLATFORM_GAP_Y * 0.8 : // Jumping, make easier
+      MAX_PLATFORM_GAP_Y * 0.6;  // Falling, make much easier
+    
     // Calculate reachable zone from highest platform
-    const minY = highestPlatform.y - MAX_PLATFORM_GAP_Y;
+    const minY = highestPlatform.y - dynamicGapY;
     const maxY = highestPlatform.y - MIN_PLATFORM_GAP;
-    const minX = Math.max(50, highestPlatform.x - MAX_PLATFORM_GAP_X);
-    const maxX = Math.min(350, highestPlatform.x + MAX_PLATFORM_GAP_X);
+    const minX = Math.max(50, highestPlatform.x - MAX_PLATFORM_GAP_X * 0.8);
+    const maxX = Math.min(game.worldBounds.width - 50, highestPlatform.x + MAX_PLATFORM_GAP_X * 0.8);
     
     // Generate new platform position
     const newX = minX + Math.random() * (maxX - minX);
@@ -6766,7 +7054,27 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       );
       game.coins.push(coin);
     }
-  }, [createPlatform]);
+  }, [createPlatform, createCoin]);
+
+  // Initialize platforms - now defined after createPlatform and generateNextPlatform
+  const initializePlatforms = useCallback(() => {
+    const game = gameRef.current;
+    game.platforms = [];
+    game.nextPlatformId = 0;
+    
+    // Create initial platform under player
+    const initialPlatform = createPlatform(
+      game.player.position.x - PLATFORM_WIDTH / 2,
+      game.player.position.y + game.player.height + 10,
+      'standard'
+    );
+    game.platforms.push(initialPlatform);
+    
+    // Generate initial platforms
+    for (let i = 0; i < 10; i++) {
+      generateNextPlatform();
+    }
+  }, [createPlatform, generateNextPlatform]);
 
   // Enemy creation factory
   const createEnemy = useCallback((type: EnemyType, x: number, y: number, platformY?: number): Enemy => {
@@ -6936,28 +7244,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   }, []);
 
   // Create coin
-  const createCoin = useCallback((x: number, y: number, value?: number): Coin => {
-    const game = gameRef.current;
-    
-    // Determine coin value (rarer coins have higher value)
-    let coinValue = value || COIN_BASE_VALUE;
-    if (!value) {
-      const rand = Math.random();
-      if (rand < 0.1) coinValue = 10;      // 10% chance
-      else if (rand < 0.3) coinValue = 5;   // 20% chance
-      else coinValue = 1;                    // 70% chance
-    }
-    
-    return {
-      id: game.nextCoinId++,
-      position: { x, y },
-      value: coinValue,
-      collected: false,
-      active: true,
-      rotationAngle: Math.random() * Math.PI * 2,
-      floatOffset: Math.random() * Math.PI * 2
-    };
-  }, []);
+
 
   // Enemy spawn system
   const spawnEnemies = useCallback(() => {
@@ -7029,7 +7316,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const enemy = createEnemy(selectedType, spawnX, spawnY, spawnPlatform.y);
     enemy.targetPlatform = spawnPlatform;
     game.enemies.push(enemy);
-  }, [createEnemy, spawnCoins]);
+  }, []);
 
   // Power-up spawn system
   const spawnPowerUps = useCallback(() => {
@@ -7136,13 +7423,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     if (gameOver) return;
     keysRef.current.add(e.key.toLowerCase());
     
-    if (!gameStarted && ['arrowleft', 'arrowright', 'arrowup', 'a', 'd', 'w', ' '].includes(e.key.toLowerCase())) {
+    if (!gameStarted && managersReady && ['arrowleft', 'arrowright', 'arrowup', 'a', 'd', 'w', ' '].includes(e.key.toLowerCase())) {
       setGameStarted(true);
       if (uiManagerRef.current) {
         uiManagerRef.current.showMenu('none');
       }
     }
-  }, [gameStarted, gameOver, paused]);
+  }, [gameStarted, gameOver, paused, managersReady]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     keysRef.current.delete(e.key.toLowerCase());
@@ -7470,10 +7757,30 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           player.position.y < platform.y + platform.height &&
           player.position.y + player.height > platform.y) {
         
-        // Landing on top of platform
+        // CRITICAL FIX: Continuous collision detection for fast-moving objects
+        // Landing on top of platform with tunneling prevention
         if (player.velocity.y > 0 && 
             player.position.y < platform.y &&
             player.position.y + player.height - player.velocity.y <= platform.y) {
+          
+          // Additional check for fast movement tunneling
+          const PLATFORM_HEIGHT = platform.height;
+          const steps = Math.max(1, Math.ceil(Math.abs(player.velocity.y) / PLATFORM_HEIGHT));
+          let collisionDetected = false;
+          
+          for (let step = 0; step <= steps && !collisionDetected; step++) {
+            const t = step / steps;
+            const checkY = player.position.y + player.velocity.y * t;
+            
+            if (checkY < platform.y &&
+                checkY + player.height >= platform.y &&
+                player.position.x < platform.x + platform.width &&
+                player.position.x + player.width > platform.x) {
+              collisionDetected = true;
+            }
+          }
+          
+          if (collisionDetected) {
           
           player.position.y = platform.y - player.height;
           const fallVelocity = player.velocity.y;
@@ -7600,6 +7907,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             game.score += points;
             setScore(game.score);
           }
+          } // CRITICAL FIX: Close collisionDetected if statement
         }
       }
     }
@@ -7613,8 +7921,30 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Skip if player is invulnerable
     if (player.invulnerableTime > 0) return;
     
+    // Use spatial grid to get only nearby enemies
+    let enemiesToCheck: Enemy[] = [];
+    
+    if (performanceManagerRef.current) {
+      const nearbyEntities = performanceManagerRef.current.queryNearbyEntities(
+        player.position.x - 50, 
+        player.position.y - 50, 
+        player.width + 100, 
+        player.height + 100
+      );
+      
+      // Filter to get only enemies
+      for (const entity of nearbyEntities) {
+        if ('type' in entity && entity.active && game.enemies.includes(entity)) {
+          enemiesToCheck.push(entity as Enemy);
+        }
+      }
+    } else {
+      // Fallback to all enemies if performance manager not ready
+      enemiesToCheck = game.enemies;
+    }
+    
     // Check enemy collisions
-    for (const enemy of game.enemies) {
+    for (const enemy of enemiesToCheck) {
       if (!enemy.active) continue;
       
       const enemyHit = player.position.x < enemy.position.x + enemy.width &&
@@ -7793,13 +8123,14 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           player.health--;
           player.invulnerableTime = PLAYER_INVULNERABLE_TIME;
           player.hitFlashTime = PLAYER_HIT_FLASH_TIME;
-        
-        soundManager.playHit();
-        
-        if (player.health <= 0) {
-          player.state = 'death';
-          setGameOver(true);
-          soundManager.playGameOver();
+          
+          soundManager.playHit();
+          
+          if (player.health <= 0) {
+            player.state = 'death';
+            setGameOver(true);
+            soundManager.playGameOver();
+          }
         }
       }
     }
@@ -7846,12 +8177,16 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             platform.fallVelocity = (platform.fallVelocity || 0) + GRAVITY * deltaTime;
             platform.y += platform.fallVelocity * deltaTime;
             // Update debris
-            platform.debrisParticles!.forEach(debris => {
-              debris.x += debris.vx * deltaTime;
-              debris.y += debris.vy * deltaTime;
-              debris.vy += GRAVITY * deltaTime;
-              debris.rotation += 0.1 * deltaTime;
-            });
+            if (platform.debrisParticles) {
+              platform.debrisParticles.forEach(debris => {
+                if (debris) {
+                  debris.x += debris.vx * deltaTime;
+                  debris.y += debris.vy * deltaTime;
+                  debris.vy += GRAVITY * deltaTime;
+                  debris.rotation += 0.1 * deltaTime;
+                }
+              });
+            }
           }
           break;
           
@@ -7924,14 +8259,19 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           break;
           
         case 'ice':
-          // Update ice particles
-          platform.iceParticles = platform.iceParticles!.filter(particle => {
-            particle.y += particle.vy * deltaTime;
-            particle.x += particle.vx * deltaTime;
-            particle.vy += 0.1 * deltaTime;
-            particle.alpha -= 0.02 * deltaTime;
-            return particle.alpha > 0;
-          });
+          // CRITICAL FIX: Update ice particles with proper null checking
+          if (platform.iceParticles && Array.isArray(platform.iceParticles)) {
+            platform.iceParticles = platform.iceParticles.filter(particle => {
+              if (particle) {
+                particle.y += particle.vy * deltaTime;
+                particle.x += particle.vx * deltaTime;
+                particle.vy += 0.1 * deltaTime;
+                particle.alpha -= 0.02 * deltaTime;
+                return particle.alpha > 0;
+              }
+              return false;
+            });
+          }
           
           // Apply friction to player if standing on ice
           if (player.isGrounded && player.lastPlatform === platform) {
@@ -7957,11 +8297,63 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Remove platforms below camera
     game.platforms = game.platforms.filter(p => p.y < game.camera.y + 600);
     
-    // Generate new platforms as needed
-    while (game.platforms.length < 15) {
+    // CRITICAL FIX: Generate new platforms with infinite loop protection
+    let generationAttempts = 0;
+    const MAX_GENERATION_ATTEMPTS = 50;
+    while (game.platforms.length < 15 && generationAttempts < MAX_GENERATION_ATTEMPTS) {
+      generationAttempts++;
+      const initialCount = game.platforms.length;
       generateNextPlatform();
+      
+      // If platform generation failed (no new platforms added), create emergency platform
+      if (game.platforms.length === initialCount) {
+        console.warn('Platform generation stuck, creating emergency platform');
+        const emergencyPlatform: Platform = {
+          id: game.nextPlatformId++,
+          x: 200,
+          y: game.camera.y - 200,
+          width: 120,
+          height: 20,
+          type: 'standard',
+          active: true,
+          glowIntensity: 1.0,
+          glowPhase: 0,
+          pulseSpeed: 0.02
+        };
+        game.platforms.push(emergencyPlatform);
+        break;
+      }
+    }
+    
+    if (generationAttempts >= MAX_GENERATION_ATTEMPTS) {
+      console.error('Platform generation exceeded maximum attempts, stopping to prevent infinite loop');
     }
   }, [generateNextPlatform]);
+
+  // CRITICAL FIX: Enemy state machine validation system
+  const VALID_STATE_TRANSITIONS: { [key in EnemyState]: EnemyState[] } = {
+    'idle': ['patrol', 'alert', 'dead'],
+    'patrol': ['alert', 'attack', 'charge', 'web-drop', 'charging-shot', 'teleporting', 'dead'],
+    'alert': ['patrol', 'attack', 'charge', 'dead'],
+    'attack': ['patrol', 'alert', 'charge', 'dead'],
+    'charge': ['patrol', 'alert', 'attack', 'dead'],
+    'web-drop': ['patrol', 'dead'],
+    'charging-shot': ['patrol', 'alert', 'dead'],
+    'teleporting': ['patrol', 'alert', 'dead'],
+    'dead': []
+  };
+
+  const transitionEnemyState = useCallback((enemy: Enemy, newState: EnemyState, context: string = ''): boolean => {
+    const validTransitions = VALID_STATE_TRANSITIONS[enemy.state];
+    if (!validTransitions.includes(newState)) {
+      console.warn(`Invalid state transition for ${enemy.type}: ${enemy.state} -> ${newState} ${context}`);
+      return false;
+    }
+    
+    enemy.state = newState;
+    enemy.stateTimer = 0; // Reset state timer on transition
+    return true;
+  }, []);
 
   // Update enemies
   const updateEnemies = useCallback((deltaTime: number) => {
@@ -8038,10 +8430,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             const spiderDx = Math.abs(player.position.x - enemy.position.x);
             const spiderDy = player.position.y - enemy.position.y;
             if (spiderDx < 50 && spiderDy > 50 && spiderDy < 300 && enemy.webCooldown! <= 0) {
-              enemy.state = 'web-drop';
-              enemy.isDropping = true;
-              enemy.webLine = { startY: enemy.position.y, length: 0 };
-              enemy.velocity.x = 0;
+              // CRITICAL FIX: Use validated state transition
+              if (transitionEnemyState(enemy, 'web-drop', 'cyber-spider patrol->web-drop')) {
+                enemy.isDropping = true;
+                enemy.webLine = { startY: enemy.position.y, length: 0 };
+                enemy.velocity.x = 0;
+              }
             }
           } else if (enemy.state === 'web-drop') {
             // Drop on web
@@ -8269,11 +8663,15 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         });
       }
       
-      // Update trail
-      for (const trail of projectile.trailParticles!) {
-        trail.alpha -= 0.02 * deltaTime;
+      // CRITICAL FIX: Update trail with proper null checking
+      if (projectile.trailParticles && Array.isArray(projectile.trailParticles)) {
+        for (const trail of projectile.trailParticles) {
+          if (trail) {
+            trail.alpha -= 0.02 * deltaTime;
+          }
+        }
+        projectile.trailParticles = projectile.trailParticles.filter(t => t && t.alpha > 0);
       }
-      projectile.trailParticles = projectile.trailParticles!.filter(t => t.alpha > 0);
       
       // Remove if out of bounds
       if (projectile.position.y > game.camera.y + 500 || 
@@ -8286,6 +8684,33 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Remove inactive enemies and projectiles
     game.enemies = game.enemies.filter(e => e.active && e.position.y < game.camera.y + ENEMY_DESPAWN_DISTANCE);
     game.projectiles = game.projectiles.filter(p => p.active);
+    
+    // Clear and rebuild spatial grid for active enemies
+    if (performanceManagerRef.current) {
+      performanceManagerRef.current.clearSpatialGrid();
+      
+      // Add active enemies to spatial grid
+      for (const enemy of game.enemies) {
+        if (enemy.active) {
+          performanceManagerRef.current.addToSpatialGrid(
+            enemy, 
+            enemy.position.x, 
+            enemy.position.y, 
+            enemy.width, 
+            enemy.height
+          );
+        }
+      }
+      
+      // Also add player for enemy AI queries
+      performanceManagerRef.current.addToSpatialGrid(
+        player,
+        player.position.x,
+        player.position.y,
+        player.width,
+        player.height
+      );
+    }
   }, [spawnEnemies, createProjectile]);
 
   // Update power-ups
@@ -8543,13 +8968,320 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     game.coins = game.coins.filter(c => c.active && c.position.y < game.camera.y + 500);
   }, []);
 
+  // Unified collision detection using spatial grid
+  const updateSpatialGridForAllEntities = useCallback(() => {
+    if (!performanceManagerRef.current) return;
+    
+    const game = gameRef.current;
+    performanceManagerRef.current.clearSpatialGrid();
+    
+    // Add all entities to spatial grid
+    // Platforms
+    for (const platform of game.platforms) {
+      if (platform.active) {
+        performanceManagerRef.current.addToSpatialGrid(
+          platform,
+          platform.x,
+          platform.y,
+          platform.width,
+          platform.height
+        );
+      }
+    }
+    
+    // Enemies
+    for (const enemy of game.enemies) {
+      if (enemy.active) {
+        performanceManagerRef.current.addToSpatialGrid(
+          enemy,
+          enemy.position.x,
+          enemy.position.y,
+          enemy.width,
+          enemy.height
+        );
+      }
+    }
+    
+    // Coins
+    for (const coin of game.coins) {
+      if (coin.active && !coin.collected) {
+        performanceManagerRef.current.addToSpatialGrid(
+          coin,
+          coin.position.x - COIN_SIZE/2,
+          coin.position.y - COIN_SIZE/2,
+          COIN_SIZE,
+          COIN_SIZE
+        );
+      }
+    }
+    
+    // Power-ups
+    for (const powerUp of game.powerUps) {
+      if (powerUp.active && !powerUp.collected) {
+        performanceManagerRef.current.addToSpatialGrid(
+          powerUp,
+          powerUp.position.x - POWER_UP_SIZE/2,
+          powerUp.position.y - POWER_UP_SIZE/2,
+          POWER_UP_SIZE,
+          POWER_UP_SIZE
+        );
+      }
+    }
+  }, []);
+
+  // Optimized collision checks using spatial grid
+  const checkAllCollisions = useCallback(() => {
+    if (!performanceManagerRef.current) return;
+    
+    const game = gameRef.current;
+    const player = game.player;
+    
+    // Query nearby entities once
+    const queryBounds = {
+      x: player.position.x - 100,
+      y: player.position.y - 100,
+      width: player.width + 200,
+      height: player.height + 200
+    };
+    
+    const nearbyEntities = performanceManagerRef.current.queryNearbyEntities(
+      queryBounds.x,
+      queryBounds.y,
+      queryBounds.width,
+      queryBounds.height
+    );
+    
+    // Process collisions by type
+    for (const entity of nearbyEntities) {
+      if (!entity.active) continue;
+      
+      // Check if it's a coin
+      if ('value' in entity && 'collected' in entity) {
+        const coin = entity as Coin;
+        if (!coin.collected) {
+          const dx = coin.position.x - (player.position.x + player.width / 2);
+          const dy = coin.position.y - (player.position.y + player.height / 2);
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          
+          if (dist < COIN_COLLECT_RADIUS) {
+            coin.collected = true;
+            coin.active = false;
+            
+            // Collection effects...
+            const coinValue = coin.value * game.scoreMultiplier;
+            game.sessionCoins += coin.value;
+            game.totalCoins += coin.value;
+            game.score += coinValue * 10;
+            setScore(game.score);
+            
+            audioManagerRef.current.playCollect();
+            scoreManagerRef.current.addScore({
+              type: 'coin',
+              basePoints: coinValue * 10,
+              multiplier: game.scoreMultiplier,
+              position: { x: coin.position.x, y: coin.position.y }
+            });
+          }
+        }
+      }
+      
+      // Check if it's a power-up
+      else if ('powerType' in entity && 'collected' in entity) {
+        const powerUp = entity as PowerUp;
+        if (!powerUp.collected) {
+          const collision = player.position.x < powerUp.position.x + POWER_UP_SIZE &&
+                          player.position.x + player.width > powerUp.position.x &&
+                          player.position.y < powerUp.position.y + POWER_UP_SIZE &&
+                          player.position.y + player.height > powerUp.position.y;
+          
+          if (collision) {
+            handlePowerUpCollection(powerUp);
+          }
+        }
+      }
+      
+      // Check if it's an enemy
+      else if ('enemyType' in entity || 'type' in entity) {
+        const enemy = entity as Enemy;
+        if (player.invulnerableTime <= 0 && !player.isGhost) {
+          const enemyHit = player.position.x < enemy.position.x + enemy.width &&
+                          player.position.x + player.width > enemy.position.x &&
+                          player.position.y < enemy.position.y + enemy.height &&
+                          player.position.y + player.height > enemy.position.y;
+          
+          if (enemyHit) {
+            // Handle enemy collision...
+            const jumpingOn = player.velocity.y > 0 && 
+                            player.position.y < enemy.position.y &&
+                            !['electric-turret', 'pixel-knight'].includes(enemy.type);
+            
+            if (jumpingOn) {
+              handleEnemyBounce(enemy);
+            } else if (enemy.type !== 'plasma-ghost' && enemy.type !== 'void-orb') {
+              handlePlayerDamage();
+            }
+          }
+        }
+      }
+    }
+  }, [setScore]);
+
+  // Apply power-up effects to player
+  const applyPowerUp = useCallback((powerUpType: PowerUp['powerType']) => {
+    const game = gameRef.current;
+    const player = game.player;
+    
+    // Apply power-up effect
+    const duration = POWER_UP_BASE_DURATION + game.upgrades.powerUpDuration * UPGRADE_POWER_UP_DURATION;
+    const activePowerUp: ActivePowerUp = {
+      type: powerUpType,
+      duration,
+      maxDuration: duration,
+      effectStrength: 1
+    };
+    
+    // Remove existing power-up of same type
+    game.activePowerUps = game.activePowerUps.filter(p => p.type !== powerUpType);
+    game.activePowerUps.push(activePowerUp);
+    
+    // Apply immediate effects
+    switch (powerUpType) {
+      case 'speed-boost':
+        player.speedMultiplier = SPEED_BOOST_MULTIPLIER;
+        break;
+      case 'shield-bubble':
+        player.hasShield = true;
+        break;
+      case 'magnet-field':
+        player.magnetRadius = MAGNET_BASE_RADIUS + game.upgrades.coinMagnet * UPGRADE_COIN_MAGNET_RADIUS;
+        break;
+      case 'rocket-boost':
+        player.velocity.y = ROCKET_BOOST_FORCE;
+        player.rocketBoostActive = true;
+        break;
+      case 'platform-freezer':
+        game.platformsFrozen = true;
+        break;
+      case 'ghost-mode':
+        player.isGhost = true;
+        break;
+      case 'score-multiplier':
+        game.scoreMultiplier = SCORE_MULTIPLIER_VALUE;
+        break;
+    }
+  }, []);
+
+  // Handle game over
+  const handleGameOver = useCallback(() => {
+    const game = gameRef.current;
+    
+    setGameOver(true);
+    
+    // Enhanced Game Over Audio and UI
+    audioManagerRef.current.playGameOver();
+    if (uiManagerRef.current) {
+      uiManagerRef.current.showMenu('gameOver');
+    }
+    
+    // Save high score with enhanced data
+    const finalScore = scoreManagerRef.current.getScore();
+    game.score = finalScore;
+    updateHighScore(finalScore);
+    scoreManagerRef.current.saveHighScore();
+  }, [updateHighScore]);
+
+  // Handle power-up collection
+  const handlePowerUpCollection = useCallback((powerUp: PowerUp) => {
+    const game = gameRef.current;
+    powerUp.collected = true;
+    powerUp.active = false;
+    
+    // Apply power-up effect
+    applyPowerUp(powerUp.powerType);
+    
+    // Visual and audio feedback
+    audioManagerRef.current.playPowerUp();
+    particleManagerRef.current.createExplosion(
+      powerUp.position.x,
+      powerUp.position.y,
+      '#00ff00',
+      20
+    );
+  }, [applyPowerUp]);
+
+  // Handle enemy bounce
+  const handleEnemyBounce = useCallback((enemy: Enemy) => {
+    const game = gameRef.current;
+    const player = game.player;
+    
+    player.velocity.y = BASE_JUMP_FORCE * 0.8;
+    enemy.health--;
+    
+    if (enemy.health <= 0) {
+      enemy.active = false;
+      game.score += 50;
+      setScore(game.score);
+      
+      audioManagerRef.current.playEnemyHit();
+      scoreManagerRef.current.addScore({
+        type: 'enemy',
+        basePoints: 50,
+        multiplier: 1,
+        position: { x: enemy.position.x, y: enemy.position.y }
+      });
+      
+      if (gameFeelManagerRef.current) {
+        gameFeelManagerRef.current.cameraShake(1, 150);
+        gameFeelManagerRef.current.timeFreeze(100);
+      }
+    }
+  }, [setScore]);
+
+  // Handle player damage
+  const handlePlayerDamage = useCallback(() => {
+    const game = gameRef.current;
+    const player = game.player;
+    
+    if (player.shield) {
+      player.shield = false;
+      player.invulnerableTime = 60;
+      audioManagerRef.current.playHit();
+      return;
+    }
+    
+    player.lives--;
+    if (player.lives <= 0) {
+      handleGameOver();
+    } else {
+      player.invulnerableTime = 120;
+      audioManagerRef.current.playHit();
+      
+      if (gameFeelManagerRef.current) {
+        gameFeelManagerRef.current.cameraShake(3, 300);
+        gameFeelManagerRef.current.timeFreeze(200);
+      }
+    }
+  }, [handleGameOver]);
+
   // Update camera
   const updateCamera = useCallback(() => {
     const game = gameRef.current;
-    const targetY = game.player.position.y - CAMERA_LOOK_AHEAD;
+    const player = game.player;
     
-    // Smooth camera movement
-    game.camera.y += (targetY - game.camera.y) * CAMERA_SMOOTH;
+    // Enhanced camera with X-axis following for moving platforms
+    const targetX = player.position.x - 200; // Center player horizontally
+    const targetY = player.position.y - CAMERA_LOOK_AHEAD;
+    
+    // Apply deadzone to reduce jitter
+    const deltaY = targetY - game.camera.y;
+    if (Math.abs(deltaY) > CAMERA_DEADZONE_Y) {
+      game.camera.y += deltaY * CAMERA_SMOOTH;
+    }
+    
+    // Smooth X following with bounds
+    const deltaX = targetX - game.camera.x;
+    game.camera.x += deltaX * CAMERA_SMOOTH * 0.5;
+    game.camera.x = Math.max(-100, Math.min(100, game.camera.x)); // Limit X movement
     
     // Camera only moves up
     if (game.camera.y > 0) {
@@ -8562,10 +9294,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const game = gameRef.current;
     
     for (const particle of game.particles) {
-      particle.x += particle.vx * deltaTime;
-      particle.y += particle.vy * deltaTime;
-      particle.vy += 0.2 * deltaTime; // Gravity for particles
-      particle.life -= 0.02 * deltaTime;
+      if (particle) {
+        particle.x += particle.vx * deltaTime;
+        particle.y += particle.vy * deltaTime;
+        particle.vy += 0.2 * deltaTime; // Gravity for particles
+        particle.life -= 0.02 * deltaTime;
+      }
     }
     
     // Remove dead particles
@@ -8777,7 +9511,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       const y = platform.y - game.camera.y;
       if (y < -platform.height - 100 || y > 500) continue;
       
+      // CRITICAL FIX: Canvas context state protection with try-finally
       ctx.save();
+      try {
       
       // Apply glow intensity
       ctx.globalAlpha = platform.glowIntensity;
@@ -8813,25 +9549,31 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
               ctx.strokeStyle = '#800000';
               ctx.lineWidth = 2;
               platform.cracks.forEach(crack => {
-                ctx.beginPath();
-                ctx.moveTo(platform.x + crack.x, y + crack.y);
-                ctx.lineTo(
-                  platform.x + crack.x + Math.cos(crack.angle) * crack.length,
-                  y + crack.y + Math.sin(crack.angle) * crack.length
-                );
-                ctx.stroke();
+                if (crack) {
+                  ctx.beginPath();
+                  ctx.moveTo(platform.x + crack.x, y + crack.y);
+                  ctx.lineTo(
+                    platform.x + crack.x + Math.cos(crack.angle) * crack.length,
+                    y + crack.y + Math.sin(crack.angle) * crack.length
+                  );
+                  ctx.stroke();
+                }
               });
             }
           } else if (platform.crumbleState === 'falling') {
             // Draw falling debris
             ctx.fillStyle = '#FF0000';
-            platform.debrisParticles!.forEach(debris => {
-              ctx.save();
-              ctx.translate(debris.x, debris.y - game.camera.y);
-              ctx.rotate(debris.rotation);
-              ctx.fillRect(-debris.size / 2, -debris.size / 2, debris.size, debris.size);
-              ctx.restore();
-            });
+            if (platform.debrisParticles) {
+              platform.debrisParticles.forEach(debris => {
+                if (debris) {
+                  ctx.save();
+                  ctx.translate(debris.x, debris.y - game.camera.y);
+                  ctx.rotate(debris.rotation);
+                  ctx.fillRect(-debris.size / 2, -debris.size / 2, debris.size, debris.size);
+                  ctx.restore();
+                }
+              });
+            }
           }
           break;
           
@@ -8965,13 +9707,15 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           if (platform.iceParticles) {
             ctx.fillStyle = '#FFFFFF';
             platform.iceParticles.forEach(particle => {
-              ctx.globalAlpha = particle.alpha;
-              ctx.fillRect(
-                platform.x + particle.x - 1,
-                y + particle.y - 1,
-                2,
-                2
-              );
+              if (particle) {
+                ctx.globalAlpha = particle.alpha;
+                ctx.fillRect(
+                  platform.x + particle.x - 1,
+                  y + particle.y - 1,
+                  2,
+                  2
+                );
+              }
             });
           }
           break;
@@ -9003,8 +9747,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           }
           break;
       }
-      
-      ctx.restore();
+      } catch (error) {
+        console.error('Error rendering platform:', error);
+      } finally {
+        // CRITICAL FIX: Always restore context state
+        ctx.restore();
+      }
     }
   }, []);
 
@@ -9339,9 +10087,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         
         // Trail
         ctx.globalAlpha = 0.5;
-        for (const trail of projectile.trailParticles!) {
-          ctx.globalAlpha = trail.alpha * 0.5;
-          ctx.fillRect(trail.x - 2, trail.y - game.camera.y - 2, 4, 4);
+        if (projectile.trailParticles) {
+          for (const trail of projectile.trailParticles) {
+            if (trail) {
+              ctx.globalAlpha = trail.alpha * 0.5;
+              ctx.fillRect(trail.x - 2, trail.y - game.camera.y - 2, 4, 4);
+            }
+          }
         }
       } else if (projectile.type === 'web') {
         // White sticky web
@@ -9636,10 +10388,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       
       // Update and render trail
       for (const trail of player.trailParticles) {
-        trail.alpha -= 0.05;
-        ctx.globalAlpha = trail.alpha;
-        ctx.fillStyle = trail.color;
-        ctx.fillRect(trail.x - 2, trail.y - game.camera.y - 2, 4, 4);
+        if (trail) {
+          trail.alpha -= 0.05;
+          ctx.globalAlpha = trail.alpha;
+          ctx.fillStyle = trail.color;
+          ctx.fillRect(trail.x - 2, trail.y - game.camera.y - 2, 4, 4);
+        }
       }
       player.trailParticles = player.trailParticles.filter(t => t.alpha > 0);
     }
@@ -9756,19 +10510,21 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Render legacy particles (for compatibility)
     for (const particle of game.particles) {
-      ctx.save();
-      ctx.globalAlpha = particle.life;
-      ctx.fillStyle = particle.color;
-      ctx.shadowColor = particle.color;
-      ctx.shadowBlur = 5;
-      
-      ctx.fillRect(
-        particle.x - particle.size / 2,
-        particle.y - game.camera.y - particle.size / 2,
-        particle.size,
-        particle.size
-      );
-      ctx.restore();
+      if (particle && particle.x !== undefined && particle.y !== undefined && particle.life > 0) {
+        ctx.save();
+        ctx.globalAlpha = particle.life;
+        ctx.fillStyle = particle.color;
+        ctx.shadowColor = particle.color;
+        ctx.shadowBlur = 5;
+        
+        ctx.fillRect(
+          particle.x - particle.size / 2,
+          particle.y - game.camera.y - particle.size / 2,
+          particle.size,
+          particle.size
+        );
+        ctx.restore();
+      }
     }
     
     // Render enhanced particles with new system
@@ -9874,7 +10630,11 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     updateEnemies(deltaTime);
     updatePowerUps(deltaTime);
     updateCoins(deltaTime);
-    checkEnemyCollisions();
+    
+    // Update spatial grid and check all collisions
+    updateSpatialGridForAllEntities();
+    checkAllCollisions();
+    
     updateCamera();
     updateParticles(deltaTime);
     
@@ -9989,12 +10749,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // CHECKPOINT 5: Apply Screen Effects and Post-Processing
     screenEffectManagerRef.current.applyEffects(ctx, canvas);
     
-    animationIdRef.current = requestAnimationFrame(gameLoop);
-  }, [gameStarted, paused, gameOver, updatePhysics, checkPlatformCollisions, 
-      checkEnemyCollisions, updatePlatforms, updateEnemies, updatePowerUps,
-      updateCoins, updateCamera, updateParticles, renderBackground, 
-      renderPlatforms, renderEnemies, renderPowerUps, renderCoins,
-      renderPlayer, renderParticles, renderUI]);
+    // Use wrapped RAF if available for performance monitoring
+    const nextFrame = advancedPerformanceManagerRef.current?.frameTimeMonitor?.wrap(gameLoop) || gameLoop;
+    animationIdRef.current = requestAnimationFrame(nextFrame);
+  }, [gameStarted, paused, gameOver]);
 
   // CHECKPOINT 6: UI Action Handler
   const handleUIAction = useCallback((action: string) => {
@@ -10044,7 +10802,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         // This would integrate with the settings system
         break;
     }
-  }, [gameStarted, resetGame]);
+  }, [gameStarted]);
 
   // Reset game
   const resetGame = useCallback(() => {
@@ -10100,33 +10858,162 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   }, [initializePlatforms]);
 
   // Save/Load system
-  const saveGameData = useCallback(() => {
+  // CRITICAL FIX: Save data locking mechanism to prevent corruption
+  const STORAGE_LOCK_KEY = 'neonJump_saveLock';
+  const MAX_LOCK_WAIT = 1000; // 1 second
+
+  const acquireStorageLock = useCallback(async (): Promise<boolean> => {
+    const startTime = Date.now();
+    while (localStorage.getItem(STORAGE_LOCK_KEY)) {
+      if (Date.now() - startTime > MAX_LOCK_WAIT) {
+        // Force release stuck lock
+        localStorage.removeItem(STORAGE_LOCK_KEY);
+        console.warn('Forced release of stuck save lock');
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    
+    try {
+      localStorage.setItem(STORAGE_LOCK_KEY, Date.now().toString());
+      return true;
+    } catch (e) {
+      console.error('Could not acquire save lock:', e);
+      return false;
+    }
+  }, []);
+
+  const saveGameData = useCallback(async () => {
     const game = gameRef.current;
-    const saveData = {
-      totalCoins: game.totalCoins,
-      upgrades: game.upgrades,
-      highScore: highScore
-    };
-    localStorage.setItem('neonJump_saveData', JSON.stringify(saveData));
-  }, [highScore]);
+    
+    // CRITICAL FIX: Acquire lock before saving to prevent corruption
+    if (!await acquireStorageLock()) {
+      console.warn('Could not acquire save lock, skipping save');
+      return;
+    }
+    
+    try {
+      // Sanitize data before saving
+      const saveData = {
+        totalCoins: Math.max(0, Math.min(999999, Math.floor(game.totalCoins))),
+        upgrades: {
+          jumpHeight: Math.max(0, Math.min(5, Math.floor(game.upgrades.jumpHeight || 0))),
+          airControl: Math.max(0, Math.min(5, Math.floor(game.upgrades.airControl || 0))),
+          coinMagnet: Math.max(0, Math.min(5, Math.floor(game.upgrades.coinMagnet || 0))),
+          startingHeight: Math.max(0, Math.min(5, Math.floor(game.upgrades.startingHeight || 0))),
+          powerUpDuration: Math.max(0, Math.min(5, Math.floor(game.upgrades.powerUpDuration || 0))),
+          platformSight: Math.max(0, Math.min(5, Math.floor(game.upgrades.platformSight || 0))),
+          enemyRadar: Math.max(0, Math.min(5, Math.floor(game.upgrades.enemyRadar || 0)))
+        },
+        highScore: Math.max(0, Math.min(9999999, Math.floor(highScore))),
+        version: 1
+      };
+      
+      const serialized = JSON.stringify(saveData);
+      localStorage.setItem('neonJump_saveData', serialized);
+    } catch (e: any) {
+      console.error('Failed to save game:', e);
+      // Try to clear old data if quota exceeded
+      if (e.name === 'QuotaExceededError') {
+        try {
+          localStorage.removeItem('neonJump_saveData_old');
+          const serialized = JSON.stringify(saveData);
+          localStorage.setItem('neonJump_saveData', serialized);
+        } catch (e2) {
+          console.error('Still cannot save after cleanup:', e2);
+          // Could show user notification here
+        }
+      }
+    } finally {
+      // CRITICAL FIX: Always release lock in finally block
+      localStorage.removeItem(STORAGE_LOCK_KEY);
+    }
+  }, [highScore, acquireStorageLock]);
+
+  // Save data validation schema
+  const SAVE_SCHEMA = {
+    version: 1,
+    fields: {
+      totalCoins: { type: 'number', min: 0, max: 999999 },
+      highScore: { type: 'number', min: 0, max: 9999999 },
+      upgrades: {
+        type: 'object',
+        fields: {
+          jumpHeight: { type: 'number', min: 0, max: 5 },
+          airControl: { type: 'number', min: 0, max: 5 },
+          coinMagnet: { type: 'number', min: 0, max: 5 },
+          startingHeight: { type: 'number', min: 0, max: 5 },
+          powerUpDuration: { type: 'number', min: 0, max: 5 },
+          platformSight: { type: 'number', min: 0, max: 5 },
+          enemyRadar: { type: 'number', min: 0, max: 5 }
+        }
+      }
+    }
+  };
+
+  const validateSaveData = useCallback((data: any): boolean => {
+    if (!data || typeof data !== 'object') return false;
+    if (data.version !== SAVE_SCHEMA.version) return false;
+    
+    // Validate totalCoins
+    if (typeof data.totalCoins !== 'number' || 
+        data.totalCoins < SAVE_SCHEMA.fields.totalCoins.min ||
+        data.totalCoins > SAVE_SCHEMA.fields.totalCoins.max) {
+      return false;
+    }
+    
+    // Validate highScore
+    if (typeof data.highScore !== 'number' || 
+        data.highScore < SAVE_SCHEMA.fields.highScore.min ||
+        data.highScore > SAVE_SCHEMA.fields.highScore.max) {
+      return false;
+    }
+    
+    // Validate upgrades
+    if (!data.upgrades || typeof data.upgrades !== 'object') return false;
+    
+    const upgradeFields = SAVE_SCHEMA.fields.upgrades.fields;
+    for (const [key, schema] of Object.entries(upgradeFields)) {
+      const value = data.upgrades[key];
+      if (typeof value !== schema.type || 
+          value < schema.min || 
+          value > schema.max) {
+        return false;
+      }
+    }
+    
+    return true;
+  }, []);
 
   const loadGameData = useCallback(() => {
     const game = gameRef.current;
-    const savedData = localStorage.getItem('neonJump_saveData');
-    if (savedData) {
-      try {
+    try {
+      const savedData = localStorage.getItem('neonJump_saveData');
+      if (savedData) {
         const data = JSON.parse(savedData);
-        game.totalCoins = data.totalCoins || 0;
-        game.upgrades = data.upgrades || {
-          jumpHeight: 0,
-          airControl: 0,
-          coinMagnet: 0,
-          startingHeight: 0,
-          powerUpDuration: 0,
-          platformSight: 0,
-          enemyRadar: 0
-        };
-        setHighScore(data.highScore || 0);
+        
+        // Validate save data
+        if (!validateSaveData(data)) {
+          console.warn('Invalid save data detected, using defaults');
+          // Reset to defaults if invalid
+          game.totalCoins = 0;
+          game.upgrades = {
+            jumpHeight: 0,
+            airControl: 0,
+            coinMagnet: 0,
+            startingHeight: 0,
+            powerUpDuration: 0,
+            platformSight: 0,
+            enemyRadar: 0
+          };
+          setHighScore(0);
+          return;
+        }
+        
+        // Safe to use validated data
+        game.totalCoins = data.totalCoins;
+        game.upgrades = { ...data.upgrades }; // Clone to prevent external modification
+        setHighScore(data.highScore);
         
         // Apply starting height upgrade
         if (game.upgrades.startingHeight > 0) {
@@ -10134,9 +11021,20 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           game.player.position.y -= startingHeight;
           game.camera.y = -startingHeight + CAMERA_LOOK_AHEAD;
         }
-      } catch (e) {
-        console.error('Failed to load save data:', e);
       }
+    } catch (e) {
+      console.error('Failed to load save data:', e);
+      // Initialize with defaults
+      game.totalCoins = 0;
+      game.upgrades = {
+        jumpHeight: 0,
+        airControl: 0,
+        coinMagnet: 0,
+        startingHeight: 0,
+        powerUpDuration: 0,
+        platformSight: 0,
+        enemyRadar: 0
+      };
     }
   }, []);
 
@@ -10294,13 +11192,31 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     });
   }, [purchaseUpgrade]);
 
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      const newSize = calculateCanvasSize();
+      setCanvasSize(newSize);
+    };
+    
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [calculateCanvasSize]);
+
   // Setup and cleanup
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    canvas.width = 400;
-    canvas.height = 400;
+    canvas.width = canvasSize.width;
+    canvas.height = canvasSize.height;
+    
+    // Update game world bounds
+    gameRef.current.worldBounds = {
+      width: canvasSize.width,
+      height: canvasSize.height
+    };
     
     // CHECKPOINT 6: Initialize Canvas-Dependent Managers
     uiManagerRef.current = new UIManager(canvas);
@@ -10312,6 +11228,15 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Integrate CHECKPOINT 7 systems with existing settings
     retroToolboxIntegrationManagerRef.current.updateGameSettings(settings);
+    
+    // Check if all managers are ready
+    if (canvasRef.current && 
+        particleManagerRef.current && 
+        audioManagerRef.current &&
+        uiManagerRef.current &&
+        performanceManagerRef.current) {
+      setManagersReady(true);
+    }
     
     // Subscribe to RetroToolbox theme changes
     const unsubscribeSettings = retroToolboxIntegrationManagerRef.current.subscribeToSettings((newSettings) => {
@@ -10331,24 +11256,33 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
     
     // Set up CHECKPOINT 7 event listeners
-    window.addEventListener('neonjump-theme-change', (e: any) => {
+    themeChangeHandlerRef.current = (e: any) => {
       // Apply theme changes to game rendering
       const theme = e.detail;
       // Implementation would update game colors based on theme
-    });
+    };
     
-    window.addEventListener('neonjump-quality-change', (e: any) => {
+    qualityChangeHandlerRef.current = (e: any) => {
       // Apply quality changes to game systems
       const { level, settings: qualitySettings } = e.detail;
-      particleManagerRef.current.setParticleMultiplier(qualitySettings.particles);
+      if (particleManagerRef.current) {
+        particleManagerRef.current.setParticleQualityMultiplier(qualitySettings.particles);
+      }
       // Update other quality-dependent systems
-    });
+    };
     
-    window.addEventListener('neonjump-memory-optimize', () => {
+    memoryOptimizeHandlerRef.current = () => {
       // Trigger memory optimization across all systems
-      particleManagerRef.current.clearInactiveParticles();
+      if (particleManagerRef.current) {
+        particleManagerRef.current.clearAgedParticles(0.2); // Remove 20% of oldest particles
+      }
       // Clear other pools as needed
-    });
+    };
+    
+    // Register the event listeners
+    window.addEventListener('neonjump-theme-change', themeChangeHandlerRef.current);
+    window.addEventListener('neonjump-quality-change', qualityChangeHandlerRef.current);
+    window.addEventListener('neonjump-memory-optimize', memoryOptimizeHandlerRef.current);
     
     // Set up UI event listeners
     canvas.addEventListener('ui-action', (e: any) => {
@@ -10364,6 +11298,29 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Initialize game
     initializePlatforms();
     loadGameData();
+    
+    // Canvas context loss handling
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      console.warn('Canvas context lost');
+      setPaused(true);
+      setContextLost(true);
+    };
+
+    const handleContextRestored = () => {
+      console.log('Canvas context restored');
+      setContextLost(false);
+      // Reinitialize rendering resources if needed
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+          // Restore any cached images, patterns, etc.
+        }
+      }
+    };
+
+    canvas.addEventListener('contextlost', handleContextLost);
+    canvas.addEventListener('contextrestored', handleContextRestored);
     
     // Event listeners
     window.addEventListener('keydown', handleKeyDown);
@@ -10382,6 +11339,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       canvas.removeEventListener('touchstart', handleTouchStart as any);
       canvas.removeEventListener('touchmove', handleTouchMove as any);
       canvas.removeEventListener('touchend', handleTouchEnd);
+      canvas.removeEventListener('contextlost', handleContextLost);
+      canvas.removeEventListener('contextrestored', handleContextRestored);
       
       // CHECKPOINT 7: Cleanup Production-Ready Managers
       if (mobileOptimizationManagerRef.current) {
@@ -10394,21 +11353,75 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       productionReadinessManagerRef.current.cleanup();
       
       // Remove CHECKPOINT 7 event listeners
-      window.removeEventListener('neonjump-theme-change', () => {});
-      window.removeEventListener('neonjump-quality-change', () => {});
-      window.removeEventListener('neonjump-memory-optimize', () => {});
+      if (themeChangeHandlerRef.current) {
+        window.removeEventListener('neonjump-theme-change', themeChangeHandlerRef.current);
+      }
+      if (qualityChangeHandlerRef.current) {
+        window.removeEventListener('neonjump-quality-change', qualityChangeHandlerRef.current);
+      }
+      if (memoryOptimizeHandlerRef.current) {
+        window.removeEventListener('neonjump-memory-optimize', memoryOptimizeHandlerRef.current);
+      }
+      
+      // Add missing manager cleanups
+      if (particleManagerRef.current) {
+        particleManagerRef.current.clear();
+      }
+      if (screenEffectManagerRef.current) {
+        screenEffectManagerRef.current.clear();
+      }
+      if (audioManagerRef.current) {
+        audioManagerRef.current.stopAllSounds();
+        audioManagerRef.current.setEnabled(false);
+      }
+      if (musicManagerRef.current) {
+        musicManagerRef.current.stop();
+      }
+      if (uiManagerRef.current) {
+        uiManagerRef.current.cleanup?.();
+      }
+      if (scoreManagerRef.current) {
+        scoreManagerRef.current.reset();
+      }
+      if (performanceManagerRef.current) {
+        performanceManagerRef.current.cleanup();
+      }
+      if (gameFeelManagerRef.current) {
+        gameFeelManagerRef.current.reset();
+      }
+      
+      // Clear all game state
+      gameRef.current.particles = [];
+      gameRef.current.enemies = [];
+      gameRef.current.platforms = [];
+      gameRef.current.powerUps = [];
+      gameRef.current.coins = [];
+      gameRef.current.projectiles = [];
+      gameRef.current.activePowerUps = [];
       
       if (animationIdRef.current) {
         cancelAnimationFrame(animationIdRef.current);
       }
     };
-  }, [initializePlatforms, handleKeyDown, handleKeyUp, handleTouchStart, handleTouchMove, handleTouchEnd]);
+  }, [initializePlatforms, handleKeyDown, handleKeyUp, handleTouchStart, handleTouchMove, handleTouchEnd, canvasSize]);
+
+  // Initialize MusicManager when audio is ready
+  useEffect(() => {
+    if (gameStarted && audioManagerRef.current.audioContextReady && musicManagerRef.current) {
+      const ctx = audioManagerRef.current.audioContextReady;
+      const musicGain = audioManagerRef.current.musicGainNodeReady;
+      if (ctx && musicGain) {
+        musicManagerRef.current.setAudioContext(ctx, musicGain);
+      }
+    }
+  }, [gameStarted]);
 
   // Start game loop when game starts
   useEffect(() => {
     if (gameStarted && !paused && !gameOver) {
       gameRef.current.lastUpdate = performance.now();
-      animationIdRef.current = requestAnimationFrame(gameLoop);
+      const wrappedLoop = advancedPerformanceManagerRef.current?.frameTimeMonitor?.wrap(gameLoop) || gameLoop;
+      animationIdRef.current = requestAnimationFrame(wrappedLoop);
     } else if (animationIdRef.current) {
       cancelAnimationFrame(animationIdRef.current);
     }
@@ -10418,7 +11431,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         cancelAnimationFrame(animationIdRef.current);
       }
     };
-  }, [gameStarted, paused, gameOver, gameLoop]);
+  }, [gameStarted, paused, gameOver]);
 
   // Update high score and save game data
   useEffect(() => {
@@ -10442,13 +11455,29 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           style={{ imageRendering: 'pixelated' }}
         />
         
-        {!gameStarted && !gameOver && (
+        {!managersReady && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
+            <p className="text-white">Initializing...</p>
+          </div>
+        )}
+        
+        {managersReady && !gameStarted && !gameOver && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-75">
             <h2 className="text-4xl font-bold text-cyan-400 mb-4 animate-pulse">NEON JUMP</h2>
-            <p className="text-white mb-8">Press Arrow Keys to Start</p>
+            <p className="text-white mb-8">Press Arrow Keys or WASD to Start</p>
             <div className="text-gray-400 text-sm">
-              <p>← → Move</p>
-              <p>↑ or SPACE Jump</p>
+              <p>← → or A D - Move</p>
+              <p>↑ or W or SPACE - Jump</p>
+              <p>ESC - Pause</p>
+            </div>
+          </div>
+        )}
+        
+        {contextLost && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
+            <div className="text-center">
+              <p className="text-2xl text-white">Graphics context lost</p>
+              <p className="text-gray-400">Please wait...</p>
             </div>
           </div>
         )}

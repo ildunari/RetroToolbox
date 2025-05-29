@@ -2,10 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
-import { FadingCanvas } from "../ui/FadingCanvas";
 import { GameOverBanner } from "../ui/GameOverBanner";
-import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
-import { CANVAS_CONFIG } from "../../core/CanvasConfig";
 
 // Types and Interfaces
 interface Vector2D {
@@ -190,7 +187,7 @@ interface ComboData {
   multiplier: number;
   timer: number;
   maxTimer: number;
-  streakType: 'jump' | 'collect' | 'perfect' | 'enemy' | 'platform';
+  streakType: 'jump' | 'collect' | 'perfect' | 'enemy' | 'platform' | 'coin'; // Added 'coin'
   displayAlpha: number;
   particles: Array<{ x: number; y: number; vx: number; vy: number; alpha: number; text: string }>;
 }
@@ -350,6 +347,15 @@ interface Player {
   afterimageTrail: Array<{ x: number; y: number; alpha: number; size: number }>;
   motionBlur: { enabled: boolean; intensity: number; samples: Vector2D[] };
   glowData: GlowData;
+  
+  // Backward compatibility properties
+  shield: boolean;
+  lives: number;
+  x: number;
+  y: number;
+  velocityY: number;
+  isJumping: boolean;
+  isDucking: boolean;
 }
 
 // Enemy Types
@@ -444,6 +450,7 @@ interface PowerUp {
   glowIntensity: number;
   rotationAngle: number;
   floatOffset: number;
+  powerType: PowerUpType;  // Add this for backward compatibility
 }
 
 interface ActivePowerUp {
@@ -468,17 +475,6 @@ interface Coin {
 // Upgrade types
 type UpgradeType = 'jump-height' | 'air-control' | 'coin-magnet' | 'starting-height' | 
                    'power-up-duration' | 'platform-sight' | 'enemy-radar';
-
-interface Upgrade {
-  type: UpgradeType;
-  name: string;
-  description: string;
-  currentLevel: number;
-  maxLevel: number;
-  baseCost: number;
-  costMultiplier: number;
-  icon: string;
-}
 
 interface UpgradeState {
   jumpHeight: number;      // 0-5
@@ -533,6 +529,7 @@ interface GameState {
 
 interface Settings {
   difficulty: string;
+  soundEnabled: boolean;
 }
 
 interface NeonJumpGameProps {
@@ -779,7 +776,6 @@ const GRAVITY = 0.5;
 const BASE_JUMP_FORCE = -12;
 const HORIZONTAL_SPEED = 5;
 const WALL_SLIDE_GRAVITY = 0.2;
-const WALL_BOUNCE_DAMPING = 0.7;
 const MAX_FALL_SPEED = 15;
 const AIR_CONTROL = 0.8;
 const COYOTE_TIME = 6; // frames
@@ -791,7 +787,6 @@ const CAMERA_DEADZONE_Y = 50; // Add deadzone to reduce minor adjustments
 // Platform Constants
 const PLATFORM_WIDTH = 80;
 const PLATFORM_HEIGHT = 10;
-const PLATFORM_SPAWN_HEIGHT = -50;
 const MIN_PLATFORM_GAP = 50;
 const MAX_PLATFORM_GAP_X = 120; // Maximum horizontal jump distance
 const MAX_PLATFORM_GAP_Y = 80; // Maximum vertical jump distance
@@ -1579,24 +1574,36 @@ class AudioManager {
     this.convolver = this.audioContext.createConvolver();
     this.compressor = this.audioContext.createDynamicsCompressor();
     
-    // Set up audio routing
-    this.effectsGainNode.connect(this.compressor);
-    this.musicGainNode.connect(this.compressor);
-    this.uiGainNode.connect(this.compressor);
-    this.compressor.connect(this.masterGainNode);
-    this.masterGainNode.connect(this.audioContext.destination);
+    // Set up audio routing - Add null checks for safety before connecting
+    if (this.effectsGainNode && this.compressor) {
+      this.effectsGainNode.connect(this.compressor);
+    }
+    if (this.musicGainNode && this.compressor) {
+      this.musicGainNode.connect(this.compressor);
+    }
+    if (this.uiGainNode && this.compressor) {
+      this.uiGainNode.connect(this.compressor);
+    }
+    if (this.compressor && this.masterGainNode) {
+      this.compressor.connect(this.masterGainNode);
+    }
+    if (this.masterGainNode) {
+      this.masterGainNode.connect(this.audioContext.destination);
+    }
     
-    // Configure compressor
-    this.compressor.threshold.setValueAtTime(-24, this.audioContext.currentTime);
-    this.compressor.knee.setValueAtTime(30, this.audioContext.currentTime);
-    this.compressor.ratio.setValueAtTime(12, this.audioContext.currentTime);
-    this.compressor.attack.setValueAtTime(0.003, this.audioContext.currentTime);
-    this.compressor.release.setValueAtTime(0.25, this.audioContext.currentTime);
+    // Configure compressor - Add null checks
+    if (this.compressor) {
+      this.compressor.threshold.setValueAtTime(-24, this.audioContext.currentTime);
+      this.compressor.knee.setValueAtTime(30, this.audioContext.currentTime);
+      this.compressor.ratio.setValueAtTime(12, this.audioContext.currentTime);
+      this.compressor.attack.setValueAtTime(0.003, this.audioContext.currentTime);
+      this.compressor.release.setValueAtTime(0.25, this.audioContext.currentTime);
+    }
     
     this.generateImpulseResponse();
-  }
-
-  private generateImpulseResponse(): void {
+  }  private generateImpulseResponse(): void {
+    if (!this.audioContext || !this.convolver) return;
+    
     const length = this.audioContext.sampleRate * 2;
     const impulse = this.audioContext.createBuffer(2, length, this.audioContext.sampleRate);
     
@@ -1607,7 +1614,7 @@ class AudioManager {
         channelData[i] = (Math.random() * 2 - 1) * decay * 0.5;
       }
     }
-    
+
     this.convolver.buffer = impulse;
   }
 
@@ -1629,8 +1636,11 @@ class AudioManager {
     gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
     
     oscillator.connect(gainNode);
-    if (this.effectsGainNode) {
+    if (this.effectsGainNode) { // Null check
       gainNode.connect(this.effectsGainNode);
+    } else {
+      console.warn('effectsGainNode is null, cannot connect tone gainNode');
+      gainNode.connect(ctx.destination); // Fallback or handle error
     }
     
     oscillator.start(ctx.currentTime);
@@ -1663,124 +1673,150 @@ class AudioManager {
   playSynthSound(config: SynthConfig, duration: number, volume: number = 0.3): string {
     if (!this.enabled) return '';
     
-    const id = `synth_${this.nextId++}`;
-    const oscillator = this.audioContext.createOscillator();
-    const gainNode = this.audioContext.createGain();
-    const filterNode = this.audioContext.createBiquadFilter();
-    
-    oscillator.type = config.oscillatorType;
-    oscillator.frequency.setValueAtTime(config.frequency, this.audioContext.currentTime);
-    oscillator.detune.setValueAtTime(config.detune, this.audioContext.currentTime);
-    
-    if (config.filter) {
-      filterNode.type = config.filter.type;
-      filterNode.frequency.setValueAtTime(config.filter.frequency, this.audioContext.currentTime);
-      filterNode.Q.setValueAtTime(config.filter.q, this.audioContext.currentTime);
+    try {
+      const ctx = this.ensureContext();
+      
+      const id = `synth_${this.nextId++}`;
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      const filterNode = ctx.createBiquadFilter();
+      
+      oscillator.type = config.oscillatorType;
+      oscillator.frequency.setValueAtTime(config.frequency, ctx.currentTime);
+      oscillator.detune.setValueAtTime(config.detune, ctx.currentTime);
+      
+      if (config.filter) {
+        filterNode.type = config.filter.type;
+        filterNode.frequency.setValueAtTime(config.filter.frequency, ctx.currentTime);
+        filterNode.Q.setValueAtTime(config.filter.q, ctx.currentTime);
+      }
+      
+      // ADSR Envelope
+      const { attack, decay, sustain, release } = config.envelope;
+      const now = ctx.currentTime;
+      
+      gainNode.gain.setValueAtTime(0, now);
+      gainNode.gain.linearRampToValueAtTime(volume, now + attack);
+      gainNode.gain.exponentialRampToValueAtTime(volume * sustain, now + attack + decay);
+      gainNode.gain.setValueAtTime(volume * sustain, now + duration - release);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      
+      oscillator.connect(config.filter ? filterNode : gainNode);
+      if (config.filter) filterNode.connect(gainNode);
+      if (this.effectsGainNode) { // Null check
+        gainNode.connect(this.effectsGainNode);
+      } else {
+        console.warn('effectsGainNode is null, cannot connect synth gainNode');
+        gainNode.connect(ctx.destination); // Fallback
+      }
+      
+      oscillator.start(now);
+      oscillator.stop(now + duration);
+      
+      const soundInstance: SoundInstance = {
+        id,
+        source: oscillator,
+        gainNode,
+        startTime: now,
+        duration,
+        volume,
+        loop: false,
+        category: 'sfx'
+      };
+      
+      this.activeSounds.set(id, soundInstance);
+      
+      oscillator.onended = () => {
+        this.activeSounds.delete(id);
+      };
+      
+      return id;
+    } catch (e) {
+      console.warn('Synth sound playback failed:', e);
+      return '';
     }
-    
-    // ADSR Envelope
-    const { attack, decay, sustain, release } = config.envelope;
-    const now = this.audioContext.currentTime;
-    
-    gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(volume, now + attack);
-    gainNode.gain.exponentialRampToValueAtTime(volume * sustain, now + attack + decay);
-    gainNode.gain.setValueAtTime(volume * sustain, now + duration - release);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
-    
-    oscillator.connect(config.filter ? filterNode : gainNode);
-    if (config.filter) filterNode.connect(gainNode);
-    gainNode.connect(this.effectsGainNode);
-    
-    oscillator.start(now);
-    oscillator.stop(now + duration);
-    
-    const soundInstance: SoundInstance = {
-      id,
-      source: oscillator,
-      gainNode,
-      startTime: now,
-      duration,
-      volume,
-      loop: false,
-      category: 'sfx'
-    };
-    
-    this.activeSounds.set(id, soundInstance);
-    
-    oscillator.onended = () => {
-      this.activeSounds.delete(id);
-    };
-    
-    return id;
   }
 
   playPositional(frequency: number, duration: number, position: Vector2D, listenerPosition: Vector2D, volume: number = 0.3): string {
     if (!this.enabled) return '';
     
-    const id = `pos_${this.nextId++}`;
-    const oscillator = this.audioContext.createOscillator();
-    const gainNode = this.audioContext.createGain();
-    const pannerNode = this.audioContext.createPanner();
-    
-    // Configure 3D audio
-    pannerNode.panningModel = 'HRTF';
-    pannerNode.distanceModel = 'inverse';
-    pannerNode.refDistance = 1;
-    pannerNode.maxDistance = 1000;
-    pannerNode.rolloffFactor = 1;
-    pannerNode.coneInnerAngle = 360;
-    pannerNode.coneOuterAngle = 0;
-    pannerNode.coneOuterGain = 0;
-    
-    // Set positions
-    pannerNode.positionX.setValueAtTime(position.x, this.audioContext.currentTime);
-    pannerNode.positionY.setValueAtTime(position.y, this.audioContext.currentTime);
-    pannerNode.positionZ.setValueAtTime(0, this.audioContext.currentTime);
-    
-    if (this.audioContext.listener.positionX) {
-      this.audioContext.listener.positionX.setValueAtTime(listenerPosition.x, this.audioContext.currentTime);
-      this.audioContext.listener.positionY.setValueAtTime(listenerPosition.y, this.audioContext.currentTime);
-      this.audioContext.listener.positionZ.setValueAtTime(0, this.audioContext.currentTime);
+    try {
+      const ctx = this.ensureContext();
+      
+      const id = `pos_${this.nextId++}`;
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      const pannerNode = ctx.createPanner();
+      
+      // Configure 3D audio
+      pannerNode.panningModel = 'HRTF';
+      pannerNode.distanceModel = 'inverse';
+      pannerNode.refDistance = 1;
+      pannerNode.maxDistance = 1000;
+      pannerNode.rolloffFactor = 1;
+      pannerNode.coneInnerAngle = 360;
+      pannerNode.coneOuterAngle = 0;
+      pannerNode.coneOuterGain = 0;
+      
+      // Set positions
+      pannerNode.positionX.setValueAtTime(position.x, ctx.currentTime);
+      pannerNode.positionY.setValueAtTime(position.y, ctx.currentTime);
+      pannerNode.positionZ.setValueAtTime(0, ctx.currentTime);
+      
+      if (ctx.listener.positionX) {
+        ctx.listener.positionX.setValueAtTime(listenerPosition.x, ctx.currentTime);
+        ctx.listener.positionY.setValueAtTime(listenerPosition.y, ctx.currentTime);
+        ctx.listener.positionZ.setValueAtTime(0, ctx.currentTime);
+      }
+      
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
+      
+      gainNode.gain.setValueAtTime(0, ctx.currentTime);
+      gainNode.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(pannerNode);
+      if (this.effectsGainNode) { // Null check
+        pannerNode.connect(this.effectsGainNode);
+      } else {
+        console.warn('effectsGainNode is null, cannot connect pannerNode');
+        pannerNode.connect(ctx.destination); // Fallback
+      }
+      
+      oscillator.start(ctx.currentTime);
+      oscillator.stop(ctx.currentTime + duration);
+      
+      const soundInstance: SoundInstance = {
+        id,
+        source: oscillator,
+        gainNode,
+        pannerNode,
+        startTime: ctx.currentTime,
+        duration,
+        volume,
+        position,
+        loop: false,
+        category: 'sfx'
+      };
+      
+      this.activeSounds.set(id, soundInstance);
+      
+      oscillator.onended = () => {
+        this.activeSounds.delete(id);
+      };
+      
+      return id;
+    } catch (e) {
+      console.warn('Positional audio playback failed:', e);
+      return '';
     }
-    
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
-    
-    gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
-    gainNode.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + 0.01);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(pannerNode);
-    pannerNode.connect(this.effectsGainNode);
-    
-    oscillator.start(this.audioContext.currentTime);
-    oscillator.stop(this.audioContext.currentTime + duration);
-    
-    const soundInstance: SoundInstance = {
-      id,
-      source: oscillator,
-      gainNode,
-      pannerNode,
-      startTime: this.audioContext.currentTime,
-      duration,
-      volume,
-      position,
-      loop: false,
-      category: 'sfx'
-    };
-    
-    this.activeSounds.set(id, soundInstance);
-    
-    oscillator.onended = () => {
-      this.activeSounds.delete(id);
-    };
-    
-    return id;
   }
 
   duck(intensity: number, duration: number): void {
+    if (!this.musicGainNode || !this.audioContext) return;
+    
     const now = this.audioContext.currentTime;
     const targetVolume = 1 - intensity;
     
@@ -1853,7 +1889,7 @@ class AudioManager {
   update(deltaTime: number): void {
     // Clean up finished sounds
     for (const [id, sound] of this.activeSounds) {
-      if (this.audioContext.currentTime > sound.startTime + sound.duration) {
+      if (this.audioContext && this.audioContext.currentTime > sound.startTime + sound.duration) {
         this.activeSounds.delete(id);
       }
     }
@@ -1921,12 +1957,21 @@ class AudioManager {
     }, 1.5, 0.4);
   }
 
-  playMenuMove(): string {
+  async playMenuMove(): Promise<string> {
     return this.playTone(600, 0.1, 'sine', 0.2);
   }
 
-  playMenuSelect(): string {
+  async playMenuSelect(): Promise<string> {
     return this.playTone(800, 0.2, 'triangle', 0.3);
+  }
+
+  // Add missing methods for compatibility
+  playCollect(): string {
+    return this.playCoinCollect();
+  }
+
+  playHit(): string {
+    return this.playEnemyHit();
   }
 }
 
@@ -7219,7 +7264,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       glowColor: powerUpColors[type],
       glowIntensity: 1,
       rotationAngle: Math.random() * Math.PI * 2,
-      floatOffset: Math.random() * Math.PI * 2
+      floatOffset: Math.random() * Math.PI * 2,
+      powerType: type  // Add this for backward compatibility
     };
   }, []);
 
@@ -7716,7 +7762,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       // Save high score with enhanced data
       const finalScore = scoreManagerRef.current.getScore();
       game.score = finalScore;
-      updateHighScore(finalScore);
+      updateHighScore('neonJump', finalScore);
       scoreManagerRef.current.saveHighScore();
     }
   }, [updateGamepadInput]);
@@ -7811,13 +7857,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           switch (platform.type) {
             case 'standard':
               // Normal landing - just play sound
-              soundManager.playTone(220, 0.05, 'sine');
+              soundManager.playTone(220, 0.05);
               break;
               
             case 'bouncy':
               player.velocity.y = BASE_JUMP_FORCE * BOUNCE_FORCE_MULTIPLIER;
               platform.bounceAnimation = 1;
-              soundManager.playTone(660, 0.15, 'sine');
+              soundManager.playTone(660, 0.15);
               // Bouncy particles
               for (let i = 0; i < 15; i++) {
                 game.particles.push({
@@ -7846,7 +7892,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
                     length: 10 + Math.random() * 15
                   });
                 }
-                soundManager.playTone(150, 0.1, 'sawtooth');
+                soundManager.playTone(150, 0.1);
               }
               break;
               
@@ -7861,15 +7907,15 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
                   alpha: 1
                 });
               }
-              soundManager.playTone(880, 0.05, 'triangle');
+              soundManager.playTone(880, 0.05);
               break;
               
             case 'conveyor':
-              soundManager.playTone(330, 0.05, 'square');
+              soundManager.playTone(330, 0.05);
               break;
               
             case 'phase':
-              soundManager.playTone(440, 0.1, 'sine');
+              soundManager.playTone(440, 0.1);
               break;
               
             case 'moving':
@@ -7877,7 +7923,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
               if (platform.velocity) {
                 player.velocity.x += platform.velocity.x * 0.3;
               }
-              soundManager.playTone(330, 0.05, 'sine');
+              soundManager.playTone(330, 0.05);
               break;
           }
           
@@ -8008,7 +8054,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             
             soundManager.playHit();
           } else {
-            soundManager.playTone(300, 0.1, 'square');
+            soundManager.playTone(300, 0.1);
           }
         } else {
           // Check for shield
@@ -8030,7 +8076,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
                 color: '#00FFFF'
               });
             }
-            soundManager.playTone(600, 0.2, 'sine');
+            soundManager.playTone(600, 0.2);
           } else {
             // Take damage
             player.health--;
@@ -8090,7 +8136,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
               color: '#00FFFF'
             });
           }
-          soundManager.playTone(600, 0.2, 'sine');
+          soundManager.playTone(600, 0.2);
         } else {
           // Apply projectile effect
           if (projectile.type === 'web') {
@@ -8149,7 +8195,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
                   size: 3 + Math.random() * 5
                 });
               }
-              soundManager.playTone(100, 0.2, 'sawtooth');
+              soundManager.playTone(100, 0.2);
             }
           } else if (platform.crumbleState === 'breaking') {
             platform.crumbleState = 'falling';
@@ -8234,7 +8280,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             platform.phaseVisible = !platform.phaseVisible;
             platform.active = platform.phaseVisible;
             platform.phaseTimer = 0;
-            soundManager.playTone(platform.phaseVisible ? 880 : 440, 0.1, 'sine');
+            soundManager.playTone(platform.phaseVisible ? 880 : 440, 0.1);
           }
           break;
           
@@ -8362,7 +8408,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             if (enemy.nextBounceTime <= 0 && enemy.velocity.y === 0) {
               enemy.velocity.y = SLIME_BOUNCE_HEIGHT;
               enemy.nextBounceTime = 60 + Math.random() * 30;
-              soundManager.playTone(150, 0.1, 'sine');
+              soundManager.playTone(150, 0.1);
             }
             
             // Edge detection
@@ -8432,7 +8478,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
               );
               game.projectiles.push(projectile);
               enemy.webCooldown = 120;
-              soundManager.playTone(400, 0.1, 'sawtooth');
+              soundManager.playTone(400, 0.1);
             }
             
             // Return to platform
@@ -8492,7 +8538,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
               
               enemy.state = 'idle';
               enemy.stateTimer = TURRET_SHOT_INTERVAL;
-              soundManager.playTone(800, 0.2, 'square');
+              soundManager.playTone(800, 0.2);
             }
           }
           
@@ -8518,7 +8564,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
               enemy.state = 'charge';
               enemy.facingDirection = Math.sign(knightDx);
               enemy.shieldUp = false;
-              soundManager.playTone(300, 0.1, 'square');
+              soundManager.playTone(300, 0.1);
             }
           } else if (enemy.state === 'charge') {
             // Charge at player
@@ -8559,7 +8605,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             enemy.position.y = player.position.y + Math.sin(angle) * distance;
             
             enemy.teleportCooldown = ORB_TELEPORT_INTERVAL;
-            soundManager.playTone(100, 0.3, 'sine');
+            soundManager.playTone(100, 0.3);
           }
           
           // Apply gravity pull to player if close
@@ -8727,13 +8773,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         // CHECKPOINT 5: Enhanced power-up collection effect
         let powerUpColor = '#ffffff';
         switch (powerUp.type) {
-          case 'speed': powerUpColor = '#0080ff'; break;
-          case 'shield': powerUpColor = '#00ffff'; break;
-          case 'magnet': powerUpColor = '#ff00ff'; break;
-          case 'rocket': powerUpColor = '#ff6600'; break;
-          case 'freeze': powerUpColor = '#80ffff'; break;
-          case 'ghost': powerUpColor = '#ffffff'; break;
-          case 'multiplier': powerUpColor = '#ffff00'; break;
+          case 'speed-boost': powerUpColor = '#0080ff'; break;
+          case 'shield-bubble': powerUpColor = '#00ffff'; break;
+          case 'magnet-field': powerUpColor = '#ff00ff'; break;
+          case 'rocket-boost': powerUpColor = '#ff6600'; break;
+          case 'platform-freezer': powerUpColor = '#80ffff'; break;
+          case 'ghost-mode': powerUpColor = '#ffffff'; break;
+          case 'score-multiplier': powerUpColor = '#ffff00'; break;
         }
         
         // Burst effect
@@ -9166,7 +9212,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Save high score with enhanced data
     const finalScore = scoreManagerRef.current.getScore();
     game.score = finalScore;
-    updateHighScore(finalScore);
+    updateHighScore('neonJump', finalScore);
     scoreManagerRef.current.saveHighScore();
   }, [updateHighScore]);
 
@@ -9371,13 +9417,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       if (Math.random() < 0.1) {
         let color = '#ffffff';
         switch (powerUp.type) {
-          case 'speed': color = '#0080ff'; break;
-          case 'shield': color = '#00ffff'; break;
-          case 'magnet': color = '#ff00ff'; break;
-          case 'rocket': color = '#ff6600'; break;
-          case 'freeze': color = '#80ffff'; break;
-          case 'ghost': color = '#ffffff'; break;
-          case 'multiplier': color = '#ffff00'; break;
+          case 'speed-boost': color = '#0080ff'; break;
+          case 'shield-bubble': color = '#00ffff'; break;
+          case 'magnet-field': color = '#ff00ff'; break;
+          case 'rocket-boost': color = '#ff6600'; break;
+          case 'platform-freezer': color = '#80ffff'; break;
+          case 'ghost-mode': color = '#ffffff'; break;
+          case 'score-multiplier': color = '#ffff00'; break;
         }
         
         particleManagerRef.current.createParticle({
@@ -10811,7 +10857,18 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       isGhost: false,
       trailParticles: [],
       shieldBubbleAlpha: 0,
-      magnetFieldAlpha: 0
+      magnetFieldAlpha: 0,
+      // Add missing properties for backward compatibility
+      afterimageTrail: [],
+      motionBlur: { enabled: false, intensity: 0, samples: [] },
+      glowData: { intensity: 1, color: '#ffffff', radius: 10 },
+      shield: false,
+      lives: 3,
+      x: 200,
+      y: 300,
+      velocityY: 0,
+      isJumping: false,
+      isDucking: false
     };
     game.camera = { x: 0, y: 0 };
     game.score = 0;
@@ -11463,7 +11520,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         )}
         
         {gameOver && (
-          <GameOverBanner score={score} highScore={highScore} onRestart={resetGame} />
+          <GameOverBanner show={gameOver} />
         )}
         
         {paused && !gameOver && (
