@@ -1761,20 +1761,33 @@ class AudioManager {
   }
 
   setVolume(category: 'master' | 'effects' | 'music' | 'ui', volume: number): void {
+    // Don't try to set volume if audio context isn't initialized yet
+    if (!this.audioContext || !this.masterGainNode) {
+      return;
+    }
+    
     const clampedVolume = Math.max(0, Math.min(1, volume));
     
     switch (category) {
       case 'master':
-        this.masterGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        if (this.masterGainNode) {
+          this.masterGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        }
         break;
       case 'effects':
-        this.effectsGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        if (this.effectsGainNode) {
+          this.effectsGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        }
         break;
       case 'music':
-        this.musicGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        if (this.musicGainNode) {
+          this.musicGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        }
         break;
       case 'ui':
-        this.uiGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        if (this.uiGainNode) {
+          this.uiGainNode.gain.setValueAtTime(clampedVolume, this.audioContext.currentTime);
+        }
         break;
     }
   }
@@ -2229,7 +2242,9 @@ class MusicManager {
   }
 
   setVolume(volume: number): void {
-    this.musicGainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+    if (this.musicGainNode && this.audioContext) {
+      this.musicGainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+    }
   }
 
   stop(): void {
@@ -2441,13 +2456,15 @@ class UIManager {
     // Draw particles
     if (this.state.showParticles) {
       this.particleEffects.forEach(particle => {
-        this.ctx.save();
-        this.ctx.globalAlpha = particle.alpha * alpha;
-        this.ctx.fillStyle = particle.color;
-        this.ctx.beginPath();
-        this.ctx.arc(particle.x, particle.y, 2, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.restore();
+        if (particle) {
+          this.ctx.save();
+          this.ctx.globalAlpha = particle.alpha * alpha;
+          this.ctx.fillStyle = particle.color;
+          this.ctx.beginPath();
+          this.ctx.arc(particle.x, particle.y, 2, 0, Math.PI * 2);
+          this.ctx.fill();
+          this.ctx.restore();
+        }
       });
     }
     
@@ -8060,12 +8077,16 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             platform.fallVelocity = (platform.fallVelocity || 0) + GRAVITY * deltaTime;
             platform.y += platform.fallVelocity * deltaTime;
             // Update debris
-            platform.debrisParticles!.forEach(debris => {
-              debris.x += debris.vx * deltaTime;
-              debris.y += debris.vy * deltaTime;
-              debris.vy += GRAVITY * deltaTime;
-              debris.rotation += 0.1 * deltaTime;
-            });
+            if (platform.debrisParticles) {
+              platform.debrisParticles.forEach(debris => {
+                if (debris) {
+                  debris.x += debris.vx * deltaTime;
+                  debris.y += debris.vy * deltaTime;
+                  debris.vy += GRAVITY * deltaTime;
+                  debris.rotation += 0.1 * deltaTime;
+                }
+              });
+            }
           }
           break;
           
@@ -9110,10 +9131,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const game = gameRef.current;
     
     for (const particle of game.particles) {
-      particle.x += particle.vx * deltaTime;
-      particle.y += particle.vy * deltaTime;
-      particle.vy += 0.2 * deltaTime; // Gravity for particles
-      particle.life -= 0.02 * deltaTime;
+      if (particle) {
+        particle.x += particle.vx * deltaTime;
+        particle.y += particle.vy * deltaTime;
+        particle.vy += 0.2 * deltaTime; // Gravity for particles
+        particle.life -= 0.02 * deltaTime;
+      }
     }
     
     // Remove dead particles
@@ -9361,25 +9384,31 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
               ctx.strokeStyle = '#800000';
               ctx.lineWidth = 2;
               platform.cracks.forEach(crack => {
-                ctx.beginPath();
-                ctx.moveTo(platform.x + crack.x, y + crack.y);
-                ctx.lineTo(
-                  platform.x + crack.x + Math.cos(crack.angle) * crack.length,
-                  y + crack.y + Math.sin(crack.angle) * crack.length
-                );
-                ctx.stroke();
+                if (crack) {
+                  ctx.beginPath();
+                  ctx.moveTo(platform.x + crack.x, y + crack.y);
+                  ctx.lineTo(
+                    platform.x + crack.x + Math.cos(crack.angle) * crack.length,
+                    y + crack.y + Math.sin(crack.angle) * crack.length
+                  );
+                  ctx.stroke();
+                }
               });
             }
           } else if (platform.crumbleState === 'falling') {
             // Draw falling debris
             ctx.fillStyle = '#FF0000';
-            platform.debrisParticles!.forEach(debris => {
-              ctx.save();
-              ctx.translate(debris.x, debris.y - game.camera.y);
-              ctx.rotate(debris.rotation);
-              ctx.fillRect(-debris.size / 2, -debris.size / 2, debris.size, debris.size);
-              ctx.restore();
-            });
+            if (platform.debrisParticles) {
+              platform.debrisParticles.forEach(debris => {
+                if (debris) {
+                  ctx.save();
+                  ctx.translate(debris.x, debris.y - game.camera.y);
+                  ctx.rotate(debris.rotation);
+                  ctx.fillRect(-debris.size / 2, -debris.size / 2, debris.size, debris.size);
+                  ctx.restore();
+                }
+              });
+            }
           }
           break;
           
@@ -9513,13 +9542,15 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           if (platform.iceParticles) {
             ctx.fillStyle = '#FFFFFF';
             platform.iceParticles.forEach(particle => {
-              ctx.globalAlpha = particle.alpha;
-              ctx.fillRect(
-                platform.x + particle.x - 1,
-                y + particle.y - 1,
-                2,
-                2
-              );
+              if (particle) {
+                ctx.globalAlpha = particle.alpha;
+                ctx.fillRect(
+                  platform.x + particle.x - 1,
+                  y + particle.y - 1,
+                  2,
+                  2
+                );
+              }
             });
           }
           break;
@@ -9887,9 +9918,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         
         // Trail
         ctx.globalAlpha = 0.5;
-        for (const trail of projectile.trailParticles!) {
-          ctx.globalAlpha = trail.alpha * 0.5;
-          ctx.fillRect(trail.x - 2, trail.y - game.camera.y - 2, 4, 4);
+        if (projectile.trailParticles) {
+          for (const trail of projectile.trailParticles) {
+            if (trail) {
+              ctx.globalAlpha = trail.alpha * 0.5;
+              ctx.fillRect(trail.x - 2, trail.y - game.camera.y - 2, 4, 4);
+            }
+          }
         }
       } else if (projectile.type === 'web') {
         // White sticky web
@@ -10184,10 +10219,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       
       // Update and render trail
       for (const trail of player.trailParticles) {
-        trail.alpha -= 0.05;
-        ctx.globalAlpha = trail.alpha;
-        ctx.fillStyle = trail.color;
-        ctx.fillRect(trail.x - 2, trail.y - game.camera.y - 2, 4, 4);
+        if (trail) {
+          trail.alpha -= 0.05;
+          ctx.globalAlpha = trail.alpha;
+          ctx.fillStyle = trail.color;
+          ctx.fillRect(trail.x - 2, trail.y - game.camera.y - 2, 4, 4);
+        }
       }
       player.trailParticles = player.trailParticles.filter(t => t.alpha > 0);
     }
