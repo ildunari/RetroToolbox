@@ -5351,23 +5351,49 @@ class AdvancedPerformanceManager {
     const cores = navigator.hardwareConcurrency || 4;
     const isMobile = /Mobile|Android|iPhone|iPad/.test(navigator.userAgent);
     
-    // GPU detection (approximate)
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    // GPU detection (approximate) - avoid WebGL context leak
     let gpuTier = 'low';
     
-    if (gl) {
-      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-      if (debugInfo) {
-        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) as string;
-        if (renderer && typeof renderer === 'string') {
-          if (renderer.includes('GTX') || renderer.includes('RTX') || renderer.includes('RX')) {
-            gpuTier = 'high';
-          } else if (renderer.includes('Intel') && !renderer.includes('HD Graphics')) {
-            gpuTier = 'medium';
+    // Only check GPU if we haven't detected it before to avoid context leak
+    if (typeof (window as any).__neonJumpGpuTier === 'undefined') {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const gl = canvas.getContext('webgl', { antialias: false, depth: false }) || 
+                   canvas.getContext('experimental-webgl', { antialias: false, depth: false });
+        
+        if (gl) {
+          const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+          if (debugInfo) {
+            const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) as string;
+            if (renderer && typeof renderer === 'string') {
+              if (renderer.includes('GTX') || renderer.includes('RTX') || renderer.includes('RX')) {
+                gpuTier = 'high';
+              } else if (renderer.includes('Intel') && !renderer.includes('HD Graphics')) {
+                gpuTier = 'medium';
+              }
+            }
+          }
+          // Important: Properly dispose of WebGL context
+          const loseContext = gl.getExtension('WEBGL_lose_context');
+          if (loseContext) {
+            loseContext.loseContext();
           }
         }
+        // Clean up canvas
+        canvas.remove();
+        
+        // Cache the result to avoid re-creating contexts
+        (window as any).__neonJumpGpuTier = gpuTier;
+      } catch (error) {
+        // Fallback to low if WebGL detection fails
+        gpuTier = 'low';
+        (window as any).__neonJumpGpuTier = gpuTier;
       }
+    } else {
+      // Use cached result
+      gpuTier = (window as any).__neonJumpGpuTier;
     }
     
     // Scoring system
@@ -8726,7 +8752,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       
       // Add active enemies to spatial grid
       for (const enemy of game.enemies) {
-        if (enemy.active) {
+        if (enemy && enemy.active && enemy.position) {
           performanceManagerRef.current.addToSpatialGrid(
             enemy, 
             enemy.position.x, 
@@ -9024,7 +9050,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Enemies
     for (const enemy of game.enemies) {
-      if (enemy.active) {
+      if (enemy && enemy.active && enemy.position) {
         performanceManagerRef.current.addToSpatialGrid(
           enemy,
           enemy.position.x,
@@ -9136,6 +9162,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       // Check if it's an enemy
       else if ('enemyType' in entity || 'type' in entity) {
         const enemy = entity as Enemy;
+        if (!enemy || !enemy.active || !enemy.position) continue;
+        
         if (player.invulnerableTime <= 0 && !player.isGhost) {
           const enemyHit = player.position.x < enemy.position.x + enemy.width &&
                           player.position.x + player.width > enemy.position.x &&
@@ -9485,12 +9513,14 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Enemy lights
     for (const enemy of game.enemies) {
-      game.lightingPoints.push({
-        position: { x: enemy.position.x, y: enemy.position.y },
-        color: '#ff0040',
-        intensity: 0.8,
-        radius: 25
-      });
+      if (enemy && enemy.active && enemy.position) {
+        game.lightingPoints.push({
+            position: { x: enemy.position.x, y: enemy.position.y },
+          color: '#ff0040',
+          intensity: 0.8,
+          radius: 25
+        });
+      }
     }
     
   }, []);
@@ -9805,7 +9835,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const game = gameRef.current;
     
     for (const enemy of game.enemies) {
-      if (!enemy.active) continue;
+      if (!enemy || !enemy.active || !enemy.position) continue;
       
       const y = enemy.position.y - game.camera.y;
       
