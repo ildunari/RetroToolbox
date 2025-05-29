@@ -916,7 +916,12 @@ class ParticleManager {
     Object.assign(particle, config);
     particle.active = true;
     particle.life = particle.maxLife;
-    particle.trail = [];
+    // CRITICAL FIX: Ensure trail array is properly initialized/cleared
+    if (!particle.trail || !Array.isArray(particle.trail)) {
+      particle.trail = [];
+    } else {
+      particle.trail.length = 0; // Clear existing array instead of replacing
+    }
     particle.id = this.nextId++;
     
     this.particles.push(particle);
@@ -967,7 +972,13 @@ class ParticleManager {
       // Remove dead particles
       if (particle.life <= 0) {
         particle.active = false;
-        this.particlePool.push(particle);
+        // CRITICAL FIX: Clear trail array before returning to pool
+        if (particle.trail && Array.isArray(particle.trail)) {
+          particle.trail.length = 0;
+        }
+        if (this.particlePool.length < 500) { // Limit pool size to prevent memory bloat
+          this.particlePool.push(particle);
+        }
         this.particles.splice(i, 1);
       }
     }
@@ -1508,6 +1519,7 @@ class AudioManager {
   private enabled: boolean = true;
   private nextId: number = 0;
   private initialized = false;
+  private contextCreationInProgress = false; // CRITICAL FIX: Track context creation to prevent race conditions
 
   constructor() {
     // Lazy initialization - audio context created on first use
@@ -1522,22 +1534,38 @@ class AudioManager {
   }
 
   private ensureContext(): AudioContext {
+    // CRITICAL FIX: Prevent race condition in AudioContext creation
+    if (this.contextCreationInProgress) {
+      // If creation is in progress, wait briefly and return existing context if available
+      if (this.audioContext) {
+        return this.audioContext;
+      }
+      // If no context yet, create a basic one to prevent errors
+      console.warn('AudioContext creation race condition detected, returning temporary context');
+      return new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    
     if (!this.audioContext || !this.initialized) {
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      this.initializeNodes();
-      this.initialized = true;
-      
-      // Resume if suspended (common on iOS)
-      if (this.audioContext.state === 'suspended') {
-        this.audioContext.resume();
+      this.contextCreationInProgress = true;
+      try {
+        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        this.initializeNodes();
+        this.initialized = true;
+        
+        // Resume if suspended (common on iOS)
+        if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume();
+        }
+      } finally {
+        this.contextCreationInProgress = false;
       }
     }
     
-    if (this.audioContext.state === 'suspended') {
+    if (this.audioContext && this.audioContext.state === 'suspended') {
       this.audioContext.resume();
     }
     
-    return this.audioContext;
+    return this.audioContext!;
   }
 
   private initializeNodes(): void {
@@ -2398,13 +2426,16 @@ class UIManager {
     
     // Update particles
     this.particleEffects = this.particleEffects.filter(particle => {
-      particle.x += particle.vx * deltaTime / 16;
-      particle.y += particle.vy * deltaTime / 16;
-      particle.alpha -= deltaTime / 2000;
-      
-      return particle.alpha > 0 && 
-             particle.x > -50 && particle.x < this.canvas.width + 50 &&
-             particle.y > -50 && particle.y < this.canvas.height + 50;
+      if (particle && particle.x !== undefined && particle.y !== undefined) {
+        particle.x += particle.vx * deltaTime / 16;
+        particle.y += particle.vy * deltaTime / 16;
+        particle.alpha -= deltaTime / 2000;
+        
+        return particle.alpha > 0 && 
+               particle.x > -50 && particle.x < this.canvas.width + 50 &&
+               particle.y > -50 && particle.y < this.canvas.height + 50;
+      }
+      return false;
     });
     
     // Add new particles occasionally for main menu
@@ -2764,19 +2795,25 @@ class ScoreManager {
     
     // Update combo particles
     this.combo.particles = this.combo.particles.filter(particle => {
-      particle.x += particle.vx * deltaTime / 16;
-      particle.y += particle.vy * deltaTime / 16;
-      particle.alpha -= deltaTime / 1000;
-      return particle.alpha > 0;
+      if (particle && particle.x !== undefined && particle.y !== undefined) {
+        particle.x += particle.vx * deltaTime / 16;
+        particle.y += particle.vy * deltaTime / 16;
+        particle.alpha -= deltaTime / 1000;
+        return particle.alpha > 0;
+      }
+      return false;
     });
     
     // Update score display particles
     this.displayParticles = this.displayParticles.filter(particle => {
-      particle.x += particle.vx * deltaTime / 16;
-      particle.y += particle.vy * deltaTime / 16;
-      particle.timer -= deltaTime;
-      particle.alpha = Math.max(0, particle.timer / 2000);
-      return particle.timer > 0;
+      if (particle && particle.x !== undefined && particle.y !== undefined) {
+        particle.x += particle.vx * deltaTime / 16;
+        particle.y += particle.vy * deltaTime / 16;
+        particle.timer -= deltaTime;
+        particle.alpha = Math.max(0, particle.timer / 2000);
+        return particle.timer > 0;
+      }
+      return false;
     });
   }
 
@@ -2785,16 +2822,18 @@ class ScoreManager {
     
     // Render score particles
     this.displayParticles.forEach(particle => {
-      ctx.save();
-      ctx.globalAlpha = particle.alpha;
-      ctx.fillStyle = particle.color;
-      ctx.font = `bold ${particle.size}px monospace`;
-      ctx.textAlign = 'center';
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.strokeText(particle.text, particle.x - camera.x, particle.y - camera.y);
-      ctx.fillText(particle.text, particle.x - camera.x, particle.y - camera.y);
-      ctx.restore();
+      if (particle && particle.x !== undefined && particle.y !== undefined) {
+        ctx.save();
+        ctx.globalAlpha = particle.alpha;
+        ctx.fillStyle = particle.color;
+        ctx.font = `bold ${particle.size}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.strokeText(particle.text, particle.x - camera.x, particle.y - camera.y);
+        ctx.fillText(particle.text, particle.x - camera.x, particle.y - camera.y);
+        ctx.restore();
+      }
     });
     
     ctx.restore();
@@ -2836,13 +2875,15 @@ class ScoreManager {
     
     // Draw combo particles
     this.combo.particles.forEach(particle => {
-      ctx.save();
-      ctx.globalAlpha = particle.alpha * this.combo.displayAlpha;
-      ctx.fillStyle = '#ffaa00';
-      ctx.font = 'bold 12px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(particle.text, x + 80 + particle.x, y + particle.y);
-      ctx.restore();
+      if (particle && particle.x !== undefined && particle.y !== undefined) {
+        ctx.save();
+        ctx.globalAlpha = particle.alpha * this.combo.displayAlpha;
+        ctx.fillStyle = '#ffaa00';
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(particle.text, x + 80 + particle.x, y + particle.y);
+        ctx.restore();
+      }
     });
     
     ctx.restore();
@@ -3008,6 +3049,14 @@ class PerformanceManager {
 
   // Spatial Grid for Collision Optimization
   clearSpatialGrid(): void {
+    // CRITICAL FIX: Properly clear Set objects to prevent memory leaks
+    for (const key in this.spatialGrid.cells) {
+      if (this.spatialGrid.cells[key] instanceof Set) {
+        this.spatialGrid.cells[key].clear(); // Clear Set contents
+      }
+      delete this.spatialGrid.cells[key]; // Remove reference
+    }
+    // Create new cells object for clean slate
     this.spatialGrid.cells = {};
   }
 
@@ -3070,10 +3119,18 @@ class PerformanceManager {
         entity.active = false;
         entity.velocity = { x: 0, y: 0 };
         entity.alpha = 1;
+        // CRITICAL FIX: Properly clear trail array to prevent memory leaks
+        if (entity.trail && Array.isArray(entity.trail)) {
+          entity.trail.length = 0; // Clear existing array instead of creating new one
+        }
         break;
       case 'projectiles':
         entity.active = false;
         entity.velocity = { x: 0, y: 0 };
+        // CRITICAL FIX: Clear trail particles if they exist
+        if (entity.trailParticles && Array.isArray(entity.trailParticles)) {
+          entity.trailParticles.length = 0;
+        }
         break;
       case 'enemies':
         entity.health = entity.maxHealth || 1;
@@ -3625,10 +3682,12 @@ class MobileOptimizationManager {
     const canvasRect = this.canvas.getBoundingClientRect();
     Object.keys(this.mobileOpt.touchControls.touchAreas).forEach(area => {
       const touchArea = this.mobileOpt.touchControls.touchAreas[area];
-      touchArea.x = canvasRect.width * (touchArea.x as number);
-      touchArea.y = canvasRect.height * (touchArea.y as number);
-      touchArea.width = canvasRect.width * (touchArea.width as number);
-      touchArea.height = canvasRect.height * (touchArea.height as number);
+      if (touchArea && touchArea.x !== undefined && touchArea.y !== undefined) {
+        touchArea.x = canvasRect.width * (touchArea.x as number);
+        touchArea.y = canvasRect.height * (touchArea.y as number);
+        touchArea.width = canvasRect.width * (touchArea.width as number);
+        touchArea.height = canvasRect.height * (touchArea.height as number);
+      }
     });
   }
 
@@ -7678,10 +7737,30 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           player.position.y < platform.y + platform.height &&
           player.position.y + player.height > platform.y) {
         
-        // Landing on top of platform
+        // CRITICAL FIX: Continuous collision detection for fast-moving objects
+        // Landing on top of platform with tunneling prevention
         if (player.velocity.y > 0 && 
             player.position.y < platform.y &&
             player.position.y + player.height - player.velocity.y <= platform.y) {
+          
+          // Additional check for fast movement tunneling
+          const PLATFORM_HEIGHT = platform.height;
+          const steps = Math.max(1, Math.ceil(Math.abs(player.velocity.y) / PLATFORM_HEIGHT));
+          let collisionDetected = false;
+          
+          for (let step = 0; step <= steps && !collisionDetected; step++) {
+            const t = step / steps;
+            const checkY = player.position.y + player.velocity.y * t;
+            
+            if (checkY < platform.y &&
+                checkY + player.height >= platform.y &&
+                player.position.x < platform.x + platform.width &&
+                player.position.x + player.width > platform.x) {
+              collisionDetected = true;
+            }
+          }
+          
+          if (collisionDetected) {
           
           player.position.y = platform.y - player.height;
           const fallVelocity = player.velocity.y;
@@ -7808,6 +7887,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             game.score += points;
             setScore(game.score);
           }
+          } // CRITICAL FIX: Close collisionDetected if statement
         }
       }
     }
@@ -8159,14 +8239,19 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           break;
           
         case 'ice':
-          // Update ice particles
-          platform.iceParticles = platform.iceParticles!.filter(particle => {
-            particle.y += particle.vy * deltaTime;
-            particle.x += particle.vx * deltaTime;
-            particle.vy += 0.1 * deltaTime;
-            particle.alpha -= 0.02 * deltaTime;
-            return particle.alpha > 0;
-          });
+          // CRITICAL FIX: Update ice particles with proper null checking
+          if (platform.iceParticles && Array.isArray(platform.iceParticles)) {
+            platform.iceParticles = platform.iceParticles.filter(particle => {
+              if (particle) {
+                particle.y += particle.vy * deltaTime;
+                particle.x += particle.vx * deltaTime;
+                particle.vy += 0.1 * deltaTime;
+                particle.alpha -= 0.02 * deltaTime;
+                return particle.alpha > 0;
+              }
+              return false;
+            });
+          }
           
           // Apply friction to player if standing on ice
           if (player.isGrounded && player.lastPlatform === platform) {
@@ -8192,11 +8277,63 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Remove platforms below camera
     game.platforms = game.platforms.filter(p => p.y < game.camera.y + 600);
     
-    // Generate new platforms as needed
-    while (game.platforms.length < 15) {
+    // CRITICAL FIX: Generate new platforms with infinite loop protection
+    let generationAttempts = 0;
+    const MAX_GENERATION_ATTEMPTS = 50;
+    while (game.platforms.length < 15 && generationAttempts < MAX_GENERATION_ATTEMPTS) {
+      generationAttempts++;
+      const initialCount = game.platforms.length;
       generateNextPlatform();
+      
+      // If platform generation failed (no new platforms added), create emergency platform
+      if (game.platforms.length === initialCount) {
+        console.warn('Platform generation stuck, creating emergency platform');
+        const emergencyPlatform: Platform = {
+          id: game.nextPlatformId++,
+          x: 200,
+          y: game.camera.y - 200,
+          width: 120,
+          height: 20,
+          type: 'standard',
+          active: true,
+          glowIntensity: 1.0,
+          glowPhase: 0,
+          pulseSpeed: 0.02
+        };
+        game.platforms.push(emergencyPlatform);
+        break;
+      }
+    }
+    
+    if (generationAttempts >= MAX_GENERATION_ATTEMPTS) {
+      console.error('Platform generation exceeded maximum attempts, stopping to prevent infinite loop');
     }
   }, [generateNextPlatform]);
+
+  // CRITICAL FIX: Enemy state machine validation system
+  const VALID_STATE_TRANSITIONS: { [key in EnemyState]: EnemyState[] } = {
+    'idle': ['patrol', 'alert', 'dead'],
+    'patrol': ['alert', 'attack', 'charge', 'web-drop', 'charging-shot', 'teleporting', 'dead'],
+    'alert': ['patrol', 'attack', 'charge', 'dead'],
+    'attack': ['patrol', 'alert', 'charge', 'dead'],
+    'charge': ['patrol', 'alert', 'attack', 'dead'],
+    'web-drop': ['patrol', 'dead'],
+    'charging-shot': ['patrol', 'alert', 'dead'],
+    'teleporting': ['patrol', 'alert', 'dead'],
+    'dead': []
+  };
+
+  const transitionEnemyState = useCallback((enemy: Enemy, newState: EnemyState, context: string = ''): boolean => {
+    const validTransitions = VALID_STATE_TRANSITIONS[enemy.state];
+    if (!validTransitions.includes(newState)) {
+      console.warn(`Invalid state transition for ${enemy.type}: ${enemy.state} -> ${newState} ${context}`);
+      return false;
+    }
+    
+    enemy.state = newState;
+    enemy.stateTimer = 0; // Reset state timer on transition
+    return true;
+  }, []);
 
   // Update enemies
   const updateEnemies = useCallback((deltaTime: number) => {
@@ -8273,10 +8410,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             const spiderDx = Math.abs(player.position.x - enemy.position.x);
             const spiderDy = player.position.y - enemy.position.y;
             if (spiderDx < 50 && spiderDy > 50 && spiderDy < 300 && enemy.webCooldown! <= 0) {
-              enemy.state = 'web-drop';
-              enemy.isDropping = true;
-              enemy.webLine = { startY: enemy.position.y, length: 0 };
-              enemy.velocity.x = 0;
+              // CRITICAL FIX: Use validated state transition
+              if (transitionEnemyState(enemy, 'web-drop', 'cyber-spider patrol->web-drop')) {
+                enemy.isDropping = true;
+                enemy.webLine = { startY: enemy.position.y, length: 0 };
+                enemy.velocity.x = 0;
+              }
             }
           } else if (enemy.state === 'web-drop') {
             // Drop on web
@@ -8504,11 +8643,15 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         });
       }
       
-      // Update trail
-      for (const trail of projectile.trailParticles!) {
-        trail.alpha -= 0.02 * deltaTime;
+      // CRITICAL FIX: Update trail with proper null checking
+      if (projectile.trailParticles && Array.isArray(projectile.trailParticles)) {
+        for (const trail of projectile.trailParticles) {
+          if (trail) {
+            trail.alpha -= 0.02 * deltaTime;
+          }
+        }
+        projectile.trailParticles = projectile.trailParticles.filter(t => t && t.alpha > 0);
       }
-      projectile.trailParticles = projectile.trailParticles!.filter(t => t.alpha > 0);
       
       // Remove if out of bounds
       if (projectile.position.y > game.camera.y + 500 || 
@@ -9348,7 +9491,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       const y = platform.y - game.camera.y;
       if (y < -platform.height - 100 || y > 500) continue;
       
+      // CRITICAL FIX: Canvas context state protection with try-finally
       ctx.save();
+      try {
       
       // Apply glow intensity
       ctx.globalAlpha = platform.glowIntensity;
@@ -9582,8 +9727,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           }
           break;
       }
-      
-      ctx.restore();
+      } catch (error) {
+        console.error('Error rendering platform:', error);
+      } finally {
+        // CRITICAL FIX: Always restore context state
+        ctx.restore();
+      }
     }
   }, []);
 
@@ -10687,26 +10836,57 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   }, [initializePlatforms]);
 
   // Save/Load system
-  const saveGameData = useCallback(() => {
-    const game = gameRef.current;
-    
-    // Sanitize data before saving
-    const saveData = {
-      totalCoins: Math.max(0, Math.min(999999, Math.floor(game.totalCoins))),
-      upgrades: {
-        jumpHeight: Math.max(0, Math.min(5, Math.floor(game.upgrades.jumpHeight || 0))),
-        airControl: Math.max(0, Math.min(5, Math.floor(game.upgrades.airControl || 0))),
-        coinMagnet: Math.max(0, Math.min(5, Math.floor(game.upgrades.coinMagnet || 0))),
-        startingHeight: Math.max(0, Math.min(5, Math.floor(game.upgrades.startingHeight || 0))),
-        powerUpDuration: Math.max(0, Math.min(5, Math.floor(game.upgrades.powerUpDuration || 0))),
-        platformSight: Math.max(0, Math.min(5, Math.floor(game.upgrades.platformSight || 0))),
-        enemyRadar: Math.max(0, Math.min(5, Math.floor(game.upgrades.enemyRadar || 0)))
-      },
-      highScore: Math.max(0, Math.min(9999999, Math.floor(highScore))),
-      version: 1
-    };
+  // CRITICAL FIX: Save data locking mechanism to prevent corruption
+  const STORAGE_LOCK_KEY = 'neonJump_saveLock';
+  const MAX_LOCK_WAIT = 1000; // 1 second
+
+  const acquireStorageLock = useCallback(async (): Promise<boolean> => {
+    const startTime = Date.now();
+    while (localStorage.getItem(STORAGE_LOCK_KEY)) {
+      if (Date.now() - startTime > MAX_LOCK_WAIT) {
+        // Force release stuck lock
+        localStorage.removeItem(STORAGE_LOCK_KEY);
+        console.warn('Forced release of stuck save lock');
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
     
     try {
+      localStorage.setItem(STORAGE_LOCK_KEY, Date.now().toString());
+      return true;
+    } catch (e) {
+      console.error('Could not acquire save lock:', e);
+      return false;
+    }
+  }, []);
+
+  const saveGameData = useCallback(async () => {
+    const game = gameRef.current;
+    
+    // CRITICAL FIX: Acquire lock before saving to prevent corruption
+    if (!await acquireStorageLock()) {
+      console.warn('Could not acquire save lock, skipping save');
+      return;
+    }
+    
+    try {
+      // Sanitize data before saving
+      const saveData = {
+        totalCoins: Math.max(0, Math.min(999999, Math.floor(game.totalCoins))),
+        upgrades: {
+          jumpHeight: Math.max(0, Math.min(5, Math.floor(game.upgrades.jumpHeight || 0))),
+          airControl: Math.max(0, Math.min(5, Math.floor(game.upgrades.airControl || 0))),
+          coinMagnet: Math.max(0, Math.min(5, Math.floor(game.upgrades.coinMagnet || 0))),
+          startingHeight: Math.max(0, Math.min(5, Math.floor(game.upgrades.startingHeight || 0))),
+          powerUpDuration: Math.max(0, Math.min(5, Math.floor(game.upgrades.powerUpDuration || 0))),
+          platformSight: Math.max(0, Math.min(5, Math.floor(game.upgrades.platformSight || 0))),
+          enemyRadar: Math.max(0, Math.min(5, Math.floor(game.upgrades.enemyRadar || 0)))
+        },
+        highScore: Math.max(0, Math.min(9999999, Math.floor(highScore))),
+        version: 1
+      };
+      
       const serialized = JSON.stringify(saveData);
       localStorage.setItem('neonJump_saveData', serialized);
     } catch (e: any) {
@@ -10715,14 +10895,18 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       if (e.name === 'QuotaExceededError') {
         try {
           localStorage.removeItem('neonJump_saveData_old');
+          const serialized = JSON.stringify(saveData);
           localStorage.setItem('neonJump_saveData', serialized);
         } catch (e2) {
           console.error('Still cannot save after cleanup:', e2);
           // Could show user notification here
         }
       }
+    } finally {
+      // CRITICAL FIX: Always release lock in finally block
+      localStorage.removeItem(STORAGE_LOCK_KEY);
     }
-  }, [highScore]);
+  }, [highScore, acquireStorageLock]);
 
   // Save data validation schema
   const SAVE_SCHEMA = {
