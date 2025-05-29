@@ -10490,19 +10490,21 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Render legacy particles (for compatibility)
     for (const particle of game.particles) {
-      ctx.save();
-      ctx.globalAlpha = particle.life;
-      ctx.fillStyle = particle.color;
-      ctx.shadowColor = particle.color;
-      ctx.shadowBlur = 5;
-      
-      ctx.fillRect(
-        particle.x - particle.size / 2,
-        particle.y - game.camera.y - particle.size / 2,
-        particle.size,
-        particle.size
-      );
-      ctx.restore();
+      if (particle && particle.x !== undefined && particle.y !== undefined && particle.life > 0) {
+        ctx.save();
+        ctx.globalAlpha = particle.life;
+        ctx.fillStyle = particle.color;
+        ctx.shadowColor = particle.color;
+        ctx.shadowBlur = 5;
+        
+        ctx.fillRect(
+          particle.x - particle.size / 2,
+          particle.y - game.camera.y - particle.size / 2,
+          particle.size,
+          particle.size
+        );
+        ctx.restore();
+      }
     }
     
     // Render enhanced particles with new system
