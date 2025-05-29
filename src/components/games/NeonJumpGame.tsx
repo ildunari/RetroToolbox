@@ -933,7 +933,12 @@ class ParticleManager {
     
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const particle = this.particles[i];
-      if (!particle.active) continue;
+      if (!particle || !particle.position || !particle.active || 
+          !particle.velocity || !particle.acceleration || !particle.wind) continue;
+      
+      // Additional safety checks for nested properties
+      if (particle.position.x === undefined || particle.velocity.x === undefined || 
+          particle.acceleration.x === undefined || particle.wind.x === undefined) continue;
 
       // Update position with physics
       particle.velocity.x += particle.acceleration.x * deltaTime + particle.wind.x * deltaTime;
@@ -956,7 +961,8 @@ class ParticleManager {
       particle.alpha = Math.max(0, particle.life / particle.maxLife);
       
       // Update trail
-      if (particle.trail.length > 0) {
+      if (particle.trail && Array.isArray(particle.trail) && 
+          particle.position.x !== undefined && particle.position.y !== undefined) {
         particle.trail.push({ x: particle.position.x, y: particle.position.y });
         if (particle.trail.length > 10) particle.trail.shift();
       }
@@ -981,7 +987,7 @@ class ParticleManager {
 
   render(ctx: CanvasRenderingContext2D, camera: Vector2D): void {
     for (const particle of this.particles) {
-      if (!particle.active || particle.alpha <= 0) continue;
+      if (!particle || !particle.position || !particle.active || particle.alpha <= 0) continue;
       
       ctx.save();
       
@@ -1000,6 +1006,7 @@ class ParticleManager {
         ctx.beginPath();
         for (let i = 0; i < particle.trail.length; i++) {
           const trailPoint = particle.trail[i];
+          if (!trailPoint || trailPoint.x === undefined || trailPoint.y === undefined) continue;
           const trailX = trailPoint.x - camera.x;
           const trailY = trailPoint.y - camera.y;
           const trailAlpha = i / particle.trail.length;
@@ -2532,7 +2539,7 @@ class UIManager {
     // Draw particles
     if (this.state.showParticles) {
       this.particleEffects.forEach(particle => {
-        if (particle) {
+        if (particle && particle.x !== undefined && particle.y !== undefined) {
           this.ctx.save();
           this.ctx.globalAlpha = particle.alpha * alpha;
           this.ctx.fillStyle = particle.color;
@@ -7038,8 +7045,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const player = game.player;
     
     // Find the highest platform
+    if (!game.platforms || game.platforms.length === 0) return;
     let highestPlatform = game.platforms[0];
     for (const platform of game.platforms) {
+      if (!platform) continue;
       if (platform.y < highestPlatform.y) {
         highestPlatform = platform;
       }
@@ -7513,7 +7522,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
     
     // Fallback to basic touch handling
-    if (e.touches.length > 0) {
+    if (e.touches.length > 0 && e.touches[0]) {
       touchStartRef.current = {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY
@@ -7561,7 +7570,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
     
     // Fallback to basic touch handling
-    if (touchStartRef.current && e.touches.length > 0) {
+    if (touchStartRef.current && e.touches.length > 0 && e.touches[0] && touchStartRef.current.x !== undefined) {
       const deltaX = e.touches[0].clientX - touchStartRef.current.x;
       
       // Simulate keyboard input based on touch
@@ -7778,7 +7787,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     player.isGrounded = false;
     
     for (const platform of game.platforms) {
-      if (!platform.active) continue;
+      if (!platform || !platform.active) continue;
       
       // Check if player is colliding with platform
       if (player.position.x < platform.x + platform.width &&
@@ -7973,7 +7982,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Check enemy collisions
     for (const enemy of enemiesToCheck) {
-      if (!enemy.active) continue;
+      if (!enemy || !enemy.active) continue;
       
       const enemyHit = player.position.x < enemy.position.x + enemy.width &&
                       player.position.x + player.width > enemy.position.x &&
@@ -8103,7 +8112,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Check projectile collisions
     for (const projectile of game.projectiles) {
-      if (!projectile.active) continue;
+      if (!projectile || !projectile.active) continue;
       
       const projectileHit = player.position.x < projectile.position.x + projectile.width &&
                            player.position.x + player.width > projectile.position.x &&
@@ -8167,6 +8176,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const player = game.player;
     
     for (const platform of game.platforms) {
+      if (!platform) continue;
       // Update glow animation for all platforms
       platform.glowPhase += (platform.pulseSpeed || 0.05) * deltaTime;
       platform.glowIntensity = 0.6 + Math.sin(platform.glowPhase) * 0.4;
@@ -8204,7 +8214,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             // Update debris
             if (platform.debrisParticles) {
               platform.debrisParticles.forEach(debris => {
-                if (debris) {
+                if (debris && debris.x !== undefined && debris.y !== undefined) {
                   debris.x += debris.vx * deltaTime;
                   debris.y += debris.vy * deltaTime;
                   debris.vy += GRAVITY * deltaTime;
@@ -8287,7 +8297,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           // CRITICAL FIX: Update ice particles with proper null checking
           if (platform.iceParticles && Array.isArray(platform.iceParticles)) {
             platform.iceParticles = platform.iceParticles.filter(particle => {
-              if (particle) {
+              if (particle && particle.x !== undefined && particle.y !== undefined) {
                 particle.y += particle.vy * deltaTime;
                 particle.x += particle.vx * deltaTime;
                 particle.vy += 0.1 * deltaTime;
@@ -8390,7 +8400,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Update each enemy
     for (const enemy of game.enemies) {
-      if (!enemy.active) continue;
+      if (!enemy || !enemy.active) continue;
       
       // Update glow
       enemy.glowIntensity = 0.5 + Math.sin(Date.now() * 0.005) * 0.5;
@@ -8632,7 +8642,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       if (['glitch-slime', 'cyber-spider', 'pixel-knight'].includes(enemy.type)) {
         let isGrounded = false;
         for (const platform of game.platforms) {
-          if (!platform.active) continue;
+          if (!platform || !platform.active) continue;
           
           const onPlatform = enemy.position.x < platform.x + platform.width &&
                             enemy.position.x + enemy.width > platform.x &&
@@ -8656,7 +8666,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Update projectiles
     for (const projectile of game.projectiles) {
-      if (!projectile.active) continue;
+      if (!projectile || !projectile.active) continue;
       
       // Update position
       projectile.position.x += projectile.velocity.x * deltaTime;
@@ -9001,7 +9011,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Add all entities to spatial grid
     // Platforms
     for (const platform of game.platforms) {
-      if (platform.active) {
+      if (platform && platform.active) {
         performanceManagerRef.current.addToSpatialGrid(
           platform,
           platform.x,
@@ -9317,7 +9327,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const game = gameRef.current;
     
     for (const particle of game.particles) {
-      if (particle) {
+      if (particle && ((particle.x !== undefined && particle.vx !== undefined) || 
+                       (particle.position && particle.velocity))) {
         // Support both legacy (x,vx) and enhanced (position.x, velocity.x) particles
         if (particle.x !== undefined && particle.vx !== undefined) {
           // Legacy particle format
@@ -9336,7 +9347,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
     
     // Remove dead particles
-    game.particles = game.particles.filter(p => p.life > 0);
+    game.particles = game.particles.filter(p => p && p.life > 0);
   }, []);
 
   // CHECKPOINT 5: Update Visual Effects
@@ -9462,7 +9473,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Platform lights
     for (const platform of game.platforms) {
-      if (platform.glowIntensity > 0.5) {
+      if (platform && platform.glowIntensity > 0.5) {
         game.lightingPoints.push({
           position: { x: platform.x + platform.width / 2, y: platform.y },
           color: platform.type === 'ice' ? '#80ffff' : '#00ffff',
@@ -9539,7 +9550,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const game = gameRef.current;
     
     for (const platform of game.platforms) {
-      if (!platform.active && platform.type !== 'phase' && platform.type !== 'crumbling') continue;
+      if (!platform || (!platform.active && platform.type !== 'phase' && platform.type !== 'crumbling')) continue;
       
       const y = platform.y - game.camera.y;
       if (y < -platform.height - 100 || y > 500) continue;
@@ -9582,7 +9593,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
               ctx.strokeStyle = '#800000';
               ctx.lineWidth = 2;
               platform.cracks.forEach(crack => {
-                if (crack) {
+                if (crack && crack.x !== undefined && crack.y !== undefined) {
                   ctx.beginPath();
                   ctx.moveTo(platform.x + crack.x, y + crack.y);
                   ctx.lineTo(
@@ -9598,7 +9609,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             ctx.fillStyle = '#FF0000';
             if (platform.debrisParticles) {
               platform.debrisParticles.forEach(debris => {
-                if (debris) {
+                if (debris && debris.x !== undefined && debris.y !== undefined) {
                   ctx.save();
                   ctx.translate(debris.x, debris.y - game.camera.y);
                   ctx.rotate(debris.rotation);
@@ -9740,7 +9751,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           if (platform.iceParticles) {
             ctx.fillStyle = '#FFFFFF';
             platform.iceParticles.forEach(particle => {
-              if (particle) {
+              if (particle && particle.x !== undefined && particle.y !== undefined) {
                 ctx.globalAlpha = particle.alpha;
                 ctx.fillRect(
                   platform.x + particle.x - 1,
@@ -10103,7 +10114,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Render projectiles
     for (const projectile of game.projectiles) {
-      if (!projectile.active) continue;
+      if (!projectile || !projectile.active) continue;
       
       const py = projectile.position.y - game.camera.y;
       
@@ -10428,7 +10439,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           ctx.fillRect(trail.x - 2, trail.y - game.camera.y - 2, 4, 4);
         }
       }
-      player.trailParticles = player.trailParticles.filter(t => t.alpha > 0);
+      player.trailParticles = player.trailParticles.filter(t => t && t.alpha > 0);
     }
     
     // Magnet field
@@ -10678,16 +10689,28 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     updateParticles(deltaTime);
     
     // CHECKPOINT 5: Update Visual Excellence Systems
-    particleManagerRef.current.update(deltaTime);
-    screenEffectManagerRef.current.update(deltaTime);
-    backgroundManagerRef.current.update(deltaTime, game.camera.y);
+    if (particleManagerRef.current) {
+      particleManagerRef.current.update(deltaTime);
+    }
+    if (screenEffectManagerRef.current) {
+      screenEffectManagerRef.current.update(deltaTime);
+    }
+    if (backgroundManagerRef.current) {
+      backgroundManagerRef.current.update(deltaTime, game.camera.y);
+    }
     updateVisualEffects(deltaTime);
     
     // CHECKPOINT 6: Update Audio & Polish Systems
-    audioManagerRef.current.update(deltaTime);
-    musicManagerRef.current.updateIntensity(Math.abs(game.camera.y), game.player.state, game.enemies.length);
-    musicManagerRef.current.update(deltaTime);
-    scoreManagerRef.current.update(deltaTime);
+    if (audioManagerRef.current) {
+      audioManagerRef.current.update(deltaTime);
+    }
+    if (musicManagerRef.current) {
+      musicManagerRef.current.updateIntensity(Math.abs(game.camera.y), game.player.state, game.enemies.length);
+      musicManagerRef.current.update(deltaTime);
+    }
+    if (scoreManagerRef.current) {
+      scoreManagerRef.current.update(deltaTime);
+    }
     if (performanceManagerRef.current) {
       performanceManagerRef.current.updateEntityCount(game.enemies.length + game.platforms.length + game.powerUps.length + game.coins.length);
       performanceManagerRef.current.updateParticleCount(game.particles.length);
@@ -10698,8 +10721,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       
       // Apply enhanced camera from GameFeelManager
       const enhancedCamera = gameFeelManagerRef.current.getFinalCameraPosition();
-      game.camera.x = enhancedCamera.x;
-      game.camera.y = enhancedCamera.y;
+      if (enhancedCamera && enhancedCamera.x !== undefined && enhancedCamera.y !== undefined) {
+        game.camera.x = enhancedCamera.x;
+        game.camera.y = enhancedCamera.y;
+      }
     }
     
     // CHECKPOINT 7: Update Production-Ready Systems
