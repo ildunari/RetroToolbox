@@ -7982,7 +7982,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Check enemy collisions
     for (const enemy of enemiesToCheck) {
-      if (!enemy || !enemy.active) continue;
+      if (!enemy || !enemy.active || !enemy.position) continue;
       
       const enemyHit = player.position.x < enemy.position.x + enemy.width &&
                       player.position.x + player.width > enemy.position.x &&
@@ -8400,7 +8400,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Update each enemy
     for (const enemy of game.enemies) {
-      if (!enemy || !enemy.active) continue;
+      if (!enemy || !enemy.active || !enemy.position) continue;
       
       // Update glow
       enemy.glowIntensity = 0.5 + Math.sin(Date.now() * 0.005) * 0.5;
