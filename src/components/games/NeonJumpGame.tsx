@@ -7708,14 +7708,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       
       // Jump particles
       for (let i = 0; i < 10; i++) {
-        game.particles.push({
-          x: player.position.x + player.width / 2,
-          y: player.position.y + player.height,
-          vx: (Math.random() - 0.5) * 4,
-          vy: Math.random() * -2,
+        particleManager.createParticle({
+          position: { x: player.position.x + player.width / 2, y: player.position.y + player.height },
+          velocity: { x: (Math.random() - 0.5) * 4, y: Math.random() * -2 },
           life: 1,
           color: '#00FFFF',
-          size: 3
+          size: 3,
+          type: 'trail'
         });
       }
     }
@@ -7870,14 +7869,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
               soundManager.playTone(660, 0.15);
               // Bouncy particles
               for (let i = 0; i < 15; i++) {
-                game.particles.push({
-                  x: platform.x + platform.width / 2,
-                  y: platform.y,
-                  vx: (Math.random() - 0.5) * 6,
-                  vy: -Math.random() * 4 - 2,
+                particleManager.createParticle({
+                  position: { x: platform.x + platform.width / 2, y: platform.y },
+                  velocity: { x: (Math.random() - 0.5) * 6, y: -Math.random() * 4 - 2 },
                   life: 1,
                   color: '#00FF00',
-                  size: 4
+                  size: 4,
+                  type: 'bounce'
                 });
               }
               break;
@@ -8036,14 +8034,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             
             // Death particles
             for (let i = 0; i < 10; i++) {
-              game.particles.push({
-                x: enemy.position.x + enemy.width / 2,
-                y: enemy.position.y + enemy.height / 2,
-                vx: (Math.random() - 0.5) * 10,
-                vy: -Math.random() * 5,
+              particleManager.createParticle({
+                position: { x: enemy.position.x + enemy.width / 2, y: enemy.position.y + enemy.height / 2 },
+                velocity: { x: (Math.random() - 0.5) * 10, y: -Math.random() * 5 },
                 life: 1,
                 size: 3 + Math.random() * 3,
-                color: '#FF0000'
+                color: '#FF0000',
+                type: 'explosion'
               });
             }
             
@@ -8070,14 +8067,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             // Shield break effect
             for (let i = 0; i < 15; i++) {
               const angle = (i / 15) * Math.PI * 2;
-              game.particles.push({
-                x: player.position.x + player.width / 2,
-                y: player.position.y + player.height / 2,
-                vx: Math.cos(angle) * 5,
-                vy: Math.sin(angle) * 5,
+              particleManager.createParticle({
+                position: { x: player.position.x + player.width / 2, y: player.position.y + player.height / 2 },
+                velocity: { x: Math.cos(angle) * 5, y: Math.sin(angle) * 5 },
                 life: 1,
                 size: 4,
-                color: '#00FFFF'
+                color: '#00FFFF',
+                type: 'shield-break'
               });
             }
             soundManager.playTone(600, 0.2);
@@ -8130,14 +8126,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           // Shield break effect
           for (let i = 0; i < 15; i++) {
             const angle = (i / 15) * Math.PI * 2;
-            game.particles.push({
-              x: player.position.x + player.width / 2,
-              y: player.position.y + player.height / 2,
-              vx: Math.cos(angle) * 5,
-              vy: Math.sin(angle) * 5,
+            particleManager.createParticle({
+              position: { x: player.position.x + player.width / 2, y: player.position.y + player.height / 2 },
+              velocity: { x: Math.cos(angle) * 5, y: Math.sin(angle) * 5 },
               life: 1,
               size: 4,
-              color: '#00FFFF'
+              color: '#00FFFF',
+              type: 'shield-break'
             });
           }
           soundManager.playTone(600, 0.2);
@@ -8851,14 +8846,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         // Particles and sound
         for (let i = 0; i < 20; i++) {
           const angle = (i / 20) * Math.PI * 2;
-          game.particles.push({
-            x: powerUp.position.x,
-            y: powerUp.position.y,
-            vx: Math.cos(angle) * 3,
-            vy: Math.sin(angle) * 3,
+          particleManager.createParticle({
+            position: { x: powerUp.position.x, y: powerUp.position.y },
+            velocity: { x: Math.cos(angle) * 3, y: Math.sin(angle) * 3 },
             life: 1,
             color: powerUp.glowColor,
-            size: 4
+            size: 4,
+            type: 'powerup-collect'
           });
         }
         
@@ -8979,14 +8973,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         // Collection particles
         for (let i = 0; i < 10; i++) {
           const angle = Math.random() * Math.PI * 2;
-          game.particles.push({
-            x: coin.position.x,
-            y: coin.position.y,
-            vx: Math.cos(angle) * 2,
-            vy: Math.sin(angle) * 2 - 1,
+          particleManager.createParticle({
+            position: { x: coin.position.x, y: coin.position.y },
+            velocity: { x: Math.cos(angle) * 2, y: Math.sin(angle) * 2 - 1 },
             life: 1,
             color: coin.value === 10 ? '#FFD700' : coin.value === 5 ? '#C0C0C0' : '#CD7F32',
-            size: 3
+            size: 3,
+            type: 'coin-collect'
           });
         }
         
@@ -9272,8 +9265,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const game = gameRef.current;
     const player = game.player;
     
-    if (player.shield) {
-      player.shield = false;
+    if (player.hasShield) {
+      player.hasShield = false;
       player.invulnerableTime = 60;
       audioManagerRef.current.playHit();
       return;
@@ -9325,10 +9318,20 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     for (const particle of game.particles) {
       if (particle) {
-        particle.x += particle.vx * deltaTime;
-        particle.y += particle.vy * deltaTime;
-        particle.vy += 0.2 * deltaTime; // Gravity for particles
-        particle.life -= 0.02 * deltaTime;
+        // Support both legacy (x,vx) and enhanced (position.x, velocity.x) particles
+        if (particle.x !== undefined && particle.vx !== undefined) {
+          // Legacy particle format
+          particle.x += particle.vx * deltaTime;
+          particle.y += particle.vy * deltaTime;
+          particle.vy += 0.2 * deltaTime; // Gravity for particles
+          particle.life -= 0.02 * deltaTime;
+        } else if (particle.position && particle.velocity) {
+          // Enhanced particle format
+          particle.position.x += particle.velocity.x * deltaTime;
+          particle.position.y += particle.velocity.y * deltaTime;
+          particle.velocity.y += 0.2 * deltaTime; // Gravity for particles
+          particle.life -= 0.02 * deltaTime;
+        }
       }
     }
     
@@ -10540,20 +10543,26 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Render legacy particles (for compatibility)
     for (const particle of game.particles) {
-      if (particle && particle.x !== undefined && particle.y !== undefined && particle.life > 0) {
-        ctx.save();
-        ctx.globalAlpha = particle.life;
-        ctx.fillStyle = particle.color;
-        ctx.shadowColor = particle.color;
-        ctx.shadowBlur = 5;
+      if (particle && particle.life > 0) {
+        // Support both legacy (x,y) and enhanced (position.x, position.y) particles
+        const x = particle.x !== undefined ? particle.x : particle.position?.x;
+        const y = particle.y !== undefined ? particle.y : particle.position?.y;
         
-        ctx.fillRect(
-          particle.x - particle.size / 2,
-          particle.y - game.camera.y - particle.size / 2,
-          particle.size,
-          particle.size
-        );
-        ctx.restore();
+        if (x !== undefined && y !== undefined) {
+          ctx.save();
+          ctx.globalAlpha = particle.alpha !== undefined ? particle.alpha : particle.life;
+          ctx.fillStyle = particle.color;
+          ctx.shadowColor = particle.color;
+          ctx.shadowBlur = 5;
+          
+          ctx.fillRect(
+            x - particle.size / 2,
+            y - game.camera.y - particle.size / 2,
+            particle.size,
+            particle.size
+          );
+          ctx.restore();
+        }
       }
     }
     
