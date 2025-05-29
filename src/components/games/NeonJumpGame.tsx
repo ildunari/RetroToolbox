@@ -7743,7 +7743,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       
       // Jump particles
       for (let i = 0; i < 10; i++) {
-        particleManager.createParticle({
+        particleManagerRef.current.createParticle({
           position: { x: player.position.x + player.width / 2, y: player.position.y + player.height },
           velocity: { x: (Math.random() - 0.5) * 4, y: Math.random() * -2 },
           life: 1,
@@ -7904,7 +7904,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
               soundManager.playTone(660, 0.15);
               // Bouncy particles
               for (let i = 0; i < 15; i++) {
-                particleManager.createParticle({
+                particleManagerRef.current.createParticle({
                   position: { x: platform.x + platform.width / 2, y: platform.y },
                   velocity: { x: (Math.random() - 0.5) * 6, y: -Math.random() * 4 - 2 },
                   life: 1,
@@ -8069,7 +8069,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             
             // Death particles
             for (let i = 0; i < 10; i++) {
-              particleManager.createParticle({
+              particleManagerRef.current.createParticle({
                 position: { x: enemy.position.x + enemy.width / 2, y: enemy.position.y + enemy.height / 2 },
                 velocity: { x: (Math.random() - 0.5) * 10, y: -Math.random() * 5 },
                 life: 1,
@@ -8102,7 +8102,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             // Shield break effect
             for (let i = 0; i < 15; i++) {
               const angle = (i / 15) * Math.PI * 2;
-              particleManager.createParticle({
+              particleManagerRef.current.createParticle({
                 position: { x: player.position.x + player.width / 2, y: player.position.y + player.height / 2 },
                 velocity: { x: Math.cos(angle) * 5, y: Math.sin(angle) * 5 },
                 life: 1,
@@ -8161,7 +8161,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           // Shield break effect
           for (let i = 0; i < 15; i++) {
             const angle = (i / 15) * Math.PI * 2;
-            particleManager.createParticle({
+            particleManagerRef.current.createParticle({
               position: { x: player.position.x + player.width / 2, y: player.position.y + player.height / 2 },
               velocity: { x: Math.cos(angle) * 5, y: Math.sin(angle) * 5 },
               life: 1,
@@ -8882,7 +8882,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         // Particles and sound
         for (let i = 0; i < 20; i++) {
           const angle = (i / 20) * Math.PI * 2;
-          particleManager.createParticle({
+          particleManagerRef.current.createParticle({
             position: { x: powerUp.position.x, y: powerUp.position.y },
             velocity: { x: Math.cos(angle) * 3, y: Math.sin(angle) * 3 },
             life: 1,
@@ -9009,7 +9009,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         // Collection particles
         for (let i = 0; i < 10; i++) {
           const angle = Math.random() * Math.PI * 2;
-          particleManager.createParticle({
+          particleManagerRef.current.createParticle({
             position: { x: coin.position.x, y: coin.position.y },
             velocity: { x: Math.cos(angle) * 2, y: Math.sin(angle) * 2 - 1 },
             life: 1,
@@ -9344,9 +9344,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     game.camera.x += deltaX * CAMERA_SMOOTH * 0.5;
     game.camera.x = Math.max(-100, Math.min(100, game.camera.x)); // Limit X movement
     
-    // Camera only moves up
-    if (game.camera.y > 0) {
-      game.camera.y = 0;
+    // Limit camera movement - allow it to follow player down but not go too far up
+    if (game.camera.y < -50) {
+      game.camera.y = -50; // Don't go too far up from starting area
     }
   }, []);
 
@@ -10938,7 +10938,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       isJumping: false,
       isDucking: false
     };
-    game.camera = { x: 0, y: 0 };
+    
+    // Initialize camera to follow player from start
+    game.camera = { 
+      x: game.player.position.x - 200, // Center player horizontally
+      y: game.player.position.y - CAMERA_LOOK_AHEAD // Position camera to look at player area
+    };
     game.score = 0;
     game.level = 1;
     game.gameSpeed = 1;
