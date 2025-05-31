@@ -24,11 +24,14 @@ export interface GameStats {
   gamesPlayed: number;
   totalScore: number;
   achievements: Achievement[];
+  pacmanProgress: {
+    unlockedLevels: number;
+  };
 }
 
 interface UseStatsReturn {
   stats: GameStats;
-  updateHighScore: (game: GameType, score: number) => void;
+  updateHighScore: (game: GameType, score: number, pacmanLevel?: number) => void;
   incrementGamesPlayed: () => void;
 }
 
@@ -43,7 +46,10 @@ const DEFAULT_STATS: GameStats = {
   },
   gamesPlayed: 0,
   totalScore: 0,
-  achievements: []
+  achievements: [],
+  pacmanProgress: {
+    unlockedLevels: 1
+  }
 };
 
 const STORAGE_KEY = 'retroGameStats';
@@ -116,11 +122,20 @@ const validateStats = (data: unknown): GameStats | null => {
         }));
     }
 
+    let validatedProgress = { unlockedLevels: 1 };
+    if (stats.pacmanProgress && typeof stats.pacmanProgress === 'object') {
+      const lvl = (stats.pacmanProgress as Record<string, unknown>).unlockedLevels;
+      if (typeof lvl === 'number' && lvl >= 1 && Number.isFinite(lvl)) {
+        validatedProgress.unlockedLevels = Math.floor(lvl);
+      }
+    }
+
     return {
       highScores: validatedHighScores,
       gamesPlayed: Math.floor(gamesPlayed),
       totalScore: Math.floor(totalScore),
-      achievements: validatedAchievements
+      achievements: validatedAchievements,
+      pacmanProgress: validatedProgress
     };
   } catch (error) {
     console.error('Stats validation error:', error);
@@ -217,7 +232,7 @@ export const useStats = (): UseStatsReturn => {
     }
   }, [stats]);
 
-  const updateHighScore = useCallback((game: GameType, score: number) => {
+  const updateHighScore = useCallback((game: GameType, score: number, pacmanLevel?: number) => {
     // Validate inputs
     if (!VALID_GAME_TYPES.includes(game)) {
       console.error(`Invalid game type: ${game}`);
@@ -232,24 +247,33 @@ export const useStats = (): UseStatsReturn => {
     setStats((prev) => {
       const isNewHighScore = score > (prev.highScores[game] || 0);
       const newStats = {
-        ...prev,        highScores: { 
-          ...prev.highScores, 
+        ...prev,
+        highScores: {
+          ...prev.highScores,
           [game]: isNewHighScore ? Math.floor(score) : (prev.highScores[game] || 0)
         },
-        totalScore: prev.totalScore + Math.floor(score)
+        totalScore: prev.totalScore + Math.floor(score),
+        pacmanProgress: pacmanLevel && game === 'pacman'
+          ? {
+              unlockedLevels: Math.max(prev.pacmanProgress.unlockedLevels, Math.floor(pacmanLevel))
+            }
+          : prev.pacmanProgress
       };
 
-      // Validate before updating
       const validated = validateStats(newStats);
-      return validated || prev;
+      if (validated) {
+        saveStats(validated);
+        return validated;
+      }
+      return prev;
     });
   }, []);
 
   const incrementGamesPlayed = useCallback(() => {
     setStats((prev) => {
-      const newStats = { 
-        ...prev, 
-        gamesPlayed: prev.gamesPlayed + 1 
+      const newStats = {
+        ...prev,
+        gamesPlayed: prev.gamesPlayed + 1
       };
 
       // Check for overflow
@@ -259,7 +283,11 @@ export const useStats = (): UseStatsReturn => {
       }
 
       const validated = validateStats(newStats);
-      return validated || prev;
+      if (validated) {
+        saveStats(validated);
+        return validated;
+      }
+      return prev;
     });
   }, []);
 

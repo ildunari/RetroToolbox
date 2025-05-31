@@ -131,9 +131,10 @@ function App() {
           </div>
           <div className="flex-1 overflow-hidden">
             {GameComponent && (
-              <GameComponent 
-                settings={settings} 
+              <GameComponent
+                settings={settings}
                 updateHighScore={updateHighScore}
+                {...(selectedGame === 'pacman' ? { pacmanProgress: stats.pacmanProgress } : {})}
               />
             )}
           </div>

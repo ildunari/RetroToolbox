@@ -101,7 +101,10 @@ interface PacManGameProps {
     soundEnabled: boolean;
     difficulty: 'easy' | 'normal' | 'hard';
   };
-  updateHighScore: (gameId: string, score: number) => void;
+  pacmanProgress: {
+    unlockedLevels: number;
+  };
+  updateHighScore: (gameId: string, score: number, level?: number) => void;
 }
 
 // Maze constants
@@ -199,7 +202,7 @@ const parseGridKey = (key: string): [number, number] => {
   return [Math.floor(num / 1000), num % 1000];
 };
 
-export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScore }) => {
+export const PacManGame: React.FC<PacManGameProps> = ({ settings, pacmanProgress, updateHighScore }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -373,6 +376,14 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     game.fruit = null;
     game.fruitSpawnCount = 0;
   }, []);
+
+  // Load saved progress on mount
+  useEffect(() => {
+    const start = Math.max(1, pacmanProgress.unlockedLevels);
+    setLevel(start);
+    gameRef.current.level = start;
+    initializeGame(true);
+  }, [pacmanProgress.unlockedLevels, initializeGame]);
 
   // Create particles with pooling
   const createParticles = useCallback((x: number, y: number, color: string, count: number = 10) => {
@@ -823,6 +834,9 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           game.levelCompleteTimer -= deltaTime;
           if (game.levelCompleteTimer <= 0 && game.gamePhase === 'levelComplete') {
             game.level++;
+            if (game.level > pacmanProgress.unlockedLevels) {
+              updateHighScore('pacman', game.score, game.level);
+            }
             setLevel(game.level);
             initializeGame(false); // Keep score and lives
             game.gamePhase = 'ready';
@@ -2094,6 +2108,20 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     }
   };
 
+  const changeLevel = (delta: number) => {
+    setLevel(prev => {
+      const newLevel = Math.min(
+        Math.max(prev + delta, 1),
+        pacmanProgress.unlockedLevels
+      );
+      if (newLevel !== prev) {
+        gameRef.current.level = newLevel;
+        initializeGame(true);
+      }
+      return newLevel;
+    });
+  };
+
   return (
     <div className="flex flex-col items-center justify-center bg-gray-900 p-2 h-full">
       <div className="flex-grow flex items-center justify-center w-full min-h-0">
@@ -2136,6 +2164,19 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
             <div className="text-white text-center">
               <h2 className="text-4xl font-bold mb-4">READY?</h2>
+              <div className="flex items-center justify-center gap-4 mb-2">
+                <button
+                  onClick={() => changeLevel(-1)}
+                  disabled={level <= 1}
+                  className="px-2 py-1 bg-gray-700 rounded disabled:opacity-50"
+                >-</button>
+                <span className="text-xl">LEVEL {level}</span>
+                <button
+                  onClick={() => changeLevel(1)}
+                  disabled={level >= pacmanProgress.unlockedLevels}
+                  className="px-2 py-1 bg-gray-700 rounded disabled:opacity-50"
+                >+</button>
+              </div>
               <p className="text-xl">Press any arrow key to start</p>
               <p className="text-sm mt-2">Swipe on mobile</p>
             </div>
