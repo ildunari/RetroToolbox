@@ -3,6 +3,7 @@ export interface GameSettings {
   volume: number;
   difficulty: 'easy' | 'normal' | 'hard';
   theme: string;
+  renderer: 'canvas2d' | 'webgl';
 }
 
 export interface GameStats {

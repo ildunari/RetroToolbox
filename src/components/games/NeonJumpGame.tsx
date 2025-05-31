@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
+import { WebGLRenderer } from '../../core/WebGLRenderer';
 import { GameOverBanner } from "../ui/GameOverBanner";
 
 // Types and Interfaces
@@ -530,6 +531,7 @@ interface GameState {
 interface Settings {
   difficulty: string;
   soundEnabled: boolean;
+  renderer: 'canvas2d' | 'webgl';
 }
 
 interface NeonJumpGameProps {
@@ -6803,6 +6805,7 @@ class ProductionReadinessManager {
 export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreenCanvasRef = useRef<OffscreenCanvas | null>(null);
+  const rendererRef = useRef<WebGLRenderer | null>(null);
   const [gameStarted, setGameStarted] = useState(false);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
@@ -10743,8 +10746,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     game.lastUpdate = timestamp;
     
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!ctx || !canvas) return;
+    const renderCanvas = settings.renderer === 'webgl' ? offscreenCanvasRef.current : canvas;
+    if (!canvas || !renderCanvas) return;
+    const ctx = renderCanvas.getContext('2d');
+    if (!ctx) return;
     
     // Update game systems
     updatePhysics(deltaTime);
@@ -10841,7 +10846,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
     
     // Clear and render
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, renderCanvas.width, renderCanvas.height);
     renderBackground(ctx);
     renderPlatforms(ctx);
     renderCoins(ctx);
@@ -10853,7 +10858,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // CHECKPOINT 6: Render Audio & Polish Systems
     scoreManagerRef.current.renderScoreEffects(ctx, game.camera);
-    scoreManagerRef.current.renderComboDisplay(ctx, canvas.width, canvas.height);
+    scoreManagerRef.current.renderComboDisplay(ctx, renderCanvas.width, renderCanvas.height);
     if (gameFeelManagerRef.current) {
       gameFeelManagerRef.current.applyScreenEffects(ctx);
     }
@@ -10876,15 +10881,19 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       ctx.save();
       ctx.font = '12px monospace';
       ctx.fillStyle = '#00ff00';
-      ctx.fillText(`FPS: ${qaReport.performance.fps?.current || 60}`, 10, canvas.height - 60);
-      ctx.fillText(`Quality: ${advancedPerformanceManagerRef.current.getCurrentQualityLevel()}`, 10, canvas.height - 45);
-      ctx.fillText(`Memory: ${Math.round((qaReport.performance.memory?.current || 0) / 1024 / 1024)}MB`, 10, canvas.height - 30);
-      ctx.fillText(`Version: ${productionReadinessManagerRef.current.getVersionInfo().fullVersion}`, 10, canvas.height - 15);
+      ctx.fillText(`FPS: ${qaReport.performance.fps?.current || 60}`, 10, renderCanvas.height - 60);
+      ctx.fillText(`Quality: ${advancedPerformanceManagerRef.current.getCurrentQualityLevel()}`, 10, renderCanvas.height - 45);
+      ctx.fillText(`Memory: ${Math.round((qaReport.performance.memory?.current || 0) / 1024 / 1024)}MB`, 10, renderCanvas.height - 30);
+      ctx.fillText(`Version: ${productionReadinessManagerRef.current.getVersionInfo().fullVersion}`, 10, renderCanvas.height - 15);
       ctx.restore();
     }
     
     // CHECKPOINT 5: Apply Screen Effects and Post-Processing
     screenEffectManagerRef.current.applyEffects(ctx, canvas);
+
+    if (settings.renderer === 'webgl' && offscreenCanvasRef.current && rendererRef.current) {
+      rendererRef.current.render(offscreenCanvasRef.current);
+    }
     
     // Use wrapped RAF if available for performance monitoring
     const nextFrame = advancedPerformanceManagerRef.current?.frameTimeMonitor?.wrap(gameLoop) || gameLoop;
@@ -11364,9 +11373,24 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     canvas.width = canvasSize.width;
     canvas.height = canvasSize.height;
+
+    if (settings.renderer === 'webgl') {
+      const offscreen = typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(canvasSize.width, canvasSize.height)
+        : document.createElement('canvas');
+      offscreen.width = canvasSize.width;
+      offscreen.height = canvasSize.height;
+      offscreenCanvasRef.current = offscreen as OffscreenCanvas;
+      rendererRef.current = new WebGLRenderer(canvas);
+      rendererRef.current.resize(canvasSize.width, canvasSize.height);
+    } else {
+      offscreenCanvasRef.current = null;
+      rendererRef.current?.destroy();
+      rendererRef.current = null;
+    }
     
     // Update touch sensitivity based on canvas width
     TOUCH_SENSITIVITY_DIVISOR.current = canvasSize.width / 4; // Drag 1/4 screen for max input
@@ -11548,6 +11572,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       if (gameFeelManagerRef.current) {
         gameFeelManagerRef.current.reset();
       }
+
+      rendererRef.current?.destroy();
+      rendererRef.current = null;
+      offscreenCanvasRef.current = null;
       
       // Clear all game state
       gameRef.current.particles = [];
@@ -11562,7 +11590,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         cancelAnimationFrame(animationIdRef.current);
       }
     };
-  }, [initializePlatforms, handleKeyDown, handleKeyUp, handleTouchStart, handleTouchMove, handleTouchEnd, canvasSize]);
+  }, [initializePlatforms, handleKeyDown, handleKeyUp, handleTouchStart, handleTouchMove, handleTouchEnd, canvasSize, settings.renderer]);
 
   // Initialize MusicManager when audio is ready
   useEffect(() => {

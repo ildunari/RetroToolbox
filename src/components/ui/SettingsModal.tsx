@@ -5,6 +5,7 @@ interface Settings {
   soundEnabled: boolean;
   volume: number;
   difficulty: string;
+  renderer: 'canvas2d' | 'webgl';
 }
 
 interface SettingsModalProps {
@@ -52,6 +53,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSettin
             <option value="easy">Easy</option>
             <option value="normal">Normal</option>
             <option value="hard">Hard</option>
+          </select>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <label className="text-white">Renderer</label>
+          <select
+            value={settings.renderer}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+              onSettingsChange({ ...settings, renderer: e.target.value as 'canvas2d' | 'webgl' })
+            }
+            className="bg-gray-700 text-white rounded px-3 py-1"
+          >
+            <option value="canvas2d">Canvas 2D</option>
+            <option value="webgl">WebGL</option>
           </select>
         </div>
       </div>

@@ -5,6 +5,7 @@ export interface GameSettings {
   volume: number;
   difficulty: 'easy' | 'normal' | 'hard';
   theme: 'neon' | 'retro' | 'minimal';
+  renderer: 'canvas2d' | 'webgl';
 }
 
 export type UseSettingsReturn = [GameSettings, Dispatch<SetStateAction<GameSettings>>];
@@ -13,7 +14,8 @@ const DEFAULT_SETTINGS: GameSettings = {
   soundEnabled: true,
   volume: 0.5,
   difficulty: 'normal',
-  theme: 'neon'
+  theme: 'neon',
+  renderer: 'canvas2d'
 };
 
 const STORAGE_KEY = 'retroGameSettings';
@@ -47,11 +49,16 @@ const validateSettings = (data: unknown): GameSettings | null => {
       return null;
     }
 
+    if (!['canvas2d', 'webgl'].includes(settings.renderer as string)) {
+      return null;
+    }
+
     return {
       soundEnabled: settings.soundEnabled,
       volume: settings.volume,
       difficulty: settings.difficulty as 'easy' | 'normal' | 'hard',
-      theme: settings.theme as 'neon' | 'retro' | 'minimal'
+      theme: settings.theme as 'neon' | 'retro' | 'minimal',
+      renderer: settings.renderer as 'canvas2d' | 'webgl'
     };
   } catch (error) {
     console.error('Settings validation error:', error);
