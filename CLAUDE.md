@@ -13,6 +13,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a React-based retro arcade game collection featuring multiple classic games with modern enhancements. The application uses a fully modular architecture with individual game components and optimized core systems.
 
+## Development Commands
+
+**Essential Commands for Codex:**
+- `npm run dev` - Start development server on port 3004 (REQUIRED for testing)
+- `npm run build` - Build production bundle
+- `npm run lint` - Run ESLint for code quality checks
+- `npm run lint:fix` - Auto-fix ESLint issues
+- `npm run typecheck` - TypeScript type checking without building
+- `npm install` - Install dependencies (run after package.json changes)
+
 ## Architecture
 
 **✅ Fully Modular Implementation Complete**

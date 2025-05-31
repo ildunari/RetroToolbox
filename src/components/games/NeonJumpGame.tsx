@@ -774,7 +774,7 @@ interface ProductionReadiness {
 // Physics Constants
 const GRAVITY = 0.5;
 const BASE_JUMP_FORCE = -12;
-const HORIZONTAL_SPEED = 5;
+const HORIZONTAL_SPEED = 3.5; // Reduced by ~30% from 5
 const WALL_SLIDE_GRAVITY = 0.2;
 const MAX_FALL_SPEED = 15;
 const AIR_CONTROL = 0.8;
@@ -796,7 +796,7 @@ const CRUMBLE_DELAY = 30; // frames (0.5s at 60fps)
 const PHASE_CYCLE_TIME = 120; // frames (2s at 60fps)
 const PHASE_WARNING_TIME = 20; // frames before phase change
 const ICE_FRICTION = 0.98;
-const NORMAL_FRICTION = 0.8;
+const NORMAL_FRICTION = 0.6; // Increased friction (player stops faster)
 const BOUNCE_FORCE_MULTIPLIER = 1.5;
 const CONVEYOR_BASE_SPEED = 2;
 
@@ -804,6 +804,8 @@ const CONVEYOR_BASE_SPEED = 2;
 const ENEMY_SPAWN_BASE_INTERVAL = 200; // Base height interval for spawning
 const MAX_ACTIVE_ENEMIES = 10;
 const ENEMY_DESPAWN_DISTANCE = 600; // Distance below camera to despawn
+const CULLING_BUFFER = 100; // Pixels beyond screen edge for safe culling
+const MAX_TOTAL_PLATFORMS = 200; // Safety limit to prevent memory issues
 const PLAYER_INVULNERABLE_TIME = 90; // frames (1.5s at 60fps)
 const PLAYER_HIT_FLASH_TIME = 6; // frames
 
@@ -1243,7 +1245,7 @@ class BackgroundManager {
   }
 
   private initializeLayers(): void {
-    // Layer 1: Sky with stars
+    // Layer 1: Sky with stars - reduced particles
     this.layers.push({
       id: 1,
       type: 'sky',
@@ -1251,51 +1253,42 @@ class BackgroundManager {
       offset: { x: 0, y: 0 },
       alpha: 1,
       color: '#0a0a2e',
-      elements: this.generateStars(100)
+      elements: this.generateStars(30)
     });
 
-    // Layer 2: Cyberpunk city
+    // Layer 2: Cyberpunk city - reduced elements
     this.layers.push({
       id: 2,
       type: 'city',
       scrollSpeed: 0.3,
       offset: { x: 0, y: 0 },
-      alpha: 0.8,
-      color: '#ff6b35',
-      elements: this.generateCityElements(20)
-    });
-
-    // Layer 3: Neon grid
-    this.layers.push({
-      id: 3,
-      type: 'grid',
-      scrollSpeed: 0.5,
-      offset: { x: 0, y: 0 },
       alpha: 0.6,
-      color: '#00ffff',
-      elements: []
+      color: '#ff6b35',
+      elements: this.generateCityElements(8)
     });
 
-    // Layer 4: Digital rain
+    // Layer 3: Neon grid - REMOVED for cleaner background
+
+    // Layer 4: Digital rain - reduced particles
     this.layers.push({
       id: 4,
       type: 'rain',
       scrollSpeed: 0.8,
       offset: { x: 0, y: 0 },
-      alpha: 0.4,
+      alpha: 0.3,
       color: '#00ff00',
-      elements: this.generateRaindrops(50)
+      elements: this.generateRaindrops(15)
     });
 
-    // Layer 5: Atmospheric fog
+    // Layer 5: Atmospheric fog - reduced elements
     this.layers.push({
       id: 5,
       type: 'fog',
       scrollSpeed: 0.2,
       offset: { x: 0, y: 0 },
-      alpha: 0.3,
+      alpha: 0.2,
       color: '#ffffff',
-      elements: this.generateFogClouds(15)
+      elements: this.generateFogClouds(6)
     });
   }
 
@@ -1437,25 +1430,7 @@ class BackgroundManager {
           break;
           
         case 'grid':
-          ctx.strokeStyle = layer.color;
-          ctx.lineWidth = 1;
-          ctx.globalAlpha = layer.alpha * 0.5;
-          const gridSize = 100;
-          const offsetX = layer.offset.x % gridSize;
-          const offsetY = layer.offset.y % gridSize;
-          
-          for (let x = -offsetX; x < canvas.width + gridSize; x += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, canvas.height);
-            ctx.stroke();
-          }
-          for (let y = -offsetY; y < canvas.height + gridSize; y += gridSize) {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(canvas.width, y);
-            ctx.stroke();
-          }
+          // Grid rendering disabled for cleaner background
           break;
           
         case 'rain':
@@ -3354,9 +3329,9 @@ class GameFeelManager {
       zoom: 1,
       targetZoom: 1,
       shake: { x: 0, y: 0, intensity: 0, decay: 0.9 },
-      smoothing: 0.05,
-      lookAhead: 100,
-      boundaries: { left: -1000, right: 1000, top: -2000, bottom: 1000 }
+      smoothing: 0.25,
+      lookAhead: 50,
+      boundaries: { left: -2000, right: 2000, top: -10000, bottom: 2000 }
     };
   }
 
@@ -3397,14 +3372,20 @@ class GameFeelManager {
     this.addJuiceEffect('zoomPulse', intensity, duration);
   }
 
-  // Camera Management
+  // Camera Management  
   updateCamera(playerPosition: Vector2D, playerVelocity: Vector2D, deltaTime: number): void {
-    // Look-ahead based on velocity
-    const lookAheadX = playerVelocity.x * this.cameraState.lookAhead;
-    const lookAheadY = Math.min(0, playerVelocity.y * this.cameraState.lookAhead * 0.5);
+    // Get canvas dimensions for centering calculation
+    const canvas = document.querySelector('canvas');
+    const canvasWidth = canvas?.width || 400;
+    const canvasHeight = canvas?.height || 600;
     
-    this.cameraState.target.x = playerPosition.x + lookAheadX;
-    this.cameraState.target.y = playerPosition.y + lookAheadY;
+    // Center player on screen with minimal look-ahead
+    const lookAheadX = playerVelocity.x * this.cameraState.lookAhead * 0.3;
+    const lookAheadY = playerVelocity.y * this.cameraState.lookAhead * 0.3;
+    
+    // Target position centers player on canvas
+    this.cameraState.target.x = playerPosition.x + lookAheadX - canvasWidth / 2;
+    this.cameraState.target.y = playerPosition.y + lookAheadY - canvasHeight / 2;
     
     // Apply boundaries
     this.cameraState.target.x = Math.max(this.cameraState.boundaries.left, 
@@ -3412,7 +3393,7 @@ class GameFeelManager {
     this.cameraState.target.y = Math.max(this.cameraState.boundaries.top, 
       Math.min(this.cameraState.boundaries.bottom, this.cameraState.target.y));
     
-    // Smooth camera movement
+    // Much more responsive camera movement
     const smoothing = this.cameraState.smoothing * (deltaTime / 16);
     this.cameraState.velocity.x = (this.cameraState.target.x - this.cameraState.position.x) * smoothing;
     this.cameraState.velocity.y = (this.cameraState.target.y - this.cameraState.position.y) * smoothing;
@@ -6836,6 +6817,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const touchStartRef = useRef<Vector2D | null>(null);
   const gamepadRef = useRef<Gamepad | null>(null);
   
+  // Enhanced touch controls for horizontal movement
+  const touchStartXRef = useRef<number | null>(null);
+  const touchHorizontalInputRef = useRef<number>(0); // Normalized input (-1 to 1)
+  const TOUCH_SENSITIVITY_DIVISOR = useRef<number>(100); // Will be updated based on canvas width
+  const TOUCH_DEAD_ZONE = useRef<number>(10); // Pixels
+  
   // CHECKPOINT 5: Visual Excellence Managers
   const particleManagerRef = useRef<ParticleManager>(new ParticleManager());
   const screenEffectManagerRef = useRef<ScreenEffectManager>(new ScreenEffectManager());
@@ -7488,7 +7475,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     if (gameOver) return;
     keysRef.current.add(e.key.toLowerCase());
     
-    if (!gameStarted && managersReady && ['arrowleft', 'arrowright', 'arrowup', 'a', 'd', 'w', ' '].includes(e.key.toLowerCase())) {
+    if (!gameStarted && managersReady && ['arrowleft', 'arrowright', 'a', 'd'].includes(e.key.toLowerCase())) {
       setGameStarted(true);
       if (uiManagerRef.current) {
         uiManagerRef.current.showMenu('none');
@@ -7504,34 +7491,23 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const handleTouchStart = useCallback((e: TouchEvent) => {
     e.preventDefault();
     
+    // Store initial X for enhanced drag controls
+    if (e.touches.length > 0 && e.touches[0]) {
+      touchStartXRef.current = e.touches[0].clientX;
+      touchHorizontalInputRef.current = 0;
+    }
+    
     // Use enhanced mobile optimization manager for touch handling
     if (mobileOptimizationManagerRef.current) {
       const touchResult = mobileOptimizationManagerRef.current.handleTouchInput(e);
       
       if (touchResult) {
         switch (touchResult.action) {
-          case 'touchArea':
-            const area = touchResult.data.area;
-            if (area === 'jump') {
-              keysRef.current.add(' '); // Space for jump
-              mobileOptimizationManagerRef.current.triggerHapticFeedback('medium');
-            } else if (area === 'left') {
-              keysRef.current.add('arrowleft');
-              mobileOptimizationManagerRef.current.triggerHapticFeedback('light');
-            } else if (area === 'right') {
-              keysRef.current.add('arrowright');
-              mobileOptimizationManagerRef.current.triggerHapticFeedback('light');
-            }
-            break;
-            
           case 'tap':
-            // Single tap - jump or start game
+            // Single tap - start game only (jump removed for auto-jump)
             if (!gameStarted) {
               setGameStarted(true);
               audioManagerRef.current.playMenuSelect();
-            } else if (!paused) {
-              keysRef.current.add(' ');
-              mobileOptimizationManagerRef.current.triggerHapticFeedback('medium');
             }
             break;
             
@@ -7547,65 +7523,49 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       }
     }
     
-    // Fallback to basic touch handling
-    if (e.touches.length > 0 && e.touches[0]) {
-      touchStartRef.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY
-      };
-      
-      if (!gameStarted) {
-        setGameStarted(true);
+    // Ensure game starts on any touch if not already started
+    if (!gameStarted && managersReady) {
+      setGameStarted(true);
+      if (uiManagerRef.current) {
+        uiManagerRef.current.showMenu('none');
       }
     }
-  }, [gameStarted, paused]);
+  }, [gameStarted, paused, managersReady]);
 
   const handleTouchMove = useCallback((e: TouchEvent) => {
     e.preventDefault();
     
-    // Use enhanced mobile optimization manager for gesture detection
+    // Enhanced drag-anywhere horizontal movement
+    if (touchStartXRef.current !== null && e.touches.length > 0 && e.touches[0]) {
+      const currentX = e.touches[0].clientX;
+      const deltaX = currentX - touchStartXRef.current;
+
+      if (Math.abs(deltaX) < TOUCH_DEAD_ZONE.current) {
+        touchHorizontalInputRef.current = 0;
+      } else {
+        // Adjust deltaX by subtracting the dead zone before normalizing
+        const effectiveDeltaX = deltaX - (Math.sign(deltaX) * TOUCH_DEAD_ZONE.current);
+        let normalizedInput = effectiveDeltaX / TOUCH_SENSITIVITY_DIVISOR.current;
+        normalizedInput = Math.max(-1, Math.min(1, normalizedInput));
+        touchHorizontalInputRef.current = normalizedInput;
+      }
+    }
+
+    // Use enhanced mobile optimization manager for gesture detection (pause only)
     if (mobileOptimizationManagerRef.current) {
       const touchResult = mobileOptimizationManagerRef.current.handleTouchInput(e);
       
       if (touchResult?.action === 'swipe') {
         const { direction, velocity } = touchResult.data;
         
-        // Clear existing keys
-        keysRef.current.clear();
-        
-        // Map swipe gestures to game controls
+        // Map swipe gestures to game controls (movement now handled by drag)
         switch (direction) {
-          case 'left':
-            keysRef.current.add('arrowleft');
-            break;
-          case 'right':
-            keysRef.current.add('arrowright');
-            break;
-          case 'up':
-            keysRef.current.add(' '); // Jump
-            mobileOptimizationManagerRef.current.triggerHapticFeedback('medium');
-            break;
           case 'down':
             // Fast fall or pause
             if (velocity > 1.0) {
               setPaused(!paused);
             }
             break;
-        }
-      }
-    }
-    
-    // Fallback to basic touch handling
-    if (touchStartRef.current && e.touches.length > 0 && e.touches[0] && touchStartRef.current.x !== undefined) {
-      const deltaX = e.touches[0].clientX - touchStartRef.current.x;
-      
-      // Simulate keyboard input based on touch
-      keysRef.current.clear();
-      if (Math.abs(deltaX) > 10) {
-        if (deltaX > 0) {
-          keysRef.current.add('arrowright');
-        } else {
-          keysRef.current.add('arrowleft');
         }
       }
     }
@@ -7624,9 +7584,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       }
     }
     
-    // Clear touch state
-    touchStartRef.current = null;
-    keysRef.current.clear();
+    // Clear enhanced touch state
+    touchStartXRef.current = null;
+    touchHorizontalInputRef.current = 0;
+    // Don't clear keyboard keys - only reset touch input
   }, []);
 
   // Gamepad handling
@@ -7645,12 +7606,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         keysRef.current.add('arrowright');
       }
       
-      // Jump button (A on Xbox, X on PlayStation)
-      if (gamepad.buttons[0]?.pressed) {
-        keysRef.current.add(' ');
-      }
+      // Jump button removed for auto-jump functionality
       
-      if (!gameStarted && (gamepad.buttons[0]?.pressed || Math.abs(gamepad.axes[0]) > 0.5)) {
+      if (!gameStarted && Math.abs(gamepad.axes[0]) > 0.5) {
         setGameStarted(true);
       }
     }
@@ -7659,22 +7617,64 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // Physics update
   const updatePhysics = useCallback((deltaTime: number) => {
     const game = gameRef.current;
+    
+    // Early exit if game state is not ready
+    if (!game || !game.player) return;
+    
     const player = game.player;
     const keys = keysRef.current;
+    
+    // Validate Player Position and Velocity for NaN/Infinity (safety check)
+    if (isNaN(player.position.x) || isNaN(player.position.y) || 
+        isNaN(player.velocity.x) || isNaN(player.velocity.y) ||
+        !isFinite(player.position.x) || !isFinite(player.position.y) ||
+        !isFinite(player.velocity.x) || !isFinite(player.velocity.y)) {
+        
+        console.error("Invalid player physics state detected. Resetting player position and velocity.", player);
+        // Reset to a safe position at camera center
+        player.position.x = game.camera.x + (game.worldBounds.width / 2) - (player.width / 2);
+        player.position.y = game.camera.y + (game.worldBounds.height / 2) - (player.height / 2);
+        player.velocity.x = 0;
+        player.velocity.y = 0;
+        // Continue with physics update after reset
+    }
     
     // Update gamepad input
     updateGamepadInput();
     
+    // Calculate current maximum horizontal speed based on level progression
+    const baseSpeed = HORIZONTAL_SPEED;
+    const speedIncreasePerLevel = 0.1; // Adjust this for desired scaling
+    const maxPossibleSpeed = 6.0; // Cap the speed increase to prevent it from becoming too fast
+    let currentDynamicMaxSpeed = baseSpeed + (game.level - 1) * speedIncreasePerLevel;
+    currentDynamicMaxSpeed = Math.min(currentDynamicMaxSpeed, maxPossibleSpeed);
+
     // Horizontal movement with speed boost and air control upgrades
     const airControlBonus = game.upgrades.airControl * UPGRADE_AIR_CONTROL_BONUS;
     const airControlFactor = player.isGrounded ? 1 : (AIR_CONTROL + airControlBonus);
-    const speedWithBoost = HORIZONTAL_SPEED * player.speedMultiplier;
+    
+    // Use currentDynamicMaxSpeed for calculations, then apply power-up multiplier
+    const effectiveMaxSpeed = currentDynamicMaxSpeed * player.speedMultiplier;
     
     player.acceleration.x = 0;
-    if (keys.has('arrowleft') || keys.has('a')) {
-      player.acceleration.x = -speedWithBoost * airControlFactor;
-    } else if (keys.has('arrowright') || keys.has('d')) {
-      player.acceleration.x = speedWithBoost * airControlFactor;
+    const keyboardLeft = keys.has('arrowleft') || keys.has('a');
+    const keyboardRight = keys.has('arrowright') || keys.has('d');
+    const touchInput = touchHorizontalInputRef.current;
+    // Normalized dead zone for touchInput comparison
+    const normalizedTouchDeadZone = TOUCH_DEAD_ZONE.current / TOUCH_SENSITIVITY_DIVISOR.current;
+
+    if (keyboardLeft || touchInput < -normalizedTouchDeadZone) {
+        if (touchInput < -normalizedTouchDeadZone) {
+            player.acceleration.x = touchInput * effectiveMaxSpeed * airControlFactor;
+        } else if (keyboardLeft) {
+            player.acceleration.x = -1 * effectiveMaxSpeed * airControlFactor;
+        }
+    } else if (keyboardRight || touchInput > normalizedTouchDeadZone) {
+        if (touchInput > normalizedTouchDeadZone) {
+            player.acceleration.x = touchInput * effectiveMaxSpeed * airControlFactor;
+        } else if (keyboardRight) {
+            player.acceleration.x = 1 * effectiveMaxSpeed * airControlFactor;
+        }
     }
     
     // Apply friction based on platform type
@@ -7688,7 +7688,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Update velocity
     player.velocity.x += player.acceleration.x * deltaTime;
-    player.velocity.x = Math.max(-speedWithBoost, Math.min(speedWithBoost, player.velocity.x));
+    player.velocity.x = Math.max(-effectiveMaxSpeed, Math.min(effectiveMaxSpeed, player.velocity.x));
     
     // Gravity and vertical movement
     if (player.rocketBoostActive) {
@@ -7699,60 +7699,14 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     } else {
       player.velocity.y += GRAVITY * deltaTime;
     }
+    
+    // Cap maximum ascent speed to prevent player from going too high too fast
+    const MAX_ASCENT_SPEED = -30; // Max upward velocity (negative Y direction)
+    player.velocity.y = Math.max(player.velocity.y, MAX_ASCENT_SPEED);
     player.velocity.y = Math.min(player.velocity.y, MAX_FALL_SPEED);
     
-    // Jump handling with coyote time and jump buffering
-    if (keys.has(' ') || keys.has('arrowup') || keys.has('w')) {
-      player.jumpBufferTime = JUMP_BUFFER_TIME;
-    } else {
-      player.jumpBufferTime = Math.max(0, player.jumpBufferTime - 1);
-    }
-    
-    if (player.jumpBufferTime > 0 && (player.isGrounded || player.coyoteTime > 0)) {
-      // Apply jump height upgrade
-      const jumpBonus = game.upgrades.jumpHeight * UPGRADE_JUMP_HEIGHT_BONUS;
-      const jumpForce = BASE_JUMP_FORCE * (1 + jumpBonus);
-      
-      player.velocity.y = jumpForce;
-      player.jumpBufferTime = 0;
-      player.coyoteTime = 0;
-      player.canDoubleJump = true;
-      
-      // CHECKPOINT 6: Enhanced Audio System
-      audioManagerRef.current.playJump();
-      
-      // CHECKPOINT 5: Enhanced jump particle effects
-      for (let i = 0; i < 15; i++) {
-        particleManagerRef.current.createParticle({
-          type: 'dust',
-          position: { 
-            x: player.position.x + (Math.random() - 0.5) * player.width, 
-            y: player.position.y + player.height 
-          },
-          velocity: { 
-            x: (Math.random() - 0.5) * 6, 
-            y: Math.random() * 2 + 1 
-          },
-          color: '#00ffff',
-          size: 1 + Math.random() * 2,
-          maxLife: 0.8 + Math.random() * 0.4,
-          gravity: 0.1,
-          blendMode: 'additive'
-        });
-      }
-      
-      // Jump particles
-      for (let i = 0; i < 10; i++) {
-        particleManagerRef.current.createParticle({
-          position: { x: player.position.x + player.width / 2, y: player.position.y + player.height },
-          velocity: { x: (Math.random() - 0.5) * 4, y: Math.random() * -2 },
-          life: 1,
-          color: '#00FFFF',
-          size: 3,
-          type: 'trail'
-        });
-      }
-    }
+    // Auto-jump functionality - jump logic moved to checkPlatformCollisions
+    // Manual jump inputs removed for auto-jump gameplay
     
     // Update position
     player.position.x += player.velocity.x * deltaTime;
@@ -7786,8 +7740,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       player.state = 'falling';
     }
     
-    // Check death condition
-    if (player.position.y > game.camera.y + 600) {
+    // Check death condition (falling off bottom)
+    if (player.position.y > game.camera.y + game.worldBounds.height) {
       player.state = 'death';
       setGameOver(true);
       
@@ -7802,12 +7756,38 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       game.score = finalScore;
       updateHighScore('neonJump', finalScore);
       scoreManagerRef.current.saveHighScore();
+      return; // Game over, no further physics updates this frame
+    }
+
+    // Check "too high" death condition to prevent player getting lost off-screen
+    const MAX_HEIGHT_ABOVE_CAMERA_TOP = 1200; // Approximately 2 screen heights
+    // player.position.y is top of player, game.camera.y is top of camera
+    // If player.position.y is much more negative, they are higher up
+    if ((game.camera.y - player.position.y) > MAX_HEIGHT_ABOVE_CAMERA_TOP) {
+        console.warn(`Player too high (PlayerY: ${player.position.y}, CameraY: ${game.camera.y}). Triggering game over.`);
+        player.state = 'death';
+        setGameOver(true);
+        
+        // Enhanced Game Over Audio and UI
+        audioManagerRef.current.playGameOver();
+        if (uiManagerRef.current) {
+            uiManagerRef.current.showMenu('gameOver');
+        }
+        
+        // Save high score
+        const finalScore = scoreManagerRef.current.getScore();
+        game.score = finalScore;
+        updateHighScore('neonJump', finalScore);
+        scoreManagerRef.current.saveHighScore();
+        return; // Game over, no further physics updates this frame
     }
   }, [updateGamepadInput]);
 
   // Platform collision detection
   const checkPlatformCollisions = useCallback(() => {
     const game = gameRef.current;
+    if (!game || !game.player) return; // Early exit if game state is not ready
+    
     const player = game.player;
     
     player.isGrounded = false;
@@ -7815,36 +7795,16 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     for (const platform of game.platforms) {
       if (!platform || !platform.active) continue;
       
-      // Check if player is colliding with platform
+      // Simplified collision detection - player overlapping with platform
       if (player.position.x < platform.x + platform.width &&
           player.position.x + player.width > platform.x &&
           player.position.y < platform.y + platform.height &&
           player.position.y + player.height > platform.y) {
         
-        // CRITICAL FIX: Continuous collision detection for fast-moving objects
-        // Landing on top of platform with tunneling prevention
-        if (player.velocity.y > 0 && 
-            player.position.y < platform.y &&
-            player.position.y + player.height - player.velocity.y <= platform.y) {
-          
-          // Additional check for fast movement tunneling
-          const PLATFORM_HEIGHT = platform.height;
-          const steps = Math.max(1, Math.ceil(Math.abs(player.velocity.y) / PLATFORM_HEIGHT));
-          let collisionDetected = false;
-          
-          for (let step = 0; step <= steps && !collisionDetected; step++) {
-            const t = step / steps;
-            const checkY = player.position.y + player.velocity.y * t;
-            
-            if (checkY < platform.y &&
-                checkY + player.height >= platform.y &&
-                player.position.x < platform.x + platform.width &&
-                player.position.x + player.width > platform.x) {
-              collisionDetected = true;
-            }
-          }
-          
-          if (collisionDetected) {
+        // Landing on top of platform (player falling down and hitting platform from above)
+        if (player.velocity.y >= 0 && 
+            player.position.y <= platform.y && 
+            player.position.y + player.height >= platform.y) {
           
           player.position.y = platform.y - player.height;
           const fallVelocity = player.velocity.y;
@@ -7852,6 +7812,51 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           player.isGrounded = true;
           player.coyoteTime = COYOTE_TIME;
           player.lastPlatform = platform;
+
+          // AUTO-JUMP: Automatically jump upon landing on any platform
+          if (platform.type !== 'bouncy') { // Skip auto-jump for bouncy platforms as they have their own jump logic
+            // Apply jump height upgrade
+            const jumpBonus = game.upgrades.jumpHeight * UPGRADE_JUMP_HEIGHT_BONUS;
+            const jumpForce = BASE_JUMP_FORCE * (1 + jumpBonus);
+            
+            player.velocity.y = jumpForce;
+            player.canDoubleJump = true;
+            
+            // CHECKPOINT 6: Enhanced Audio System
+            audioManagerRef.current.playJump();
+            
+            // CHECKPOINT 5: Enhanced jump particle effects
+            for (let i = 0; i < 15; i++) {
+              particleManagerRef.current.createParticle({
+                type: 'dust',
+                position: { 
+                  x: player.position.x + (Math.random() - 0.5) * player.width, 
+                  y: player.position.y + player.height 
+                },
+                velocity: { 
+                  x: (Math.random() - 0.5) * 6, 
+                  y: Math.random() * 2 + 1 
+                },
+                color: '#00ffff',
+                size: 1 + Math.random() * 2,
+                maxLife: 0.8 + Math.random() * 0.4,
+                gravity: 0.1,
+                blendMode: 'additive'
+              });
+            }
+            
+            // Jump particles
+            for (let i = 0; i < 10; i++) {
+              particleManagerRef.current.createParticle({
+                position: { x: player.position.x + player.width / 2, y: player.position.y + player.height },
+                velocity: { x: (Math.random() - 0.5) * 4, y: Math.random() * -2 },
+                life: 1,
+                color: '#00FFFF',
+                size: 3,
+                type: 'trail'
+              });
+            }
+          }
           
           // CHECKPOINT 6: Enhanced Landing Audio and Scoring
           const fallIntensity = Math.abs(fallVelocity) / 10; // Normalize fall intensity
@@ -7861,7 +7866,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           const perfectPoints = scoreManagerRef.current.recordPerfectLanding(fallVelocity);
           if (perfectPoints > 0 && gameFeelManagerRef.current) {
             gameFeelManagerRef.current.cameraShake(0.5, 100);
-            gameFeelManagerRef.current.colorFlash('#00ff00', 0.3, 200);
+            gameFeelManagerRef.current.colorFlash('#00ff00', 0.1, 80); // Much shorter duration
           }
           
           // CHECKPOINT 5: Landing particle effects
@@ -7970,7 +7975,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             game.score += points;
             setScore(game.score);
           }
-          } // CRITICAL FIX: Close collisionDetected if statement
         }
       }
     }
@@ -7979,6 +7983,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // Check enemy and projectile collisions
   const checkEnemyCollisions = useCallback(() => {
     const game = gameRef.current;
+    if (!game || !game.player) return; // Early exit if game state is not ready
+    
     const player = game.player;
     
     // Skip if player is invulnerable
@@ -8355,8 +8361,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       }
     }
     
-    // Remove platforms below camera
-    game.platforms = game.platforms.filter(p => p.y < game.camera.y + 600);
+    // Enhanced bidirectional culling for platforms
+    const cullingBufferVertical = game.worldBounds.height + CULLING_BUFFER;
+    game.platforms = game.platforms.filter(p => 
+      p.active && // Only consider active platforms
+      p.y < game.camera.y + cullingBufferVertical && // Below camera
+      p.y > game.camera.y - cullingBufferVertical // Above camera
+    );
     
     // CRITICAL FIX: Generate new platforms with infinite loop protection
     let generationAttempts = 0;
@@ -8388,6 +8399,18 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     if (generationAttempts >= MAX_GENERATION_ATTEMPTS) {
       console.error('Platform generation exceeded maximum attempts, stopping to prevent infinite loop');
+    }
+
+    // Safety limit: Force culling if too many platforms exist
+    if (game.platforms.length > MAX_TOTAL_PLATFORMS) {
+      console.warn(`Exceeded max platforms (${game.platforms.length}). Forcibly culling.`);
+      // Sort by distance from camera center and keep closest ones
+      game.platforms.sort((a, b) => {
+        const distA = Math.abs(a.y - (game.camera.y + game.worldBounds.height / 2));
+        const distB = Math.abs(b.y - (game.camera.y + game.worldBounds.height / 2));
+        return distA - distB; // Closest first
+      });
+      game.platforms = game.platforms.slice(0, MAX_TOTAL_PLATFORMS);
     }
   }, [generateNextPlatform]);
 
@@ -8742,8 +8765,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       }
     }
     
-    // Remove inactive enemies and projectiles
-    game.enemies = game.enemies.filter(e => e.active && e.position.y < game.camera.y + ENEMY_DESPAWN_DISTANCE);
+    // Enhanced bidirectional culling for enemies
+    const cullingBufferVertical = game.worldBounds.height + CULLING_BUFFER;
+    game.enemies = game.enemies.filter(e => 
+      e.active && 
+      e.position.y < game.camera.y + cullingBufferVertical && // Below camera
+      e.position.y > game.camera.y - cullingBufferVertical // Above camera
+    );
     game.projectiles = game.projectiles.filter(p => p.active);
     
     // Clear and rebuild spatial grid for active enemies
@@ -8777,6 +8805,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // Update power-ups
   const updatePowerUps = useCallback((deltaTime: number) => {
     const game = gameRef.current;
+    if (!game || !game.player) return; // Early exit if game state is not ready
+    
     const player = game.player;
     
     // Spawn power-ups periodically
@@ -8808,13 +8838,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         // CHECKPOINT 5: Enhanced power-up collection effect
         let powerUpColor = '#ffffff';
         switch (powerUp.type) {
-          case 'speed-boost': powerUpColor = '#0080ff'; break;
-          case 'shield-bubble': powerUpColor = '#00ffff'; break;
-          case 'magnet-field': powerUpColor = '#ff00ff'; break;
-          case 'rocket-boost': powerUpColor = '#ff6600'; break;
-          case 'platform-freezer': powerUpColor = '#80ffff'; break;
-          case 'ghost-mode': powerUpColor = '#ffffff'; break;
-          case 'score-multiplier': powerUpColor = '#ffff00'; break;
+          case 'speed-boost': powerUpColor = '#0080ff'; break;         // Deep Sky Blue
+          case 'shield-bubble': powerUpColor = '#00ccff'; break;      // Less green cyan
+          case 'magnet-field': powerUpColor = '#ff00ff'; break;       // Magenta (unchanged)
+          case 'rocket-boost': powerUpColor = '#ff6600'; break;       // Orange (unchanged)
+          case 'platform-freezer': powerUpColor = '#66ccff'; break;   // Light blue instead of cyan
+          case 'ghost-mode': powerUpColor = '#e6e6fa'; break;         // Lavender instead of white
+          case 'score-multiplier': powerUpColor = '#ffd700'; break;   // Gold instead of yellow
         }
         
         // Burst effect
@@ -8836,8 +8866,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           });
         }
         
-        // Major screen flash and shake for power-up
-        screenEffectManagerRef.current.flash(powerUpColor, 0.6, 0.3);
+        // Major screen flash and shake for power-up (much shorter duration)
+        screenEffectManagerRef.current.flash(powerUpColor, 0.15, 0.08);
         screenEffectManagerRef.current.shake(0.8, 0.4);
         
         // Apply power-up effect
@@ -8930,12 +8960,20 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Remove expired power-ups
     game.activePowerUps = game.activePowerUps.filter(p => p.duration > 0);
-    game.powerUps = game.powerUps.filter(p => p.active && p.position.y < game.camera.y + 500);
+    // Enhanced bidirectional culling for power-ups
+    const cullingBufferVertical = game.worldBounds.height + CULLING_BUFFER;
+    game.powerUps = game.powerUps.filter(p => 
+      p.active && 
+      p.position.y < game.camera.y + cullingBufferVertical && // Below camera
+      p.position.y > game.camera.y - cullingBufferVertical // Above camera
+    );
   }, [spawnPowerUps]);
 
   // Update coins
   const updateCoins = useCallback((deltaTime: number) => {
     const game = gameRef.current;
+    if (!game || !game.player) return; // Early exit if game state is not ready
+    
     const player = game.player;
     
     // Update coin animations
@@ -9023,8 +9061,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       }
     }
     
-    // Remove inactive coins
-    game.coins = game.coins.filter(c => c.active && c.position.y < game.camera.y + 500);
+    // Enhanced bidirectional culling for coins
+    const cullingBufferVertical = game.worldBounds.height + CULLING_BUFFER;
+    game.coins = game.coins.filter(c => 
+      c.active && 
+      c.position.y < game.camera.y + cullingBufferVertical && // Below camera
+      c.position.y > game.camera.y - cullingBufferVertical // Above camera
+    );
   }, []);
 
   // Unified collision detection using spatial grid
@@ -9032,6 +9075,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     if (!performanceManagerRef.current) return;
     
     const game = gameRef.current;
+    if (!game) return; // Early exit if game state is not ready
     performanceManagerRef.current.clearSpatialGrid();
     
     // Add all entities to spatial grid
@@ -9265,7 +9309,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     particleManagerRef.current.createExplosion(
       powerUp.position.x,
       powerUp.position.y,
-      '#00ff00',
+      powerUp.glowColor, // Use actual power-up color instead of hardcoded green
       20
     );
   }, [applyPowerUp]);
@@ -9327,27 +9371,24 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // Update camera
   const updateCamera = useCallback(() => {
     const game = gameRef.current;
+    if (!game || !game.player) return; // Early exit if game state is not ready
+    
     const player = game.player;
     
-    // Enhanced camera with X-axis following for moving platforms
-    const targetX = player.position.x - 200; // Center player horizontally
-    const targetY = player.position.y - CAMERA_LOOK_AHEAD;
+    // Enhanced camera to keep player centered on screen
+    const canvas = canvasRef.current;
+    const canvasWidth = canvas?.width || 400;
+    const canvasHeight = canvas?.height || 600;
     
-    // Apply deadzone to reduce jitter
-    const deltaY = targetY - game.camera.y;
-    if (Math.abs(deltaY) > CAMERA_DEADZONE_Y) {
-      game.camera.y += deltaY * CAMERA_SMOOTH;
-    }
+    const targetX = player.position.x - canvasWidth / 2; // Center player horizontally on canvas
+    const targetY = player.position.y - canvasHeight / 2; // Center player vertically on canvas
     
-    // Smooth X following with bounds
+    // Smooth camera movement to keep player centered
     const deltaX = targetX - game.camera.x;
-    game.camera.x += deltaX * CAMERA_SMOOTH * 0.5;
-    game.camera.x = Math.max(-100, Math.min(100, game.camera.x)); // Limit X movement
+    const deltaY = targetY - game.camera.y;
     
-    // Limit camera movement - allow it to follow player down but not go too far up
-    if (game.camera.y < -50) {
-      game.camera.y = -50; // Don't go too far up from starting area
-    }
+    game.camera.x += deltaX * CAMERA_SMOOTH;
+    game.camera.y += deltaY * CAMERA_SMOOTH;
   }, []);
 
   // Update particles
@@ -10696,6 +10737,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     if (!gameStarted || paused || gameOver) return;
     
     const game = gameRef.current;
+    if (!game || !game.player) return; // Early exit if game state is not ready
+    
     const deltaTime = Math.min((timestamp - game.lastUpdate) / 16.67, 2); // Cap at 2x speed
     game.lastUpdate = timestamp;
     
@@ -10939,10 +10982,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       isDucking: false
     };
     
-    // Initialize camera to follow player from start
+    // Initialize camera to center player on screen
+    const canvas = canvasRef.current;
+    const canvasWidth = canvas?.width || 400;
+    const canvasHeight = canvas?.height || 600;
     game.camera = { 
-      x: game.player.position.x - 200, // Center player horizontally
-      y: game.player.position.y - CAMERA_LOOK_AHEAD // Position camera to look at player area
+      x: game.player.position.x - canvasWidth / 2, // Center player horizontally on canvas
+      y: game.player.position.y - canvasHeight / 2 // Center player vertically on canvas
     };
     game.score = 0;
     game.level = 1;
@@ -11321,6 +11367,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     canvas.width = canvasSize.width;
     canvas.height = canvasSize.height;
+    
+    // Update touch sensitivity based on canvas width
+    TOUCH_SENSITIVITY_DIVISOR.current = canvasSize.width / 4; // Drag 1/4 screen for max input
     
     // Update game world bounds
     gameRef.current.worldBounds = {
