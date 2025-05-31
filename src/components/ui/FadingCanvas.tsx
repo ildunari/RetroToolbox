@@ -7,7 +7,7 @@ interface FadingCanvasProps extends HTMLAttributes<HTMLCanvasElement> {
 }
 
 export const FadingCanvas = forwardRef<HTMLCanvasElement, FadingCanvasProps>(
-  ({ active = true, slide = false, children, ...props }, ref) => {
+  ({ active = true, slide = false, children, className = '', ...props }, ref) => {
     const [visible, setVisible] = useState<boolean>(active);
 
     useEffect(() => {
@@ -20,13 +20,17 @@ export const FadingCanvas = forwardRef<HTMLCanvasElement, FadingCanvasProps>(
 
     // If children are provided, wrap them. Otherwise, render a canvas with the ref
     if (children) {
-      return <div className={classes}>{children}</div>;
+      return (
+        <div className={`${classes} ${className}`} {...props}>
+          {children}
+        </div>
+      );
     }
 
     return (
       <canvas
         ref={ref}
-        className={`${classes} border border-gray-600 rounded`}
+        className={`${classes} border border-gray-600 rounded ${className}`}
         {...props}
       />
     );

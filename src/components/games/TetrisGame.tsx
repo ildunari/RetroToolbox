@@ -3,6 +3,7 @@ import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
+import { FadingCanvas } from "../ui/FadingCanvas";
 import { CANVAS_CONFIG } from "../../core/CanvasConfig";
 
 
@@ -475,7 +476,10 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
     canvas.height = CANVAS_CONFIG.tetris.height;
 
     const handleBlur = () => setPaused(true);
-    const handleFocus = () => setPaused(false);
+    const handleFocus = () => {
+      setPaused(false);
+      canvasRef.current?.focus();
+    };
     window.addEventListener('blur', handleBlur);
     window.addEventListener('focus', handleFocus);
 
@@ -539,7 +543,13 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
         case 'p':
         case 'Escape':
           e.preventDefault();
-          setPaused(!paused);
+          setPaused(prev => {
+            const next = !prev;
+            if (!next) {
+              canvasRef.current?.focus();
+            }
+            return next;
+          });
           break;
       }
     };
@@ -994,24 +1004,28 @@ export const TetrisGame: React.FC<TetrisGameProps> = ({ settings, updateHighScor
           <p>Slow swipe down for soft drop • Enter for hard drop • C to hold • P to pause</p>
         </div>
         
-        {paused && !gameOver && (
-          <div className="absolute inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center">
-            <div className="text-center bg-gray-800 p-8 rounded-lg border-2 border-purple-500">
-              <h2 className="text-3xl font-bold text-purple-400 mb-4">PAUSED</h2>
-              <p className="text-lg mb-4 text-gray-300">Game is paused</p>
-              <div className="text-sm text-gray-400 mb-4">
-                <p>Press P or ESC to resume</p>
-                <p>Score: {score} | Lines: {lines} | Level: {level}</p>
-              </div>
-              <button
-                onClick={() => setPaused(false)}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold transition-colors"
-              >
-                Resume Game
-              </button>
+        <FadingCanvas
+          active={paused && !gameOver}
+          className="absolute inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center"
+        >
+          <div className="text-center bg-gray-800 p-8 rounded-lg border-2 border-purple-500">
+            <h2 className="text-3xl font-bold text-purple-400 mb-4">PAUSED</h2>
+            <p className="text-lg mb-4 text-gray-300">Game is paused</p>
+            <div className="text-sm text-gray-400 mb-4">
+              <p>Press P or ESC to resume</p>
+              <p>Score: {score} | Lines: {lines} | Level: {level}</p>
             </div>
+            <button
+              onClick={() => {
+                setPaused(false);
+                canvasRef.current?.focus();
+              }}
+              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold transition-colors"
+            >
+              Resume Game
+            </button>
           </div>
-        )}
+        </FadingCanvas>
         
         {gameOver && (
           <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center">

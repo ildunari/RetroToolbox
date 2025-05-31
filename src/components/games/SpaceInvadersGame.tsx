@@ -3,6 +3,7 @@ import { Heart, Play, Pause, RotateCcw } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
+import { FadingCanvas } from "../ui/FadingCanvas";
 import { CANVAS_CONFIG } from "../../core/CanvasConfig";
 
 
@@ -161,7 +162,10 @@ export const SpaceInvadersGame: React.FC<SpaceInvadersGameProps> = ({ settings, 
     canvas.height = CANVAS_CONFIG.spaceInvaders.height;
 
     const handleBlur = () => setPaused(true);
-    const handleFocus = () => setPaused(false);
+    const handleFocus = () => {
+      setPaused(false);
+      canvasRef.current?.focus();
+    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (gameOver) return;
@@ -169,7 +173,13 @@ export const SpaceInvadersGame: React.FC<SpaceInvadersGameProps> = ({ settings, 
       
       if (e.key === 'p' || e.key === 'Escape') {
         e.preventDefault();
-        setPaused(prev => !prev);
+        setPaused(prev => {
+          const next = !prev;
+          if (!next) {
+            canvasRef.current?.focus();
+          }
+          return next;
+        });
       }
       if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') {
         e.preventDefault();
@@ -822,25 +832,29 @@ export const SpaceInvadersGame: React.FC<SpaceInvadersGameProps> = ({ settings, 
           <p>Power-ups: R=Rapid Fire, M=Multi-shot, S=Shield Protection</p>
         </div>
         
-        {paused && !gameOver && (
-          <div className="absolute inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center">
-            <div className="text-center bg-gray-800 p-8 rounded-lg border-2 border-blue-500">
-              <h2 className="text-3xl font-bold text-blue-400 mb-4">PAUSED</h2>
-              <p className="text-lg mb-4 text-gray-300">Game is paused</p>
-              <div className="text-sm text-gray-400 mb-4">
-                <p>Press P or ESC to resume</p>
-                <p>Current Score: {score}</p>
-                <p>Level: {level}</p>
-              </div>
-              <button
-                onClick={() => setPaused(false)}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors"
-              >
-                Resume Game
-              </button>
+        <FadingCanvas
+          active={paused && !gameOver}
+          className="absolute inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center"
+        >
+          <div className="text-center bg-gray-800 p-8 rounded-lg border-2 border-blue-500">
+            <h2 className="text-3xl font-bold text-blue-400 mb-4">PAUSED</h2>
+            <p className="text-lg mb-4 text-gray-300">Game is paused</p>
+            <div className="text-sm text-gray-400 mb-4">
+              <p>Press P or ESC to resume</p>
+              <p>Current Score: {score}</p>
+              <p>Level: {level}</p>
             </div>
+            <button
+              onClick={() => {
+                setPaused(false);
+                canvasRef.current?.focus();
+              }}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors"
+            >
+              Resume Game
+            </button>
           </div>
-        )}
+        </FadingCanvas>
         
         {gameOver && (
           <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center">

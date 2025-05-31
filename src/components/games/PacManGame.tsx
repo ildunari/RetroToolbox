@@ -530,7 +530,21 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       
       if (e.key === ' ' || e.key === 'Escape') {
         e.preventDefault();
-        setPaused(p => !p);
+        setPaused(prev => {
+          const next = !prev;
+          if (!next) {
+            canvasRef.current?.focus();
+          }
+          if (settings.soundEnabled) {
+            if (next) {
+              soundManager.stopGhostSiren();
+            } else if (gameRef.current.gamePhase === 'playing') {
+              const anyFrightened = gameRef.current.ghosts.some(g => g.mode === 'frightened');
+              soundManager.startGhostSiren(anyFrightened ? 'frightened' : 'normal');
+            }
+          }
+          return next;
+        });
         return;
       }
       
@@ -2075,6 +2089,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     initializeGame(true); // Reset everything
     setGameOver(false);
     setPaused(false);
+    canvasRef.current?.focus();
     setScore(0);
     setLives(3);
     setLevel(1);
@@ -2083,15 +2098,21 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   };
 
   const togglePause = () => {
-    setPaused(!paused);
-    if (settings.soundEnabled) {
-      if (!paused) {
-        soundManager.stopGhostSiren();
-      } else if (gameRef.current.gamePhase === 'playing') {
-        const anyFrightened = gameRef.current.ghosts.some(g => g.mode === 'frightened');
-        soundManager.startGhostSiren(anyFrightened ? 'frightened' : 'normal');
+    setPaused(prev => {
+      const next = !prev;
+      if (!next) {
+        canvasRef.current?.focus();
       }
-    }
+      if (settings.soundEnabled) {
+        if (next) {
+          soundManager.stopGhostSiren();
+        } else if (gameRef.current.gamePhase === 'playing') {
+          const anyFrightened = gameRef.current.ghosts.some(g => g.mode === 'frightened');
+          soundManager.startGhostSiren(anyFrightened ? 'frightened' : 'normal');
+        }
+      }
+      return next;
+    });
   };
 
   return (
@@ -2123,14 +2144,15 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         <GameOverBanner show={gameOver} />
         
-        {paused && !gameOver && (
-          <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
-            <div className="text-white text-center">
-              <h2 className="text-4xl font-bold mb-4">PAUSED</h2>
-              <p className="text-xl">Press SPACE to continue</p>
-            </div>
+        <FadingCanvas
+          active={paused && !gameOver}
+          className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center"
+        >
+          <div className="text-white text-center">
+            <h2 className="text-4xl font-bold mb-4">PAUSED</h2>
+            <p className="text-xl">Press SPACE to continue</p>
           </div>
-        )}
+        </FadingCanvas>
         
         {!gameOver && gameRef.current.gamePhase === 'ready' && (
           <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">

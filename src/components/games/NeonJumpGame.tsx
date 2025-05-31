@@ -3,6 +3,7 @@ import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { GameOverBanner } from "../ui/GameOverBanner";
+import { FadingCanvas } from "../ui/FadingCanvas";
 
 // Types and Interfaces
 interface Vector2D {
@@ -7453,7 +7454,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           break;
         case 'escape':
           if (gameStarted && !gameOver) {
-            setPaused(!paused);
+            setPaused(prev => {
+              const next = !prev;
+              if (!next) {
+                canvasRef.current?.focus();
+              }
+              return next;
+            });
             uiManagerRef.current.showMenu(paused ? 'none' : 'pause');
             audioManagerRef.current.playMenuSelect();
           }
@@ -7464,7 +7471,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Pause handling
     if (e.key.toLowerCase() === 'escape' && gameStarted && !gameOver) {
-      setPaused(!paused);
+      setPaused(prev => {
+        const next = !prev;
+        if (!next) {
+          canvasRef.current?.focus();
+        }
+        return next;
+      });
       if (uiManagerRef.current) {
         uiManagerRef.current.showMenu(paused ? 'none' : 'pause');
       }
@@ -11645,19 +11658,28 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           <GameOverBanner show={gameOver} />
         )}
         
-        {paused && !gameOver && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
-            <div className="text-center">
-              <Pause className="w-16 h-16 text-white mb-4 mx-auto" />
-              <p className="text-2xl text-white">PAUSED</p>
-            </div>
+        <FadingCanvas
+          active={paused && !gameOver}
+          className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75"
+        >
+          <div className="text-center">
+            <Pause className="w-16 h-16 text-white mb-4 mx-auto" />
+            <p className="text-2xl text-white">PAUSED</p>
           </div>
-        )}
+        </FadingCanvas>
       </div>
       
       <div className="mt-4 flex gap-4">
         <button
-          onClick={() => setPaused(!paused)}
+          onClick={() => {
+            setPaused(prev => {
+              const next = !prev;
+              if (!next) {
+                canvasRef.current?.focus();
+              }
+              return next;
+            });
+          }}
           className="px-4 py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700 flex items-center gap-2"
           disabled={!gameStarted || gameOver}
         >
