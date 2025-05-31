@@ -60,6 +60,11 @@ export class SoundManager {
     this.playTone(1320, 200);
   }
 
+  // Play a warning beep used for expiring timers
+  playWarning(): void {
+    this.playTone(1000, 150);
+  }
+
   // Play a short "waka waka" sound for eating pellets
   playEatPellet(): void {
     if (!this.enabled) return;

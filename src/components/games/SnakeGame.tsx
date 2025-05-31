@@ -24,6 +24,13 @@ interface PowerUp {
   lifeTime: number;
 }
 
+interface ActivePowerUp {
+  type: PowerUp['type'];
+  remaining: number;
+  duration: number;
+  warned: boolean;
+}
+
 interface GameState {
   snake: Position[];
   direction: Direction;
@@ -57,6 +64,8 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
   const speedTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scoreFlashTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const activePowerUpsRef = useRef<ActivePowerUp[]>([]);
+  const lastFrameRef = useRef<number>(0);
   
   const gameRef = useRef<GameState>({
     snake: [{ x: 10, y: 10 }],
@@ -146,8 +155,22 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
     };
 
     const gameLoop = (timestamp: DOMHighResTimeStamp) => {
+      const frameDelta = lastFrameRef.current ? timestamp - lastFrameRef.current : 0;
+      lastFrameRef.current = timestamp;
+
       if (!paused && !gameOver) {
         const deltaTime = timestamp - gameRef.current.lastUpdate;
+        // Update active power-up timers
+        activePowerUpsRef.current = activePowerUpsRef.current
+          .map(p => {
+            const remaining = p.remaining - frameDelta;
+            if (!p.warned && remaining <= 1000 && remaining > 0) {
+              soundManager.playWarning();
+              return { ...p, remaining, warned: true } as ActivePowerUp;
+            }
+            return { ...p, remaining } as ActivePowerUp;
+          })
+          .filter(p => p.remaining > 0);
         
         if (deltaTime >= gameRef.current.speed) {
           const game = gameRef.current;
@@ -214,21 +237,27 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
                     case 'points':
                       setScore(s => s + 50);
                       break;
-                    case 'speed':
-                      game.speed = Math.max(50, game.speed - 20);
-                      // Clear existing timeout if any
-                      if (speedTimeoutRef.current) {
-                        clearTimeout(speedTimeoutRef.current);
-                      }
-                      speedTimeoutRef.current = setTimeout(() => {
-                        game.speed = settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100;
-                        speedTimeoutRef.current = null;
-                      }, 5000);
-                      break;
-                    case 'shield':
-                      setLives(l => Math.min(5, l + 1));
-                      break;
-                    case 'shrink':
+                case 'speed':
+                  game.speed = Math.max(50, game.speed - 20);
+                  // Clear existing timeout if any
+                  if (speedTimeoutRef.current) {
+                    clearTimeout(speedTimeoutRef.current);
+                  }
+                  speedTimeoutRef.current = setTimeout(() => {
+                    game.speed = settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100;
+                    speedTimeoutRef.current = null;
+                  }, 5000);
+                  activePowerUpsRef.current.push({
+                    type: 'speed',
+                    remaining: 5000,
+                    duration: 5000,
+                    warned: false
+                  });
+                  break;
+                case 'shield':
+                  setLives(l => Math.min(5, l + 1));
+                  break;
+                case 'shrink':
                       if (snake.length > 3) {
                         snake.splice(-2);
                       }
@@ -300,7 +329,37 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
           cellSize - 4,
           cellSize - 4
         );
-        ctx.shadowBlur = 0;
+      ctx.shadowBlur = 0;
+    });
+
+      // Draw active power-up icons near the head
+      const head = snake[0];
+      const headX = head.x * cellSize + cellSize / 2;
+      const headY = head.y * cellSize + cellSize / 2;
+      const iconSize = cellSize / 2.5;
+      const iconSpacing = iconSize + 4;
+      const colors: Record<PowerUp['type'], string> = {
+        speed: '#3b82f6',
+        points: '#f59e0b',
+        shield: '#8b5cf6',
+        shrink: '#ec4899'
+      };
+      activePowerUpsRef.current.forEach((ap, idx) => {
+        const x = headX + (idx - (activePowerUpsRef.current.length - 1) / 2) * iconSpacing;
+        const y = headY - cellSize;
+        ctx.fillStyle = colors[ap.type];
+        ctx.fillRect(x - iconSize / 2, y - iconSize / 2, iconSize, iconSize);
+        ctx.strokeStyle = colors[ap.type];
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(
+          x,
+          y,
+          iconSize * 0.7,
+          -Math.PI / 2,
+          -Math.PI / 2 + 2 * Math.PI * (ap.remaining / ap.duration)
+        );
+        ctx.stroke();
       });
 
       // Draw food with animation and subtle glow
