@@ -26,6 +26,10 @@ All games are now fully functional with proper rendering, controls, and performa
 - 🤖 **AI Integration**: OpenAI Codex ready with AGENTS.md configuration
 - 🏗️ **Modular Architecture**: Individual game components with optimized core systems
 
+### Quality Levels
+
+The games include **high**, **medium**, and **low** quality modes that adjust visual effects like shadows and particle density. By default, the app detects your device type and hardware concurrency to choose an appropriate level—mobile devices and low-core CPUs default to medium or low, while desktop systems use high. You can override this recommendation in the **Settings** modal.
+
 ## Quick Start
 
 ### Development
