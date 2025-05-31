@@ -659,15 +659,25 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     const detectPerformance = () => {
       const game = gameRef.current;
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      const isLowEndDevice = navigator.hardwareConcurrency ? navigator.hardwareConcurrency < 4 : false;
-      
-      if (isMobile) {
-        game.qualityLevel = isLowEndDevice ? 'low' : 'medium';
-        game.showDPad = true;
-      } else {
-        game.qualityLevel = 'high';
-        game.showDPad = false;
+
+      // Hardware metrics
+      const cores = navigator.hardwareConcurrency ?? 8;
+      const memory = (navigator as any).deviceMemory ?? 8;
+
+      // Thresholds for tuning
+      // Low:    cores < 4 or memory < 4GB
+      // Medium: cores < 8 or memory < 8GB
+      // High:   cores >= 8 and memory >= 8GB
+
+      let quality: 'high' | 'medium' | 'low' = 'high';
+      if (cores < 4 || memory < 4) {
+        quality = 'low';
+      } else if (cores < 8 || memory < 8) {
+        quality = 'medium';
       }
+
+      game.qualityLevel = quality;
+      game.showDPad = isMobile;
     };
 
     detectPerformance();
