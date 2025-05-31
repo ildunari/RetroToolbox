@@ -8299,19 +8299,25 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           
         case 'phase':
           if (!game.platformsFrozen) {
-            platform.phaseTimer = (platform.phaseTimer || 0) + deltaTime;
+            if (platform.phaseTimer != null) {
+              platform.phaseTimer += deltaTime;
+            }
           }
           platform.staticEffect = Math.random();
-          
+
           // Warning before phase change
-          if (platform.phaseTimer > PHASE_CYCLE_TIME - PHASE_WARNING_TIME) {
+          if (
+            platform.phaseTimer != null &&
+            platform.phaseTimer > PHASE_CYCLE_TIME - PHASE_WARNING_TIME
+          ) {
             platform.phaseWarning = true;
-            platform.glowIntensity = 0.3 + Math.sin(platform.phaseTimer * 0.5) * 0.7;
+            platform.glowIntensity =
+              0.3 + Math.sin(platform.phaseTimer * 0.5) * 0.7;
           } else {
             platform.phaseWarning = false;
           }
-          
-          if (platform.phaseTimer > PHASE_CYCLE_TIME) {
+
+          if (platform.phaseTimer != null && platform.phaseTimer > PHASE_CYCLE_TIME) {
             platform.phaseVisible = !platform.phaseVisible;
             platform.active = platform.phaseVisible;
             platform.phaseTimer = 0;
