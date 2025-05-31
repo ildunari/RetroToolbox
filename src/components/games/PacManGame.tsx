@@ -192,6 +192,26 @@ const MAZE_TEMPLATE: number[][] = [
   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 ];
 
+const LAYOUTS_KEY = 'pacmanLayouts';
+const SELECTED_LAYOUT_KEY = 'pacmanSelectedLayout';
+
+const getStoredMaze = (): number[][] => {
+  try {
+    const selected = localStorage.getItem(SELECTED_LAYOUT_KEY);
+    if (!selected) return MAZE_TEMPLATE;
+    const layoutsStr = localStorage.getItem(LAYOUTS_KEY);
+    if (!layoutsStr) return MAZE_TEMPLATE;
+    const layouts = JSON.parse(layoutsStr);
+    const layout = layouts[selected];
+    if (Array.isArray(layout) && layout.length === MAZE_HEIGHT) {
+      return layout as number[][];
+    }
+  } catch (err) {
+    console.warn('Failed to load custom maze', err);
+  }
+  return MAZE_TEMPLATE;
+};
+
 // Create numeric key for grid position (more efficient than string concatenation)
 const getGridKey = (row: number, col: number): string => `${row * 1000 + col}`;
 const parseGridKey = (key: string): [number, number] => {
@@ -265,8 +285,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   const initializeGame = useCallback((reset: boolean = false) => {
     const game = gameRef.current;
     
-    // Deep copy maze template
-    game.maze = MAZE_TEMPLATE.map(row => [...row]);
+    // Deep copy maze template (load custom layout if available)
+    game.maze = getStoredMaze().map(row => [...row]);
     
     // Initialize pellets with numeric keys
     game.pellets.clear();

@@ -9,6 +9,7 @@ import { TetrisGame } from './components/games/TetrisGame';
 import { SpaceInvadersGame } from './components/games/SpaceInvadersGame';
 import { PacManGame } from './components/games/PacManGame';
 import { NeonJumpGame } from './components/games/NeonJumpGame';
+import { LevelEditor } from './components/games/pacman/LevelEditor';
 import { useSettings } from './hooks/useSettings';
 import { useStats } from './hooks/useStats';
 import { cleanupInputManager } from './core/InputManager';
@@ -36,6 +37,7 @@ const games = [
 function App() {
   const [selectedGame, setSelectedGame] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [editingMaze, setEditingMaze] = useState(false);
   const [settings, setSettings] = useSettings();
   const { stats, updateHighScore, incrementGamesPlayed } = useStats();
 
@@ -108,7 +110,9 @@ function App() {
         />
       )}
       
-      {selectedGame ? (
+      {editingMaze ? (
+        <LevelEditor onBack={() => setEditingMaze(false)} />
+      ) : selectedGame ? (
         <div className="h-screen flex flex-col">
           <div className="bg-gradient-to-r from-gray-800 to-gray-900 p-4 flex items-center justify-between flex-shrink-0">
             <button
@@ -139,11 +143,12 @@ function App() {
           </div>
         </div>
       ) : (
-        <GameMenu 
+        <GameMenu
           games={games}
           stats={stats}
           onGameSelect={handleGameSelect}
           onShowSettings={() => setShowSettings(true)}
+          onEditMaze={() => setEditingMaze(true)}
         />
       )}
     </div>

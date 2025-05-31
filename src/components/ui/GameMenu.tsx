@@ -17,6 +17,7 @@ interface GameMenuProps {
   stats: Stats;
   onGameSelect: (gameId: string) => void;
   onShowSettings: () => void;
+  onEditMaze: () => void;
 }
 
 interface GameDetails {
@@ -34,7 +35,7 @@ const gameDetails: Record<string, GameDetails> = {
   pacman: { color: 'from-yellow-400 to-orange-600', description: 'Neon maze adventure!' }
 };
 
-export const GameMenu: React.FC<GameMenuProps> = ({ games, stats, onGameSelect, onShowSettings }) => (
+export const GameMenu: React.FC<GameMenuProps> = ({ games, stats, onGameSelect, onShowSettings, onEditMaze }) => (
   <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4 flex flex-col items-center justify-center">
     <div className="absolute inset-0 overflow-hidden">
       <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
@@ -79,6 +80,12 @@ export const GameMenu: React.FC<GameMenuProps> = ({ games, stats, onGameSelect, 
       >
         <Settings size={20} />
         Settings
+      </button>
+      <button
+        onClick={onEditMaze}
+        className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+      >
+        Edit Maze
       </button>
     </div>
   </div>
