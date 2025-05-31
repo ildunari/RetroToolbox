@@ -20,7 +20,7 @@ export const ResponsiveCanvas: React.FC<ResponsiveCanvasProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width, height });
-  const [scale, setScale] = useState(1);
+  const [_scale /* unused */, setScale] = useState(1);
 
   const calculateCanvasSize = useCallback(() => {
     if (!containerRef.current) return;

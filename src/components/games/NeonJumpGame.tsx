@@ -923,7 +923,7 @@ class ParticleManager {
     return particle;
   }
 
-  update(deltaTime: number): void {
+  update(_deltaTime /* unused */: number): void {
     // Periodic cleanup instead of emergency cleanup
     this.cleanupTimer += deltaTime;
     if (this.cleanupTimer >= this.CLEANUP_INTERVAL) {
@@ -1515,7 +1515,7 @@ class AudioManager {
   private musicGainNode: GainNode | null = null;
   private uiGainNode: GainNode | null = null;
   private activeSounds: Map<string, SoundInstance> = new Map();
-  private soundEffects: Map<string, AudioEffect[]> = new Map();
+  private _soundEffects /* unused */: Map<string, AudioEffect[]> = new Map();
   private convolver: ConvolverNode | null = null;
   private compressor: DynamicsCompressorNode | null = null;
   private enabled: boolean = true;
@@ -1880,7 +1880,7 @@ class AudioManager {
   }
 
   stopAllSounds(): void {
-    for (const [id, sound] of this.activeSounds) {
+    for (const [id, _sound /* unused */] of this.activeSounds) {
       this.stopSound(id);
     }
     this.activeSounds.clear();
@@ -2218,7 +2218,7 @@ class MusicManager {
   }
 
   private getLayerVolume(layerName: string, intensity: number): number {
-    const [theme, category] = layerName.split('_');
+    const [_theme /* unused */, category] = layerName.split('_');
     
     switch (category) {
       case 'ambient':
@@ -2315,7 +2315,7 @@ class MusicManager {
     }
   }
 
-  private executeStinger(name: string): void {
+  private executeStinger(_name /* unused */: string): void {
     // Play stinger sound effect
     // This would typically trigger a short musical phrase or sound effect
     // For now, we'll integrate with the AudioManager
@@ -2891,7 +2891,7 @@ class ScoreManager {
     ctx.restore();
   }
 
-  renderComboDisplay(ctx: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number): void {
+  renderComboDisplay(ctx: CanvasRenderingContext2D, canvasWidth: number): void {
     if (this.combo.count <= 1 || this.combo.displayAlpha <= 0) return;
     
     ctx.save();
@@ -3579,7 +3579,7 @@ class MobileOptimizationManager {
   private lastTouchEnd: number = 0;
   private touchHistory: Array<{ x: number; y: number; time: number }> = [];
   private orientationChangeHandler: () => void;
-  private serviceWorker: ServiceWorker | null = null;
+  private _serviceWorker /* unused */: ServiceWorker | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -4170,7 +4170,7 @@ class QualityAssuranceManager {
     console.error(`QA Manager - ${context}:`, error, details);
   }
 
-  private attemptErrorRecovery(error: Error, context: string): void {
+  private attemptErrorRecovery(_error /* unused */: Error, context: string): void {
     // Implement specific recovery strategies based on error type
     if (context.includes('Audio')) {
       // Attempt to recreate audio context
@@ -4747,7 +4747,7 @@ class RetroToolboxIntegrationManager {
  */
 class DocumentationSystemManager {
   private documentation: DocumentationSystem;
-  private codeAnalyzer: any = null;
+  private _codeAnalyzer /* unused */: any = null;
 
   constructor() {
     this.documentation = this.initializeDocumentation();
@@ -5168,7 +5168,7 @@ class AdvancedPerformanceManager {
   private frameTimeHistory: number[] = [];
   private memoryMonitor: any = null;
   private qualityAdjustmentTimer: NodeJS.Timeout | null = null;
-  private benchmark: any = null;
+  private _benchmark /* unused */: any = null;
   public frameTimeMonitor: any = null;
 
   constructor() {
@@ -5578,7 +5578,7 @@ class AdvancedPerformanceManager {
 
   getCurrentQualityLevel(): string {
     // Determine current quality level based on settings
-    const qualities = this.performance.adaptiveQuality.qualityLevels;
+    const _qualities /* unused */ = this.performance.adaptiveQuality.qualityLevels;
     // This would be determined by current active settings
     return 'high'; // Placeholder
   }
@@ -5848,7 +5848,7 @@ class ExtensibilityFrameworkManager {
       {
         name: 'platformReachability',
         description: 'Ensures all platforms are reachable',
-        validate: (level: any) => {
+        validate: (_level /* unused */: any) => {
           // Implementation would check if platforms form a valid path
           return { valid: true, message: '' };
         }
@@ -5870,7 +5870,7 @@ class ExtensibilityFrameworkManager {
       {
         name: 'powerUpDistribution',
         description: 'Validates power-up placement',
-        validate: (level: any) => {
+        validate: (_level /* unused */: any) => {
           // Check if power-ups are reasonably spaced
           return { valid: true, message: '' };
         }
@@ -6821,7 +6821,7 @@ class ProductionReadinessManager {
 
 export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const offscreenCanvasRef = useRef<OffscreenCanvas | null>(null);
+  const _offscreenCanvasRef /* unused */ = useRef<OffscreenCanvas | null>(null);
   const [gameStarted, setGameStarted] = useState(false);
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
@@ -6853,7 +6853,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const mobileOptimizationManagerRef = useRef<MobileOptimizationManager | null>(null);
   const qualityAssuranceManagerRef = useRef<QualityAssuranceManager>(new QualityAssuranceManager());
   const retroToolboxIntegrationManagerRef = useRef<RetroToolboxIntegrationManager>(new RetroToolboxIntegrationManager());
-  const documentationSystemManagerRef = useRef<DocumentationSystemManager>(new DocumentationSystemManager());
+  const _documentationSystemManagerRef /* unused */ = useRef<DocumentationSystemManager>(new DocumentationSystemManager());
   const advancedPerformanceManagerRef = useRef<AdvancedPerformanceManager>(new AdvancedPerformanceManager());
   const extensibilityFrameworkManagerRef = useRef<ExtensibilityFrameworkManager>(new ExtensibilityFrameworkManager());
   const productionReadinessManagerRef = useRef<ProductionReadinessManager>(new ProductionReadinessManager());
@@ -7082,7 +7082,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Predict player trajectory
     const predictedVelY = Math.min(player.velocity.y + GRAVITY * 30, MAX_FALL_SPEED);
-    const predictedHeight = Math.abs(predictedVelY * 30); // 30 frames ahead
+    const _predictedHeight /* unused */ = Math.abs(predictedVelY * 30); // 30 frames ahead
     
     // Adjust gap based on player state
     const dynamicGapY = player.velocity.y < 0 ? 
@@ -7977,7 +7977,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   }, []);
 
   // Check enemy and projectile collisions
-  const checkEnemyCollisions = useCallback(() => {
+  const _checkEnemyCollisions /* unused */ = useCallback(() => {
     const game = gameRef.current;
     const player = game.player;
     
@@ -9253,7 +9253,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
 
   // Handle power-up collection
   const handlePowerUpCollection = useCallback((powerUp: PowerUp) => {
-    const game = gameRef.current;
     powerUp.collected = true;
     powerUp.active = false;
     
@@ -10810,7 +10809,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // CHECKPOINT 6: Render Audio & Polish Systems
     scoreManagerRef.current.renderScoreEffects(ctx, game.camera);
-    scoreManagerRef.current.renderComboDisplay(ctx, canvas.width, canvas.height);
+    scoreManagerRef.current.renderComboDisplay(ctx, canvas.width);
     if (gameFeelManagerRef.current) {
       gameFeelManagerRef.current.applyScreenEffects(ctx);
     }
@@ -11349,7 +11348,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
     
     // Subscribe to RetroToolbox theme changes
-    const unsubscribeSettings = retroToolboxIntegrationManagerRef.current.subscribeToSettings((newSettings) => {
+    const _unsubscribeSettings /* unused */ = retroToolboxIntegrationManagerRef.current.subscribeToSettings((newSettings) => {
       // Update game settings when RetroToolbox settings change
       Object.assign(settings, newSettings);
       
@@ -11368,13 +11367,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Set up CHECKPOINT 7 event listeners
     themeChangeHandlerRef.current = (e: any) => {
       // Apply theme changes to game rendering
-      const theme = e.detail;
+      const _theme /* unused */ = e.detail;
       // Implementation would update game colors based on theme
     };
     
     qualityChangeHandlerRef.current = (e: any) => {
       // Apply quality changes to game systems
-      const { level, settings: qualitySettings } = e.detail;
+      const { level: _level /* unused */, settings: qualitySettings } = e.detail;
       if (particleManagerRef.current) {
         particleManagerRef.current.setParticleQualityMultiplier(qualitySettings.particles);
       }

@@ -258,7 +258,7 @@ export const TransitionExample: React.FC = () => {
   const { transitioning, startTransition, endTransition } = useTransition();
   const [currentScreen, setCurrentScreen] = useState('menu');
 
-  const changeScreen = (newScreen: string) => {
+  const _changeScreen /* unused */ = (newScreen: string) => {
     startTransition(() => {
       setCurrentScreen(newScreen);
       setTimeout(endTransition, 50);

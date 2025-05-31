@@ -1,4 +1,4 @@
-import React, { useEffect, useState, forwardRef, ReactNode, HTMLAttributes } from 'react';
+import { useEffect, useState, forwardRef, ReactNode, HTMLAttributes } from 'react';
 
 interface FadingCanvasProps extends HTMLAttributes<HTMLCanvasElement> {
   active?: boolean;
