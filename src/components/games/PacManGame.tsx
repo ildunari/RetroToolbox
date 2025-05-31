@@ -94,12 +94,14 @@ interface GameState {
     timer: number;
   } | null;
   fruitSpawnCount: number;
+  manualGhostDir: Direction;
 }
 
 interface PacManGameProps {
   settings: {
     soundEnabled: boolean;
     difficulty: 'easy' | 'normal' | 'hard';
+    multiplayer: boolean;
   };
   updateHighScore: (gameId: string, score: number) => void;
 }
@@ -210,6 +212,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   const particlePoolRef = useRef(new ParticlePool());
   const powerUpIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const animationIdRef = useRef<number | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   
   const gameRef = useRef<GameState>({
     pacman: {
@@ -258,7 +261,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     qualityLevel: 'high',
     showDPad: false,
     fruit: null,
-    fruitSpawnCount: 0
+    fruitSpawnCount: 0,
+    manualGhostDir: 'none'
   });
 
   // Initialize game
@@ -372,7 +376,41 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     game.levelCompleteTimer = 0;
     game.fruit = null;
     game.fruitSpawnCount = 0;
+    game.manualGhostDir = 'none';
   }, []);
+
+  useEffect(() => {
+    if (!settings.multiplayer) {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      return;
+    }
+
+    const ws = new WebSocket(`ws://${location.hostname}:3010`);
+    wsRef.current = ws;
+
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'state') {
+          const ghost = gameRef.current.ghosts.find(g => g.id === 'blinky');
+          if (ghost) {
+            ghost.position = msg.payload.position;
+            ghost.gridPos = msg.payload.gridPos;
+            ghost.mode = msg.payload.mode;
+          }
+        }
+      } catch {
+        // Ignore malformed messages
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [settings.multiplayer]);
 
   // Create particles with pooling
   const createParticles = useCallback((x: number, y: number, color: string, count: number = 10) => {
@@ -535,6 +573,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       }
       
       let nextDir: Direction = 'none';
+      let ghostDir: Direction = 'none';
       
       switch (e.key) {
         case 'ArrowUp':
@@ -553,10 +592,32 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         case 'd':
           nextDir = 'right';
           break;
+        case 'i':
+          ghostDir = 'up';
+          break;
+        case 'k':
+          ghostDir = 'down';
+          break;
+        case 'j':
+          ghostDir = 'left';
+          break;
+        case 'l':
+          ghostDir = 'right';
+          break;
       }
       
       if (nextDir !== 'none') {
         game.pacman.nextDirection = nextDir;
+        if (game.gamePhase === 'ready') {
+          game.gamePhase = 'playing';
+          if (settings.soundEnabled) {
+            soundManager.startGhostSiren('normal');
+          }
+        }
+      }
+
+      if (settings.multiplayer && ghostDir !== 'none') {
+        game.manualGhostDir = ghostDir;
         if (game.gamePhase === 'ready') {
           game.gamePhase = 'playing';
           if (settings.soundEnabled) {
@@ -654,6 +715,38 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     };
   }, []);
 
+  const updateGamepadInput = useCallback(() => {
+    const game = gameRef.current;
+    const pads = navigator.getGamepads();
+    const pad = pads[0];
+    const threshold = 0.5;
+    if (!pad) return;
+
+    if (pad.axes[1] < -threshold || pad.buttons[12]?.pressed) {
+      game.pacman.nextDirection = 'up';
+    } else if (pad.axes[1] > threshold || pad.buttons[13]?.pressed) {
+      game.pacman.nextDirection = 'down';
+    } else if (pad.axes[0] < -threshold || pad.buttons[14]?.pressed) {
+      game.pacman.nextDirection = 'left';
+    } else if (pad.axes[0] > threshold || pad.buttons[15]?.pressed) {
+      game.pacman.nextDirection = 'right';
+    }
+
+    if (settings.multiplayer) {
+      if (pad.axes[3] < -threshold) {
+        game.manualGhostDir = 'up';
+      } else if (pad.axes[3] > threshold) {
+        game.manualGhostDir = 'down';
+      } else if (pad.axes[2] < -threshold) {
+        game.manualGhostDir = 'left';
+      } else if (pad.axes[2] > threshold) {
+        game.manualGhostDir = 'right';
+      } else {
+        game.manualGhostDir = 'none';
+      }
+    }
+  }, [settings.multiplayer]);
+
   // Detect device performance and set quality level
   useEffect(() => {
     const detectPerformance = () => {
@@ -699,6 +792,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         }
         const deltaTime = (timestamp - game.lastUpdate) / 1000;
         game.lastUpdate = timestamp;
+        updateGamepadInput();
         
         if (deltaTime > 0.1) {
           animationIdRef.current = requestAnimationFrame(gameLoop);
@@ -1113,9 +1207,15 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         if (game.freezeTimer > 0 && ghost.mode !== 'eaten') {
           return;
         }
-        
+
         // Update AI target
         updateGhostAI(ghost);
+
+        if (settings.multiplayer && ghost.id === 'blinky' && game.manualGhostDir !== 'none') {
+          if (canMove(ghost.gridPos, game.manualGhostDir)) {
+            ghost.direction = game.manualGhostDir;
+          }
+        }
         
         // Move ghost smoothly
         const currentGridCenter = gridToPixel(ghost.gridPos);
@@ -1217,6 +1317,17 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           const newGridPos = pixelToGrid(ghost.position);
           if (newGridPos.row !== ghost.gridPos.row || newGridPos.col !== ghost.gridPos.col) {
             ghost.gridPos = newGridPos;
+          }
+
+          if (settings.multiplayer && ghost.id === 'blinky' && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+              type: 'update',
+              payload: {
+                position: ghost.position,
+                gridPos: ghost.gridPos,
+                mode: ghost.mode
+              }
+            }));
           }
         }
       });

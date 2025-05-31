@@ -5,6 +5,7 @@ interface Settings {
   soundEnabled: boolean;
   volume: number;
   difficulty: string;
+  multiplayer: boolean;
 }
 
 interface SettingsModalProps {
@@ -53,6 +54,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSettin
             <option value="normal">Normal</option>
             <option value="hard">Hard</option>
           </select>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <label className="text-white">Multiplayer</label>
+          <button
+            onClick={() => onSettingsChange({ ...settings, multiplayer: !settings.multiplayer })}
+            className={`p-2 rounded ${settings.multiplayer ? 'bg-green-600' : 'bg-gray-600'}`}
+          >
+            {settings.multiplayer ? 'On' : 'Off'}
+          </button>
         </div>
       </div>
       
