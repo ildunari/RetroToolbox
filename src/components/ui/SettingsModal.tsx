@@ -4,6 +4,7 @@ import { Volume2, VolumeX } from 'lucide-react';
 interface Settings {
   soundEnabled: boolean;
   volume: number;
+  musicVolume: number;
   difficulty: string;
 }
 
@@ -38,6 +39,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSettin
             step="0.1"
             value={settings.volume}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSettingsChange({ ...settings, volume: parseFloat(e.target.value) })}
+            className="w-32"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <label className="text-white">Music Volume</label>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={settings.musicVolume}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSettingsChange({ ...settings, musicVolume: parseFloat(e.target.value) })}
             className="w-32"
           />
         </div>

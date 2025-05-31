@@ -3,6 +3,7 @@ import { useState, useEffect, Dispatch, SetStateAction } from 'react';
 export interface GameSettings {
   soundEnabled: boolean;
   volume: number;
+  musicVolume: number;
   difficulty: 'easy' | 'normal' | 'hard';
   theme: 'neon' | 'retro' | 'minimal';
 }
@@ -12,6 +13,7 @@ export type UseSettingsReturn = [GameSettings, Dispatch<SetStateAction<GameSetti
 const DEFAULT_SETTINGS: GameSettings = {
   soundEnabled: true,
   volume: 0.5,
+  musicVolume: 0.6,
   difficulty: 'normal',
   theme: 'neon'
 };
@@ -33,9 +35,15 @@ const validateSettings = (data: unknown): GameSettings | null => {
       return null;
     }
 
-    if (typeof settings.volume !== 'number' || 
-        settings.volume < 0 || 
+    if (typeof settings.volume !== 'number' ||
+        settings.volume < 0 ||
         settings.volume > 1) {
+      return null;
+    }
+
+    if (typeof settings.musicVolume !== 'number' ||
+        settings.musicVolume < 0 ||
+        settings.musicVolume > 1) {
       return null;
     }
 
@@ -50,6 +58,7 @@ const validateSettings = (data: unknown): GameSettings | null => {
     return {
       soundEnabled: settings.soundEnabled,
       volume: settings.volume,
+      musicVolume: settings.musicVolume,
       difficulty: settings.difficulty as 'easy' | 'normal' | 'hard',
       theme: settings.theme as 'neon' | 'retro' | 'minimal'
     };

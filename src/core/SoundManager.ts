@@ -165,3 +165,79 @@ export class SoundManager {
 
 // Export a singleton instance
 export const soundManager = new SoundManager();
+
+export class ProceduralMusic {
+  private gainNode: GainNode;
+  private isPlaying = false;
+  private pattern: number[] = [];
+  private timer: number | null = null;
+  private tempo = 120;
+  private noteIndex = 0;
+  private height = 0;
+  private danger = 0;
+
+  constructor(private volume: number = 0.6) {
+    this.gainNode = audioContext.createGain();
+    this.gainNode.gain.value = volume;
+    this.gainNode.connect(audioContext.destination);
+    this.generatePattern();
+  }
+
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+    this.gainNode.gain.setValueAtTime(this.volume, audioContext.currentTime);
+  }
+
+  update(height: number, danger: number): void {
+    this.height = height;
+    this.danger = danger;
+    this.generatePattern();
+  }
+
+  start(): void {
+    if (this.isPlaying) return;
+    this.isPlaying = true;
+    this.noteIndex = 0;
+    this.scheduleNext();
+  }
+
+  stop(): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.isPlaying = false;
+  }
+
+  private scheduleNext(): void {
+    if (!this.isPlaying) return;
+    const interval = (60 / this.tempo) * 1000;
+    this.playNote(this.pattern[this.noteIndex % this.pattern.length]);
+    this.noteIndex++;
+    this.timer = window.setTimeout(() => this.scheduleNext(), interval);
+  }
+
+  private playNote(freq: number): void {
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.frequency.value = freq;
+    gain.gain.value = this.volume * 0.5;
+    osc.connect(gain);
+    gain.connect(this.gainNode);
+    osc.start();
+    osc.stop(audioContext.currentTime + 0.25);
+  }
+
+  private generatePattern(): void {
+    const baseScale = [60, 62, 64, 65, 67, 69, 71];
+    const dangerScale = [60, 61, 63, 66, 67, 69, 72];
+    const scale = this.danger > 0.5 ? dangerScale : baseScale;
+    const offset = Math.floor(this.height / 100);
+    this.pattern = [];
+    for (let i = 0; i < 8; i++) {
+      const note = scale[(i + offset) % scale.length];
+      const freq = 440 * Math.pow(2, (note - 69) / 12);
+      this.pattern.push(freq);
+    }
+  }
+}

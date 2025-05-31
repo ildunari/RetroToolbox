@@ -2212,12 +2212,39 @@ class MusicManager {
   private startLayer(layerName: string): void {
     const layer = this.state.layers[layerName];
     if (!layer || layer.source) return;
-    
+
     layer.source = this.audioContext.createBufferSource();
     layer.source.buffer = layer.buffer;
     layer.source.loop = true;
     layer.source.connect(layer.gainNode);
     layer.source.start(this.audioContext.currentTime);
+  }
+
+  private manageLayersByIntensity(): void {
+    Object.keys(this.state.layers).forEach(layerName => {
+      if (!layerName.startsWith(this.state.currentTheme)) return;
+      const layer = this.state.layers[layerName];
+      const intensity = this.state.intensity;
+      let active = false;
+      switch (layer.category) {
+        case 'ambient':
+          active = intensity > 0;
+          break;
+        case 'bass':
+          active = intensity >= 0.3;
+          break;
+        case 'melody':
+          active = intensity >= 0.4;
+          break;
+        case 'percussion':
+          active = intensity >= 0.6;
+          break;
+      }
+      layer.targetVolume = active ? this.getLayerVolume(layerName, intensity) : 0;
+      if (active) {
+        this.startLayer(layerName);
+      }
+    });
   }
 
   playStinger(name: string, priority: number = 1, delay: number = 0): void {
@@ -2270,14 +2297,7 @@ class MusicManager {
     }
     
     // Update current theme layer target volumes based on intensity
-    Object.keys(this.state.layers).forEach(layerName => {
-      if (layerName.startsWith(this.state.currentTheme)) {
-        this.state.layers[layerName].targetVolume = this.getLayerVolume(layerName, this.state.intensity);
-        if (this.state.layers[layerName].targetVolume > 0) {
-          this.startLayer(layerName);
-        }
-      }
-    });
+    this.manageLayersByIntensity();
     
     // Process stinger queue
     if (this.state.stingerQueue.length > 0) {
@@ -11404,9 +11424,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       
       // Update audio volumes
       audioManagerRef.current.setVolume('master', newSettings.soundEnabled ? 1 : 0);
-      audioManagerRef.current.setVolume('effects', newSettings.soundEnabled ? 0.8 : 0);
-      audioManagerRef.current.setVolume('music', newSettings.soundEnabled ? 0.6 : 0);
-      audioManagerRef.current.setVolume('ui', newSettings.soundEnabled ? 0.7 : 0);
+      audioManagerRef.current.setVolume('effects', newSettings.soundEnabled ? newSettings.volume : 0);
+      audioManagerRef.current.setVolume('music', newSettings.soundEnabled ? newSettings.musicVolume : 0);
+      audioManagerRef.current.setVolume('ui', newSettings.soundEnabled ? newSettings.volume : 0);
     });
     
     // Enable mobile optimizations if on mobile device
@@ -11450,9 +11470,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Configure audio volumes based on settings
     audioManagerRef.current.setVolume('master', settings.soundEnabled ? 1 : 0);
-    audioManagerRef.current.setVolume('effects', settings.soundEnabled ? 0.8 : 0);
-    audioManagerRef.current.setVolume('music', settings.soundEnabled ? 0.6 : 0);
-    audioManagerRef.current.setVolume('ui', settings.soundEnabled ? 0.7 : 0);
+    audioManagerRef.current.setVolume('effects', settings.soundEnabled ? settings.volume : 0);
+    audioManagerRef.current.setVolume('music', settings.soundEnabled ? settings.musicVolume : 0);
+    audioManagerRef.current.setVolume('ui', settings.soundEnabled ? settings.volume : 0);
     
     // Initialize game
     initializePlatforms();

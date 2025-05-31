@@ -1,6 +1,7 @@
 export interface GameSettings {
   soundEnabled: boolean;
   volume: number;
+  musicVolume: number;
   difficulty: 'easy' | 'normal' | 'hard';
   theme: string;
 }
