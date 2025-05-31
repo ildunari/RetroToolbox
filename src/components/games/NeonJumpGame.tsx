@@ -3,6 +3,8 @@ import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { GameOverBanner } from "../ui/GameOverBanner";
+import { analyticsManager } from '../../core/AnalyticsManager';
+import * as tf from '@tensorflow/tfjs';
 
 // Types and Interfaces
 interface Vector2D {
@@ -6816,6 +6818,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const keysRef = useRef<Set<string>>(new Set());
   const touchStartRef = useRef<Vector2D | null>(null);
   const gamepadRef = useRef<Gamepad | null>(null);
+  const gameStartTimeRef = useRef<number>(0);
+  const spawnModelRef = useRef<tf.LayersModel | null>(null);
   
   // Enhanced touch controls for horizontal movement
   const touchStartXRef = useRef<number | null>(null);
@@ -7303,10 +7307,20 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const game = gameRef.current;
     
     // Calculate spawn interval based on height
-    const spawnInterval = Math.max(
+    let spawnInterval = Math.max(
       ENEMY_SPAWN_BASE_INTERVAL - (game.level - 1) * 10,
       100
     );
+
+    if (spawnModelRef.current) {
+      const scorePerMinute =
+        (scoreManagerRef.current.getSessionScore() /
+          Math.max(1, (Date.now() - gameStartTimeRef.current) / 60000));
+      const pred = spawnModelRef.current
+        .predict(tf.tensor2d([[game.level, scorePerMinute]])) as tf.Tensor;
+      const adj = (pred.dataSync()[0] as number) || 1;
+      spawnInterval = Math.max(100, ENEMY_SPAWN_BASE_INTERVAL / adj);
+    }
     
     // Check if we should spawn
     const currentHeight = Math.abs(game.camera.y);
@@ -9279,7 +9293,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // Handle game over
   const handleGameOver = useCallback(() => {
     const game = gameRef.current;
-    
+
     setGameOver(true);
     
     // Enhanced Game Over Audio and UI
@@ -9293,6 +9307,12 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     game.score = finalScore;
     updateHighScore('neonJump', finalScore);
     scoreManagerRef.current.saveHighScore();
+
+    analyticsManager.recordRun({
+      score: finalScore,
+      level: game.level,
+      duration: Date.now() - gameStartTimeRef.current
+    });
   }, [updateHighScore]);
 
   // Handle power-up collection
@@ -11359,6 +11379,22 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [calculateCanvasSize]);
+
+  // Load TensorFlow.js model for enemy spawn prediction
+  useEffect(() => {
+    tf.loadLayersModel('/models/enemySpawnModel/model.json')
+      .then(model => {
+        spawnModelRef.current = model;
+      })
+      .catch(err => console.warn('Failed to load spawn model', err));
+  }, []);
+
+  // Record start time when game begins
+  useEffect(() => {
+    if (gameStarted) {
+      gameStartTimeRef.current = Date.now();
+    }
+  }, [gameStarted]);
 
   // Setup and cleanup
   useEffect(() => {
