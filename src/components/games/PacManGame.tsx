@@ -981,6 +981,18 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           game.combo++;
           game.comboTimer = 2;
           setCombo(game.combo);
+
+          // Show "+combo" floating text near Pac-Man
+          const comboParticle = particlePoolRef.current.getParticle(
+            pacman.position.x,
+            pacman.position.y - 15,
+            0,
+            -30,
+            '#ffff00',
+            1
+          );
+          comboParticle.text = `+${game.combo}`;
+          comboParticle.fontSize = 12;
           game.globalDotCounter++;
           game.pelletsEaten++;
           createParticles(pacman.position.x, pacman.position.y, '#ffff00', 5);
@@ -1448,6 +1460,18 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
             game.combo++;
             game.comboTimer = 2;
             setCombo(game.combo);
+
+            // Show "+combo" floating text near Pac-Man
+            const comboParticle = particlePoolRef.current.getParticle(
+              pacman.position.x,
+              pacman.position.y - 15,
+              0,
+              -30,
+              '#ffff00',
+              1
+            );
+            comboParticle.text = `+${game.combo}`;
+            comboParticle.fontSize = 12;
             createParticles(ghost.position.x, ghost.position.y, ghost.color, 20);
             
             // Display ghost score value
