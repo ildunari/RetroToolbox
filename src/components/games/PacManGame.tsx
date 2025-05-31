@@ -59,9 +59,9 @@ interface GameState {
   };
   ghosts: Ghost[];
   maze: number[][];
-  pellets: Set<string>;
-  powerPellets: Set<string>;
-  powerUps: Map<string, PowerUp>;
+  pellets: Set<number>;
+  powerPellets: Set<number>;
+  powerUps: Map<number, PowerUp>;
   score: number;
   lives: number;
   level: number;
@@ -193,10 +193,9 @@ const MAZE_TEMPLATE: number[][] = [
 ];
 
 // Create numeric key for grid position (more efficient than string concatenation)
-const getGridKey = (row: number, col: number): string => `${row * 1000 + col}`;
-const parseGridKey = (key: string): [number, number] => {
-  const num = parseInt(key);
-  return [Math.floor(num / 1000), num % 1000];
+const getGridKey = (row: number, col: number): number => row * 1000 + col;
+const parseGridKey = (key: number): [number, number] => {
+  return [Math.floor(key / 1000), key % 1000];
 };
 
 export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScore }) => {
@@ -229,9 +228,9 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     },
     ghosts: [],
     maze: [],
-    pellets: new Set(),
-    powerPellets: new Set(),
-    powerUps: new Map(),
+    pellets: new Set<number>(),
+    powerPellets: new Set<number>(),
+    powerUps: new Map<number, PowerUp>(),
     score: 0,
     lives: 3,
     level: 1,
@@ -1355,10 +1354,10 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     // A* pathfinding implementation
     const findPath = (start: GridPosition, end: GridPosition, maze: number[][]): GridPosition[] => {
       const openSet: GridPosition[] = [start];
-      const closedSet = new Set<string>();
-      const cameFrom = new Map<string, GridPosition>();
-      const gScore = new Map<string, number>();
-      const fScore = new Map<string, number>();
+      const closedSet = new Set<number>();
+      const cameFrom = new Map<number, GridPosition>();
+      const gScore = new Map<number, number>();
+      const fScore = new Map<number, number>();
       
       gScore.set(getGridKey(start.row, start.col), 0);
       fScore.set(getGridKey(start.row, start.col), getDistance(start, end));
