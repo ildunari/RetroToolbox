@@ -5,6 +5,7 @@ interface Settings {
   soundEnabled: boolean;
   volume: number;
   difficulty: string;
+  dpadSensitivity: number;
 }
 
 interface SettingsModalProps {
@@ -53,6 +54,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSettin
             <option value="normal">Normal</option>
             <option value="hard">Hard</option>
           </select>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <label className="text-white">D-pad Sensitivity</label>
+          <input
+            type="range"
+            min="10"
+            max="100"
+            step="5"
+            value={settings.dpadSensitivity}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              onSettingsChange({ ...settings, dpadSensitivity: parseInt(e.target.value, 10) })
+            }
+            className="w-32"
+          />
         </div>
       </div>
       

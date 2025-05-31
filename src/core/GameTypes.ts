@@ -3,6 +3,10 @@ export interface GameSettings {
   volume: number;
   difficulty: 'easy' | 'normal' | 'hard';
   theme: string;
+  /**
+   * Minimum swipe distance in pixels required for directional input.
+   */
+  dpadSensitivity: number;
 }
 
 export interface GameStats {

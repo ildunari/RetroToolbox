@@ -100,6 +100,7 @@ interface PacManGameProps {
   settings: {
     soundEnabled: boolean;
     difficulty: 'easy' | 'normal' | 'hard';
+    dpadSensitivity: number;
   };
   updateHighScore: (gameId: string, score: number) => void;
 }
@@ -577,6 +578,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
 
     let touchStartX = 0;
     let touchStartY = 0;
+    const sensitivity = settings.dpadSensitivity || 30;
 
     const handleTouchStart = (e: TouchEvent) => {
       touchStartX = e.touches[0].clientX;
@@ -624,17 +626,35 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       }
     };
 
+    const handleTouchMove = (e: TouchEvent) => {
+      const moveX = e.touches[0].clientX - touchStartX;
+      const moveY = e.touches[0].clientY - touchStartY;
+      if (Math.abs(moveX) > sensitivity || Math.abs(moveY) > sensitivity) {
+        if (Math.abs(moveX) > Math.abs(moveY)) {
+          gameRef.current.pacman.nextDirection = moveX > 0 ? 'right' : 'left';
+        } else {
+          gameRef.current.pacman.nextDirection = moveY > 0 ? 'down' : 'up';
+        }
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }
+    };
+
     const handleTouchEnd = (e: TouchEvent) => {
       const touchEndX = e.changedTouches[0].clientX;
       const touchEndY = e.changedTouches[0].clientY;
-      
+
       const dx = touchEndX - touchStartX;
       const dy = touchEndY - touchStartY;
-      
+
       if (Math.abs(dx) > Math.abs(dy)) {
-        gameRef.current.pacman.nextDirection = dx > 0 ? 'right' : 'left';
+        if (Math.abs(dx) > sensitivity) {
+          gameRef.current.pacman.nextDirection = dx > 0 ? 'right' : 'left';
+        }
       } else {
-        gameRef.current.pacman.nextDirection = dy > 0 ? 'down' : 'up';
+        if (Math.abs(dy) > sensitivity) {
+          gameRef.current.pacman.nextDirection = dy > 0 ? 'down' : 'up';
+        }
       }
       
       if (gameRef.current.gamePhase === 'ready') {
@@ -646,13 +666,15 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     };
 
     canvas.addEventListener('touchstart', handleTouchStart);
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
     canvas.addEventListener('touchend', handleTouchEnd);
 
     return () => {
       canvas.removeEventListener('touchstart', handleTouchStart);
+      canvas.removeEventListener('touchmove', handleTouchMove);
       canvas.removeEventListener('touchend', handleTouchEnd);
     };
-  }, []);
+  }, [settings]);
 
   // Detect device performance and set quality level
   useEffect(() => {
