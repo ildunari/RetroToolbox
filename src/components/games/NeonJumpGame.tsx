@@ -988,7 +988,11 @@ class ParticleManager {
   render(ctx: CanvasRenderingContext2D, camera: Vector2D): void {
     for (const particle of this.particles) {
       if (!particle || !particle.position || !particle.active || particle.alpha <= 0) continue;
-      
+
+      if (particle.size === undefined) {
+        particle.size = 4;
+      }
+
       ctx.save();
       
       // Set blend mode
@@ -2871,10 +2875,13 @@ class ScoreManager {
 
   renderScoreEffects(ctx: CanvasRenderingContext2D, camera: Vector2D): void {
     ctx.save();
-    
+
     // Render score particles
     this.displayParticles.forEach(particle => {
       if (particle && particle.x !== undefined && particle.y !== undefined) {
+        if (particle.size === undefined) {
+          particle.size = 4;
+        }
         ctx.save();
         ctx.globalAlpha = particle.alpha;
         ctx.fillStyle = particle.color;
@@ -10590,6 +10597,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         const y = particle.y !== undefined ? particle.y : particle.position?.y;
         
         if (x !== undefined && y !== undefined) {
+          if (particle.size === undefined) {
+            particle.size = 4;
+          }
           ctx.save();
           ctx.globalAlpha = particle.alpha !== undefined ? particle.alpha : particle.life;
           ctx.fillStyle = particle.color;

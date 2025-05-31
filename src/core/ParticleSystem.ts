@@ -33,6 +33,9 @@ export class Particle {
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
+    if (this.size === undefined) {
+      this.size = 4;
+    }
     const alpha = this.life / this.maxLife;
     
     if (this.text && this.fontSize) {
