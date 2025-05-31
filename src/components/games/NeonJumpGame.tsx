@@ -6912,11 +6912,20 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       trailParticles: [],
       shieldBubbleAlpha: 0,
       magnetFieldAlpha: 0,
-      
+
       // Visual Enhancement Properties
       afterimageTrail: [],
       motionBlur: { enabled: false, intensity: 0, samples: [] },
-      glowData: { intensity: 1, color: '#00ffff', size: 5, pulse: 0, bloom: true }
+      glowData: { intensity: 1, color: '#00ffff', size: 5, pulse: 0, bloom: true },
+
+      // Legacy compatibility fields
+      shield: false,
+      lives: 3,
+      x: 200,
+      y: 300,
+      velocityY: 0,
+      isJumping: false,
+      isDucking: false
     },
     platforms: [],
     enemies: [],
@@ -6964,6 +6973,14 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     weatherIntensity: 0.5,
     lightingPoints: []
   });
+
+  // Keep legacy player fields in sync with modern properties
+  const syncLegacyPlayerFields = (player: Player) => {
+    player.x = player.position.x;
+    player.y = player.position.y;
+    player.velocityY = player.velocity.y;
+    player.isJumping = player.state === 'jumping';
+  };
 
 
 
@@ -7661,6 +7678,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const game = gameRef.current;
     const player = game.player;
     const keys = keysRef.current;
+
+    // Map current input to legacy fields
+    player.isDucking = keys.has('arrowdown') || keys.has('s');
     
     // Update gamepad input
     updateGamepadInput();
@@ -7803,6 +7823,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       updateHighScore('neonJump', finalScore);
       scoreManagerRef.current.saveHighScore();
     }
+
+    // Sync legacy fields after physics and state updates
+    syncLegacyPlayerFields(player);
   }, [updateGamepadInput]);
 
   // Platform collision detection
@@ -10796,7 +10819,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       game.level = newLevel;
       game.gameSpeed = 1 + (newLevel - 1) * 0.1;
     }
-    
+
+    // Ensure legacy fields stay updated
+    syncLegacyPlayerFields(game.player);
+
     // Clear and render
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     renderBackground(ctx);
@@ -10929,7 +10955,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       // Add missing properties for backward compatibility
       afterimageTrail: [],
       motionBlur: { enabled: false, intensity: 0, samples: [] },
-      glowData: { intensity: 1, color: '#ffffff', radius: 10 },
+      glowData: { intensity: 1, color: '#ffffff', size: 10, pulse: 0, bloom: true },
       shield: false,
       lives: 3,
       x: 200,
