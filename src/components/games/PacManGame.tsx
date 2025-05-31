@@ -207,6 +207,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   const [lives, setLives] = useState(3);
   const [level, setLevel] = useState(1);
   const [combo, setCombo] = useState(0);
+  const [debug, setDebug] = useState(false);
   const particlePoolRef = useRef(new ParticlePool());
   const powerUpIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const animationIdRef = useRef<number | null>(null);
@@ -531,6 +532,12 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       if (e.key === ' ' || e.key === 'Escape') {
         e.preventDefault();
         setPaused(p => !p);
+        return;
+      }
+
+      if (e.key === 'D') {
+        e.preventDefault();
+        setDebug(d => !d);
         return;
       }
       
@@ -1574,7 +1581,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       // Draw particles
       ctx.shadowBlur = 0;
       particlePoolRef.current.draw(ctx);
-      
+
       // Draw ghosts (shadow only when frightened)
       game.ghosts.forEach(ghost => {
         ctx.save();
@@ -1646,6 +1653,30 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         ctx.globalAlpha = 1; // Reset alpha
         ctx.restore();
       });
+
+      if (debug) {
+        ctx.lineWidth = 1;
+        game.ghosts.forEach(ghost => {
+          ctx.strokeStyle = ghost.color;
+          ctx.strokeRect(
+            ghost.targetGridPos.col * CELL_SIZE,
+            ghost.targetGridPos.row * CELL_SIZE,
+            CELL_SIZE,
+            CELL_SIZE
+          );
+
+          const path = findPath(ghost.gridPos, ghost.targetGridPos, game.maze);
+          if (path.length > 0) {
+            ctx.beginPath();
+            ctx.moveTo(ghost.position.x, ghost.position.y);
+            path.forEach(step => {
+              const p = gridToPixel(step);
+              ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
+          }
+        });
+      }
       
       // Draw Pac-Man (reduced shadow)
       ctx.save();
