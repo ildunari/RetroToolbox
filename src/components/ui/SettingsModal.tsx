@@ -5,6 +5,8 @@ interface Settings {
   soundEnabled: boolean;
   volume: number;
   difficulty: string;
+  colorPalette: 'default' | 'accessible';
+  fontScale: number;
 }
 
 interface SettingsModalProps {
@@ -17,7 +19,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSettin
   <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
     <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
       <h2 className="text-2xl font-bold text-white mb-4">Settings</h2>
-      
+
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <label className="text-white">Sound</label>
@@ -28,7 +30,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSettin
             {settings.soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
           </button>
         </div>
-        
+
         <div className="flex items-center justify-between">
           <label className="text-white">Volume</label>
           <input
@@ -41,7 +43,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSettin
             className="w-32"
           />
         </div>
-        
+
         <div className="flex items-center justify-between">
           <label className="text-white">Difficulty</label>
           <select
@@ -54,8 +56,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSettin
             <option value="hard">Hard</option>
           </select>
         </div>
+
+        <div className="flex items-center justify-between">
+          <label className="text-white">Accessible Colors</label>
+          <button
+            onClick={() => onSettingsChange({ ...settings, colorPalette: settings.colorPalette === 'default' ? 'accessible' : 'default' })}
+            className={`p-2 rounded ${settings.colorPalette === 'accessible' ? 'bg-green-600' : 'bg-gray-600'}`}
+          >
+            {settings.colorPalette === 'accessible' ? 'On' : 'Off'}
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <label className="text-white">Font Size</label>
+          <input
+            type="range"
+            min="0.8"
+            max="1.5"
+            step="0.05"
+            value={settings.fontScale}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSettingsChange({ ...settings, fontScale: parseFloat(e.target.value) })}
+            className="w-32"
+          />
+        </div>
       </div>
-      
+
       <button
         onClick={onClose}
         className="mt-6 w-full bg-purple-600 text-white py-2 rounded hover:bg-purple-700 transition-colors"

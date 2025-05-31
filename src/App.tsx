@@ -39,6 +39,11 @@ function App() {
   const [settings, setSettings] = useSettings();
   const { stats, updateHighScore, incrementGamesPlayed } = useStats();
 
+  // Apply font scaling
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${16 * settings.fontScale}px`;
+  }, [settings.fontScale]);
+
   const handleGameSelect = (gameId) => {
     setSelectedGame(gameId);
     incrementGamesPlayed();

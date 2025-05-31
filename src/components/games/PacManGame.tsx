@@ -7,6 +7,27 @@ import { GameOverBanner } from '../ui/GameOverBanner';
 import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
 import { CANVAS_CONFIG } from "../../core/CanvasConfig";
 
+// Color palettes
+export const DEFAULT_COLORS = {
+  pacman: '#ffff00',
+  blinky: '#ff0000',
+  pinky: '#ffb8ff',
+  inky: '#00ffff',
+  clyde: '#ffb851',
+  wall: '#0044ff',
+  pellet: '#ffffff'
+};
+
+export const ACCESSIBLE_COLORS = {
+  pacman: '#ffd600',
+  blinky: '#e50000',
+  pinky: '#ff70e6',
+  inky: '#00bfff',
+  clyde: '#ff8c00',
+  wall: '#0022ff',
+  pellet: '#ffffff'
+};
+
 // TypeScript interfaces
 interface Position {
   x: number;
@@ -201,6 +222,7 @@ const parseGridKey = (key: string): [number, number] => {
 
 export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const palette = settings.colorPalette === 'accessible' ? ACCESSIBLE_COLORS : DEFAULT_COLORS;
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
   const [score, setScore] = useState(0);
@@ -291,7 +313,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         position: { x: 14 * CELL_SIZE, y: 14 * CELL_SIZE },
         gridPos: { row: 14, col: 14 },
         targetGridPos: { row: 13, col: 14 },
-        color: '#ff0000',
+        color: palette.blinky,
         mode: 'scatter',
         speed: 0.1 + (game.level - 1) * 0.01,
         aiType: 'blinky',
@@ -304,7 +326,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         position: { x: 13 * CELL_SIZE, y: 14 * CELL_SIZE },
         gridPos: { row: 14, col: 13 },
         targetGridPos: { row: 13, col: 13 },
-        color: '#ffb8ff',
+        color: palette.pinky,
         mode: 'scatter',
         speed: 0.1 + (game.level - 1) * 0.01,
         aiType: 'pinky',
@@ -317,7 +339,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         position: { x: 14 * CELL_SIZE, y: 15 * CELL_SIZE },
         gridPos: { row: 15, col: 14 },
         targetGridPos: { row: 14, col: 14 },
-        color: '#00ffff',
+        color: palette.inky,
         mode: 'scatter',
         speed: 0.1 + (game.level - 1) * 0.01,
         aiType: 'inky',
@@ -330,7 +352,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         position: { x: 15 * CELL_SIZE, y: 14 * CELL_SIZE },
         gridPos: { row: 14, col: 15 },
         targetGridPos: { row: 13, col: 15 },
-        color: '#ffb851',
+        color: palette.clyde,
         mode: 'scatter',
         speed: 0.1 + (game.level - 1) * 0.01,
         aiType: 'clyde',
@@ -411,7 +433,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     ctx.clearRect(0, 0, game.mazeCacheCanvas.width, game.mazeCacheCanvas.height);
     
     // Draw maze without shadow effects for performance
-    ctx.strokeStyle = '#0044ff';
+    ctx.strokeStyle = palette.wall;
     ctx.lineWidth = 2;
     
     for (let row = 0; row < MAZE_HEIGHT; row++) {
@@ -464,7 +486,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     ctx.clearRect(0, 0, game.pelletCacheCanvas.width, game.pelletCacheCanvas.height);
     
     // Draw normal pellets without shadow
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = palette.pellet;
     game.pellets.forEach(key => {
       const [row, col] = parseGridKey(key);
       ctx.beginPath();
@@ -983,7 +1005,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           setCombo(game.combo);
           game.globalDotCounter++;
           game.pelletsEaten++;
-          createParticles(pacman.position.x, pacman.position.y, '#ffff00', 5);
+          createParticles(pacman.position.x, pacman.position.y, palette.pacman, 5);
           if (settings.soundEnabled) {
             soundManager.playEatPellet();
           }
@@ -1083,7 +1105,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
                   // Create magnetic attraction particles
                   const targetX = nearCol * CELL_SIZE + CELL_SIZE / 2;
                   const targetY = nearRow * CELL_SIZE + CELL_SIZE / 2;
-                  createParticles(targetX, targetY, '#ffff00', 3);
+                  createParticles(targetX, targetY, palette.pacman, 3);
                   
                   // Create attraction line particle
                   const particle = particlePoolRef.current.getParticle(
@@ -1469,7 +1491,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
             // Pac-Man dies (only if not invincible and no shield)
             game.lives--;
             setLives(game.lives);
-            createParticles(pacman.position.x, pacman.position.y, '#ffff00', 30);
+            createParticles(pacman.position.x, pacman.position.y, palette.pacman, 30);
             
             if (game.lives <= 0) {
               setGameOver(true);
@@ -1508,6 +1530,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     
     const render = (ctx: CanvasRenderingContext2D) => {
       const game = gameRef.current;
+      const fs = settings.fontScale;
       
       // Clear canvas
       ctx.fillStyle = '#000';
@@ -1526,7 +1549,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       }
       
       // Draw power pellets with pulse effect (no shadow)
-      ctx.fillStyle = '#ffff00';
+      ctx.fillStyle = palette.pacman;
       ctx.shadowBlur = 0;
       game.powerPellets.forEach(key => {
         const [row, col] = parseGridKey(key);
@@ -1543,7 +1566,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         const y = row * CELL_SIZE + CELL_SIZE / 2;
         
         ctx.fillStyle = '#00ff00';
-        ctx.font = '16px Arial';
+        ctx.font = `${16 * fs}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(powerUp.icon, x, y);
@@ -1559,13 +1582,13 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         ctx.shadowColor = '#ff00ff';
         ctx.shadowBlur = 10;
-        ctx.font = `${pulse}px Arial`;
+        ctx.font = `${pulse * fs}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(game.fruit.type, x, y);
         
         // Draw point value below fruit
-        ctx.font = '10px Arial';
+        ctx.font = `${10 * fs}px Arial`;
         ctx.fillStyle = '#ffffff';
         ctx.shadowBlur = 5;
         ctx.fillText(`${game.fruit.points}`, x, y + 15);
@@ -1675,7 +1698,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         ctx.shadowBlur = 0;
       }
       
-      ctx.fillStyle = '#ffff00';
+      ctx.fillStyle = palette.pacman;
       
       // Draw trail if speed power-up is active
       if (game.pacman.powerUpActive === 'speed') {
@@ -1721,10 +1744,10 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       // Draw combo meter with expiration bar
       if (game.combo > 0) {
         // Combo text
-        ctx.fillStyle = '#ffff00';
-        ctx.shadowColor = '#ffff00';
+        ctx.fillStyle = palette.pacman;
+        ctx.shadowColor = palette.pacman;
         ctx.shadowBlur = game.qualityLevel !== 'low' ? 10 : 0;
-        ctx.font = 'bold 24px Arial';
+        ctx.font = `bold ${24 * fs}px Arial`;
         ctx.textAlign = 'center';
         ctx.fillText(`${game.combo}x COMBO!`, canvas.width / 2, 50);
         
@@ -1740,7 +1763,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         // Timer bar
         const timerProgress = game.comboTimer / 2; // 2 seconds max
-        ctx.fillStyle = timerProgress > 0.3 ? '#ffff00' : '#ff0000';
+        ctx.fillStyle = timerProgress > 0.3 ? palette.pacman : '#ff0000';
         ctx.fillRect(barX, barY, barWidth * timerProgress, barHeight);
         
         // Border
@@ -1752,13 +1775,13 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       // Draw HUD
       ctx.shadowBlur = 0;
       ctx.fillStyle = '#ffffff';
-      ctx.font = '16px Arial';
+      ctx.font = `${16 * fs}px Arial`;
       ctx.textAlign = 'left';
       ctx.fillText(`Score: ${game.score}`, 10, 20);
       ctx.fillText(`Level: ${game.level}`, 10, 40);
       
       // Draw lives visually
-      ctx.fillStyle = '#ffff00';
+      ctx.fillStyle = palette.pacman;
       for (let i = 0; i < game.lives - 1; i++) { // -1 because current life is playing
         ctx.beginPath();
         ctx.arc(canvas.width - 30 - (i * 25), 20, 8, 0.2 * Math.PI, 1.8 * Math.PI);
@@ -1773,7 +1796,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         // Power-up name and icon
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 18px Arial';
+        ctx.font = `bold ${18 * fs}px Arial`;
         ctx.textAlign = 'center';
         
         let powerUpIcon = '';
@@ -1822,7 +1845,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         // Timer text
         ctx.fillStyle = powerUpColor;
-        ctx.font = 'bold 16px Arial';
+        ctx.font = `bold ${16 * fs}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(Math.ceil(game.pacman.powerUpTimer).toString(), timerX, timerY);
@@ -1831,7 +1854,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       // Draw freeze timer if active
       if (game.freezeTimer > 0) {
         ctx.fillStyle = '#00ffff';
-        ctx.font = 'bold 16px Arial';
+        ctx.font = `bold ${16 * fs}px Arial`;
         ctx.textAlign = 'right';
         ctx.fillText(`❄️ FREEZE: ${Math.ceil(game.freezeTimer)}s`, canvas.width - 10, 60);
       }
@@ -1839,7 +1862,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       // Draw shield indicator
       if (game.pacman.shieldHits > 0) {
         ctx.fillStyle = '#00ff00';
-        ctx.font = 'bold 16px Arial';
+        ctx.font = `bold ${16 * fs}px Arial`;
         ctx.textAlign = 'right';
         ctx.fillText(`🛡️ SHIELD: ${game.pacman.shieldHits}`, canvas.width - 10, 80);
       }
@@ -1858,23 +1881,23 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         ctx.fillStyle = '#00ff00';
         ctx.shadowColor = '#00ff00';
         ctx.shadowBlur = 20;
-        ctx.font = 'bold 36px Arial';
+        ctx.font = `bold ${36 * fs}px Arial`;
         ctx.textAlign = 'center';
         ctx.fillText(`LEVEL ${game.level} COMPLETE!`, canvas.width / 2, canvas.height / 2 - 40);
-        ctx.font = 'bold 24px Arial';
+        ctx.font = `bold ${24 * fs}px Arial`;
         ctx.fillText(`+${1000 * game.level} BONUS`, canvas.width / 2, canvas.height / 2);
       } else if (game.gamePhase === 'dying') {
         ctx.fillStyle = '#ff0000';
         ctx.shadowColor = '#ff0000';
         ctx.shadowBlur = 20;
-        ctx.font = 'bold 36px Arial';
+        ctx.font = `bold ${36 * fs}px Arial`;
         ctx.textAlign = 'center';
         ctx.fillText('OUCH!', canvas.width / 2, canvas.height / 2);
       } else if (game.gamePhase === 'ready') {
-        ctx.fillStyle = '#ffff00';
-        ctx.shadowColor = '#ffff00';
+        ctx.fillStyle = palette.pacman;
+        ctx.shadowColor = palette.pacman;
         ctx.shadowBlur = 20;
-        ctx.font = 'bold 36px Arial';
+        ctx.font = `bold ${36 * fs}px Arial`;
         ctx.textAlign = 'center';
         ctx.fillText('READY!', canvas.width / 2, canvas.height / 2);
       }
@@ -1909,7 +1932,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         // Draw arrows
         ctx.globalAlpha = 0.6;
-        ctx.font = 'bold 20px Arial';
+        ctx.font = `bold ${20 * fs}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         

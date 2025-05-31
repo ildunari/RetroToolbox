@@ -5,6 +5,8 @@ export interface GameSettings {
   volume: number;
   difficulty: 'easy' | 'normal' | 'hard';
   theme: 'neon' | 'retro' | 'minimal';
+  colorPalette: 'default' | 'accessible';
+  fontScale: number;
 }
 
 export type UseSettingsReturn = [GameSettings, Dispatch<SetStateAction<GameSettings>>];
@@ -13,7 +15,9 @@ const DEFAULT_SETTINGS: GameSettings = {
   soundEnabled: true,
   volume: 0.5,
   difficulty: 'normal',
-  theme: 'neon'
+  theme: 'neon',
+  colorPalette: 'default',
+  fontScale: 1
 };
 
 const STORAGE_KEY = 'retroGameSettings';
@@ -47,11 +51,21 @@ const validateSettings = (data: unknown): GameSettings | null => {
       return null;
     }
 
+    if (!['default', 'accessible'].includes(settings.colorPalette as string)) {
+      return null;
+    }
+
+    if (typeof settings.fontScale !== 'number' || settings.fontScale < 0.5 || settings.fontScale > 2) {
+      return null;
+    }
+
     return {
       soundEnabled: settings.soundEnabled,
       volume: settings.volume,
       difficulty: settings.difficulty as 'easy' | 'normal' | 'hard',
-      theme: settings.theme as 'neon' | 'retro' | 'minimal'
+      theme: settings.theme as 'neon' | 'retro' | 'minimal',
+      colorPalette: settings.colorPalette as 'default' | 'accessible',
+      fontScale: settings.fontScale as number
     };
   } catch (error) {
     console.error('Settings validation error:', error);
