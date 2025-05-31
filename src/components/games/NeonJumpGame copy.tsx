@@ -8405,8 +8405,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           
           // Pursue player horizontally
           const waspDx = player.position.x - enemy.position.x;
-          enemy.velocity.x = Math.sign(waspDx) * Math.min(enemy.pursuitSpeed!, Math.abs(waspDx) * 0.02);
-          enemy.facingDirection = Math.sign(waspDx) || 1;
+          const dir: -1 | 0 | 1 = Math.sign(waspDx) as -1 | 0 | 1;
+          enemy.velocity.x = dir * Math.min(enemy.pursuitSpeed!, Math.abs(waspDx) * 0.02);
+          enemy.facingDirection = dir || 1;
           
           // Sine wave vertical movement
           enemy.velocity.y = Math.sin(enemy.sinePhase!) * WASP_SINE_AMPLITUDE * 0.05;
@@ -8536,7 +8537,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
             const knightDy = Math.abs(player.position.y - enemy.position.y);
             if (Math.abs(knightDx) < 150 && knightDy < 100 && enemy.chargeCooldown! <= 0) {
               enemy.state = 'charge';
-              enemy.facingDirection = Math.sign(knightDx);
+              const dir: -1 | 0 | 1 = Math.sign(knightDx) as -1 | 0 | 1;
+              enemy.facingDirection = dir;
               enemy.shieldUp = false;
               soundManager.playTone(300, 0.1, 'square');
             }
