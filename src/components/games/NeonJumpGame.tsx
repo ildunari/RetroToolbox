@@ -10929,7 +10929,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       // Add missing properties for backward compatibility
       afterimageTrail: [],
       motionBlur: { enabled: false, intensity: 0, samples: [] },
-      glowData: { intensity: 1, color: '#ffffff', radius: 10 },
+      glowData: { intensity: 1, color: '#ffffff', size: 10 },
       shield: false,
       lives: 3,
       x: 200,
