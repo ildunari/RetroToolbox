@@ -6,6 +6,7 @@ import { FadingCanvas } from '../ui/FadingCanvas';
 import { GameOverBanner } from '../ui/GameOverBanner';
 import { ResponsiveCanvas } from "../ui/ResponsiveCanvas";
 import { CANVAS_CONFIG } from "../../core/CanvasConfig";
+import { useBFSPathfinder } from './pacman/AI';
 
 // TypeScript interfaces
 interface Position {
@@ -210,6 +211,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   const particlePoolRef = useRef(new ParticlePool());
   const powerUpIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const animationIdRef = useRef<number | null>(null);
+  const { setMaze: setPathMaze, findPath } = useBFSPathfinder();
   
   const gameRef = useRef<GameState>({
     pacman: {
@@ -267,6 +269,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     
     // Deep copy maze template
     game.maze = MAZE_TEMPLATE.map(row => [...row]);
+    setPathMaze(game.maze);
     
     // Initialize pellets with numeric keys
     game.pellets.clear();
@@ -1147,9 +1150,9 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
               }
             }
           } else {
-            // Use A* pathfinding for normal movement
+            // Use BFS pathfinding for normal movement
             const target = ghost.targetGridPos;
-            const path = findPath(ghost.gridPos, target, game.maze);
+            const path = findPath(ghost.gridPos, target);
             
             if (path.length > 1) {
               // Get next step in path
@@ -1352,82 +1355,6 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       return Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
     };
     
-    // A* pathfinding implementation
-    const findPath = (start: GridPosition, end: GridPosition, maze: number[][]): GridPosition[] => {
-      const openSet: GridPosition[] = [start];
-      const closedSet = new Set<string>();
-      const cameFrom = new Map<string, GridPosition>();
-      const gScore = new Map<string, number>();
-      const fScore = new Map<string, number>();
-      
-      gScore.set(getGridKey(start.row, start.col), 0);
-      fScore.set(getGridKey(start.row, start.col), getDistance(start, end));
-      
-      while (openSet.length > 0) {
-        // Find node with lowest fScore
-        let current = openSet[0];
-        let currentIndex = 0;
-        
-        for (let i = 1; i < openSet.length; i++) {
-          const fCurrent = fScore.get(getGridKey(current.row, current.col)) || Infinity;
-          const fTest = fScore.get(getGridKey(openSet[i].row, openSet[i].col)) || Infinity;
-          if (fTest < fCurrent) {
-            current = openSet[i];
-            currentIndex = i;
-          }
-        }
-        
-        // Found path
-        if (current.row === end.row && current.col === end.col) {
-          const path: GridPosition[] = [];
-          let temp: GridPosition | undefined = current;
-          
-          while (temp) {
-            path.unshift(temp);
-            const key = getGridKey(temp.row, temp.col);
-            temp = cameFrom.get(key);
-          }
-          
-          return path;
-        }
-        
-        openSet.splice(currentIndex, 1);
-        closedSet.add(getGridKey(current.row, current.col));
-        
-        // Check neighbors
-        const neighbors: GridPosition[] = [];
-        const directions: Direction[] = ['up', 'down', 'left', 'right'];
-        
-        for (const dir of directions) {
-          if (canMove(current, dir)) {
-            neighbors.push(getNextGridPos(current, dir));
-          }
-        }
-        
-        for (const neighbor of neighbors) {
-          const neighborKey = getGridKey(neighbor.row, neighbor.col);
-          
-          if (closedSet.has(neighborKey)) {
-            continue;
-          }
-          
-          const tentativeGScore = (gScore.get(getGridKey(current.row, current.col)) || 0) + 1;
-          
-          if (!openSet.some(pos => pos.row === neighbor.row && pos.col === neighbor.col)) {
-            openSet.push(neighbor);
-          } else if (tentativeGScore >= (gScore.get(neighborKey) || Infinity)) {
-            continue;
-          }
-          
-          cameFrom.set(neighborKey, current);
-          gScore.set(neighborKey, tentativeGScore);
-          fScore.set(neighborKey, tentativeGScore + getDistance(neighbor, end));
-        }
-      }
-      
-      // No path found
-      return [];
-    };
     
     const checkCollisions = () => {
       const game = gameRef.current;
