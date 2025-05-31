@@ -9029,16 +9029,17 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
 
   // Unified collision detection using spatial grid
   const updateSpatialGridForAllEntities = useCallback(() => {
-    if (!performanceManagerRef.current) return;
-    
+    const pm = performanceManagerRef.current;
+    if (!pm) return;
+
     const game = gameRef.current;
-    performanceManagerRef.current.clearSpatialGrid();
-    
+    pm.clearSpatialGrid();
+
     // Add all entities to spatial grid
     // Platforms
     for (const platform of game.platforms) {
       if (platform && platform.active) {
-        performanceManagerRef.current.addToSpatialGrid(
+        pm.addToSpatialGrid(
           platform,
           platform.x,
           platform.y,
@@ -9047,11 +9048,11 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         );
       }
     }
-    
+
     // Enemies
     for (const enemy of game.enemies) {
       if (enemy && enemy.active && enemy.position) {
-        performanceManagerRef.current.addToSpatialGrid(
+        pm.addToSpatialGrid(
           enemy,
           enemy.position.x,
           enemy.position.y,
@@ -9060,11 +9061,11 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         );
       }
     }
-    
+
     // Coins
     for (const coin of game.coins) {
       if (coin.active && !coin.collected) {
-        performanceManagerRef.current.addToSpatialGrid(
+        pm.addToSpatialGrid(
           coin,
           coin.position.x - COIN_SIZE/2,
           coin.position.y - COIN_SIZE/2,
@@ -9073,11 +9074,11 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         );
       }
     }
-    
+
     // Power-ups
     for (const powerUp of game.powerUps) {
       if (powerUp.active && !powerUp.collected) {
-        performanceManagerRef.current.addToSpatialGrid(
+        pm.addToSpatialGrid(
           powerUp,
           powerUp.position.x - POWER_UP_SIZE/2,
           powerUp.position.y - POWER_UP_SIZE/2,
@@ -9090,8 +9091,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
 
   // Optimized collision checks using spatial grid
   const checkAllCollisions = useCallback(() => {
-    if (!performanceManagerRef.current) return;
-    
+    const pm = performanceManagerRef.current;
+    if (!pm) return;
+
     const game = gameRef.current;
     const player = game.player;
     
@@ -9103,7 +9105,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       height: player.height + 200
     };
     
-    const nearbyEntities = performanceManagerRef.current.queryNearbyEntities(
+    const nearbyEntities = pm.queryNearbyEntities(
       queryBounds.x,
       queryBounds.y,
       queryBounds.width,
@@ -9528,7 +9530,11 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // CHECKPOINT 5: Enhanced Background Rendering with 5-Layer Parallax
   const renderBackground = useCallback((ctx: CanvasRenderingContext2D) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      performanceManagerRef.current = null;
+      setManagersReady(false);
+      return;
+    }
     
     const game = gameRef.current;
     
@@ -11317,7 +11323,11 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // Setup and cleanup
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      performanceManagerRef.current = null;
+      setManagersReady(false);
+      return;
+    }
     
     canvas.width = canvasSize.width;
     canvas.height = canvasSize.height;
