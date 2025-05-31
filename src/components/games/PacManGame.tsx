@@ -458,11 +458,20 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     }
     
     const ctx = game.pelletCacheCtx;
-    if (!ctx || !game.pelletCacheDirty) return;
-    
+    if (!ctx) return;
+
+    // When all pellets are gone, clear the cache canvas
+    if (game.pellets.size === 0) {
+      ctx.clearRect(0, 0, game.pelletCacheCanvas.width, game.pelletCacheCanvas.height);
+      game.pelletCacheDirty = false;
+      return;
+    }
+
+    if (!game.pelletCacheDirty) return;
+
     // Clear cache
     ctx.clearRect(0, 0, game.pelletCacheCanvas.width, game.pelletCacheCanvas.height);
-    
+
     // Draw normal pellets without shadow
     ctx.fillStyle = '#ffffff';
     game.pellets.forEach(key => {
@@ -471,10 +480,10 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       ctx.arc(col * CELL_SIZE + CELL_SIZE / 2, row * CELL_SIZE + CELL_SIZE / 2, 2, 0, Math.PI * 2);
       ctx.fill();
     });
-    
+
     // Note: Power pellets will be drawn in the main render loop for pulsing effect
     // Only draw normal pellets in cache
-    
+
     game.pelletCacheDirty = false;
   }, []);
 
