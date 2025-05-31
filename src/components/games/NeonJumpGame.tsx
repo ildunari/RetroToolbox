@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
+import { initPhysicsWASM, detectCollision, integratePosition, integrateVelocity } from '../../core/PhysicsWASM';
 import { GameOverBanner } from "../ui/GameOverBanner";
 
 // Types and Interfaces
@@ -942,9 +943,17 @@ class ParticleManager {
       if (particle.position.x === undefined || particle.velocity.x === undefined || 
           particle.acceleration.x === undefined || particle.wind.x === undefined) continue;
 
-      // Update position with physics
-      particle.velocity.x += particle.acceleration.x * deltaTime + particle.wind.x * deltaTime;
-      particle.velocity.y += particle.acceleration.y * deltaTime + particle.wind.y * deltaTime + particle.gravity * deltaTime;
+      // Update position with physics (possibly accelerated by WASM)
+      particle.velocity.x = integrateVelocity(
+        particle.velocity.x,
+        particle.acceleration.x + particle.wind.x,
+        deltaTime
+      );
+      particle.velocity.y = integrateVelocity(
+        particle.velocity.y,
+        particle.acceleration.y + particle.wind.y + particle.gravity,
+        deltaTime
+      );
       
       // Add turbulence
       if (particle.turbulence > 0) {
@@ -952,8 +961,16 @@ class ParticleManager {
         particle.velocity.y += (Math.random() - 0.5) * particle.turbulence * deltaTime;
       }
       
-      particle.position.x += particle.velocity.x * deltaTime;
-      particle.position.y += particle.velocity.y * deltaTime;
+      particle.position.x = integratePosition(
+        particle.position.x,
+        particle.velocity.x,
+        deltaTime
+      );
+      particle.position.y = integratePosition(
+        particle.position.y,
+        particle.velocity.y,
+        deltaTime
+      );
       
       // Update rotation
       particle.rotation += particle.rotationSpeed * deltaTime;
@@ -6816,6 +6833,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const keysRef = useRef<Set<string>>(new Set());
   const touchStartRef = useRef<Vector2D | null>(null);
   const gamepadRef = useRef<Gamepad | null>(null);
+
+  useEffect(() => {
+    initPhysicsWASM();
+  }, []);
   
   // Enhanced touch controls for horizontal movement
   const touchStartXRef = useRef<number | null>(null);
@@ -7796,10 +7817,16 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       if (!platform || !platform.active) continue;
       
       // Simplified collision detection - player overlapping with platform
-      if (player.position.x < platform.x + platform.width &&
-          player.position.x + player.width > platform.x &&
-          player.position.y < platform.y + platform.height &&
-          player.position.y + player.height > platform.y) {
+      if (detectCollision(
+            player.position.x,
+            player.position.y,
+            player.width,
+            player.height,
+            platform.x,
+            platform.y,
+            platform.width,
+            platform.height
+          )) {
         
         // Landing on top of platform (player falling down and hitting platform from above)
         if (player.velocity.y >= 0 && 
