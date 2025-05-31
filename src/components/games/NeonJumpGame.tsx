@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Zap } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
-import { Particle } from '../../core/ParticleSystem';
 import { GameOverBanner } from "../ui/GameOverBanner";
 
 // Types and Interfaces
@@ -494,7 +493,7 @@ interface GameState {
   powerUps: PowerUp[];
   activePowerUps: ActivePowerUp[];
   coins: Coin[];
-  particles: Particle[];
+  particles: EnhancedParticle[];
   camera: Vector2D;
   score: number;
   sessionCoins: number;
@@ -518,7 +517,6 @@ interface GameState {
   
   // CHECKPOINT 5: Visual Excellence Systems
   backgroundLayers: BackgroundLayer[];
-  enhancedParticles: EnhancedParticle[];
   screenEffects: ScreenEffect[];
   animations: Map<string, SpriteAnimation>;
   glowIntensity: number;
@@ -1129,6 +1127,10 @@ class ParticleManager {
       }
     }
     this.particles = activeParticles;
+  }
+
+  getParticleCount(): number {
+    return this.particles.length;
   }
 }
 
@@ -6956,7 +6958,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // CHECKPOINT 5: Visual Excellence Systems
     backgroundLayers: [],
-    enhancedParticles: [],
     screenEffects: [],
     animations: new Map(),
     glowIntensity: 1.0,
@@ -9350,33 +9351,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
   }, []);
 
-  // Update particles
-  const updateParticles = useCallback((deltaTime: number) => {
-    const game = gameRef.current;
-    
-    for (const particle of game.particles) {
-      if (particle && ((particle.x !== undefined && particle.vx !== undefined) || 
-                       (particle.position && particle.velocity))) {
-        // Support both legacy (x,vx) and enhanced (position.x, velocity.x) particles
-        if (particle.x !== undefined && particle.vx !== undefined) {
-          // Legacy particle format
-          particle.x += particle.vx * deltaTime;
-          particle.y += particle.vy * deltaTime;
-          particle.vy += 0.2 * deltaTime; // Gravity for particles
-          particle.life -= 0.02 * deltaTime;
-        } else if (particle.position && particle.velocity) {
-          // Enhanced particle format
-          particle.position.x += particle.velocity.x * deltaTime;
-          particle.position.y += particle.velocity.y * deltaTime;
-          particle.velocity.y += 0.2 * deltaTime; // Gravity for particles
-          particle.life -= 0.02 * deltaTime;
-        }
-      }
-    }
-    
-    // Remove dead particles
-    game.particles = game.particles.filter(p => p && p.life > 0);
-  }, []);
 
   // CHECKPOINT 5: Update Visual Effects
   const updateVisualEffects = useCallback((deltaTime: number) => {
@@ -10580,35 +10554,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   // Render particles
   // CHECKPOINT 5: Enhanced Particle Rendering with New Particle Manager
   const renderParticles = useCallback((ctx: CanvasRenderingContext2D) => {
-    const game = gameRef.current;
-    
-    // Render legacy particles (for compatibility)
-    for (const particle of game.particles) {
-      if (particle && particle.life > 0) {
-        // Support both legacy (x,y) and enhanced (position.x, position.y) particles
-        const x = particle.x !== undefined ? particle.x : particle.position?.x;
-        const y = particle.y !== undefined ? particle.y : particle.position?.y;
-        
-        if (x !== undefined && y !== undefined) {
-          ctx.save();
-          ctx.globalAlpha = particle.alpha !== undefined ? particle.alpha : particle.life;
-          ctx.fillStyle = particle.color;
-          ctx.shadowColor = particle.color;
-          ctx.shadowBlur = 5;
-          
-          ctx.fillRect(
-            x - particle.size / 2,
-            y - game.camera.y - particle.size / 2,
-            particle.size,
-            particle.size
-          );
-          ctx.restore();
-        }
-      }
-    }
-    
-    // Render enhanced particles with new system
-    particleManagerRef.current.render(ctx, game.camera);
+    particleManagerRef.current.render(ctx, gameRef.current.camera);
   }, []);
 
   // Render UI
@@ -10716,7 +10662,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     checkAllCollisions();
     
     updateCamera();
-    updateParticles(deltaTime);
     
     // CHECKPOINT 5: Update Visual Excellence Systems
     if (particleManagerRef.current) {
@@ -10743,7 +10688,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
     if (performanceManagerRef.current) {
       performanceManagerRef.current.updateEntityCount(game.enemies.length + game.platforms.length + game.powerUps.length + game.coins.length);
-      performanceManagerRef.current.updateParticleCount(game.particles.length);
+      performanceManagerRef.current.updateParticleCount(particleManagerRef.current.getParticleCount());
     }
     if (gameFeelManagerRef.current) {
       gameFeelManagerRef.current.updateCamera(game.player.position, game.player.velocity, deltaTime);
