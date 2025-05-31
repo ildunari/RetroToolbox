@@ -5,6 +5,7 @@ interface Settings {
   soundEnabled: boolean;
   volume: number;
   difficulty: string;
+  dynamicDifficulty: boolean;
 }
 
 interface SettingsModalProps {
@@ -53,6 +54,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSettin
             <option value="normal">Normal</option>
             <option value="hard">Hard</option>
           </select>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <label className="text-white">Dynamic Difficulty</label>
+          <button
+            onClick={() => onSettingsChange({ ...settings, dynamicDifficulty: !settings.dynamicDifficulty })}
+            className={`p-2 rounded ${settings.dynamicDifficulty ? 'bg-green-600' : 'bg-gray-600'}`}
+          >
+            {settings.dynamicDifficulty ? 'ON' : 'OFF'}
+          </button>
         </div>
       </div>
       

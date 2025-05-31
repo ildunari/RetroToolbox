@@ -5,6 +5,7 @@ export interface GameSettings {
   volume: number;
   difficulty: 'easy' | 'normal' | 'hard';
   theme: 'neon' | 'retro' | 'minimal';
+  dynamicDifficulty: boolean;
 }
 
 export type UseSettingsReturn = [GameSettings, Dispatch<SetStateAction<GameSettings>>];
@@ -13,7 +14,8 @@ const DEFAULT_SETTINGS: GameSettings = {
   soundEnabled: true,
   volume: 0.5,
   difficulty: 'normal',
-  theme: 'neon'
+  theme: 'neon',
+  dynamicDifficulty: true
 };
 
 const STORAGE_KEY = 'retroGameSettings';
@@ -47,11 +49,16 @@ const validateSettings = (data: unknown): GameSettings | null => {
       return null;
     }
 
+    if (typeof settings.dynamicDifficulty !== 'boolean') {
+      return null;
+    }
+
     return {
       soundEnabled: settings.soundEnabled,
       volume: settings.volume,
       difficulty: settings.difficulty as 'easy' | 'normal' | 'hard',
-      theme: settings.theme as 'neon' | 'retro' | 'minimal'
+      theme: settings.theme as 'neon' | 'retro' | 'minimal',
+      dynamicDifficulty: settings.dynamicDifficulty
     };
   } catch (error) {
     console.error('Settings validation error:', error);

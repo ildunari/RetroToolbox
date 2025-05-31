@@ -87,6 +87,7 @@ interface GameState {
   levelCompleteTimer: number;
   qualityLevel: 'high' | 'medium' | 'low';
   showDPad: boolean;
+  elapsedTime: number;
   fruit: {
     type: string;
     position: GridPosition | null;
@@ -100,6 +101,7 @@ interface PacManGameProps {
   settings: {
     soundEnabled: boolean;
     difficulty: 'easy' | 'normal' | 'hard';
+    dynamicDifficulty: boolean;
   };
   updateHighScore: (gameId: string, score: number) => void;
 }
@@ -199,6 +201,8 @@ const parseGridKey = (key: string): [number, number] => {
   return [Math.floor(num / 1000), num % 1000];
 };
 
+const clamp = (num: number, min: number, max: number) => Math.min(max, Math.max(min, num));
+
 export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScore }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameOver, setGameOver] = useState(false);
@@ -207,9 +211,17 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   const [lives, setLives] = useState(3);
   const [level, setLevel] = useState(1);
   const [combo, setCombo] = useState(0);
+  const [scoreRate, setScoreRate] = useState(0);
   const particlePoolRef = useRef(new ParticlePool());
   const powerUpIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const animationIdRef = useRef<number | null>(null);
+
+  const getDifficultyMultiplier = useCallback(() => {
+    if (!settings.dynamicDifficulty) return 1;
+    const rateFactor = scoreRate / 600; // baseline 600 pts per min
+    const lifeFactor = Math.max(lives - 3, 0) * 0.1;
+    return clamp(1 + rateFactor + lifeFactor, 1, 2);
+  }, [scoreRate, lives, settings.dynamicDifficulty]);
   
   const gameRef = useRef<GameState>({
     pacman: {
@@ -257,6 +269,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     levelCompleteTimer: 0,
     qualityLevel: 'high',
     showDPad: false,
+    elapsedTime: 0,
     fruit: null,
     fruitSpawnCount: 0
   });
@@ -372,6 +385,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     game.levelCompleteTimer = 0;
     game.fruit = null;
     game.fruitSpawnCount = 0;
+    game.elapsedTime = 0;
   }, []);
 
   // Create particles with pooling
@@ -707,9 +721,13 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         // Only update game objects during playing phase
         if (game.gamePhase === 'playing') {
+          game.elapsedTime += deltaTime;
+          const rate = (game.score / Math.max(game.elapsedTime, 1)) * 60;
+          setScoreRate(rate);
+
           // Update Pac-Man
           updatePacMan(deltaTime);
-          
+
           // Update ghosts
           updateGhosts(deltaTime);
         }
@@ -722,7 +740,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           game.waveTimer += deltaTime;
           
           // Wave patterns based on level
-          const wavePattern = getWavePattern(game.level);
+          const wavePattern = getWavePattern(game.level, getDifficultyMultiplier());
           let totalTime = 0;
           let currentMode: 'scatter' | 'chase' = 'scatter';
           
@@ -825,6 +843,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
             game.level++;
             setLevel(game.level);
             initializeGame(false); // Keep score and lives
+            setScoreRate(0);
             game.gamePhase = 'ready';
           }
         }
@@ -1182,12 +1201,13 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         // Move in current direction
         if (ghost.direction !== 'none') {
-          const speed = ghost.mode === 'frightened' ? ghost.speed * 0.5 : 
-                       ghost.mode === 'eaten' ? ghost.speed * 2 : 
+          const diff = getDifficultyMultiplier();
+          const base = ghost.mode === 'frightened' ? ghost.speed * 0.5 :
+                       ghost.mode === 'eaten' ? ghost.speed * 2 :
                        // Ghosts move slower in tunnels
                        (ghost.gridPos.row === 14 && (ghost.gridPos.col <= 5 || ghost.gridPos.col >= 22)) ? ghost.speed * 0.4 :
                        ghost.speed;
-          const moveDistance = speed * CELL_SIZE * deltaTime;
+          const moveDistance = base * diff * CELL_SIZE * deltaTime;
           
           switch (ghost.direction) {
             case 'up':
@@ -1926,39 +1946,41 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       }
     };
     
-    const getWavePattern = (level: number): Array<['scatter' | 'chase', number]> => {
+    const getWavePattern = (level: number, difficulty: number): Array<['scatter' | 'chase', number]> => {
       // Wave patterns get more aggressive at higher levels
+      const s = (val: number) => val / difficulty;
+      const c = (val: number) => val * difficulty;
       if (level === 1) {
         return [
-          ['scatter', 7],
-          ['chase', 20],
-          ['scatter', 7],
-          ['chase', 20],
-          ['scatter', 5],
-          ['chase', 20],
-          ['scatter', 5],
+          ['scatter', s(7)],
+          ['chase', c(20)],
+          ['scatter', s(7)],
+          ['chase', c(20)],
+          ['scatter', s(5)],
+          ['chase', c(20)],
+          ['scatter', s(5)],
           ['chase', Infinity]
         ];
       } else if (level <= 4) {
         return [
-          ['scatter', 7],
-          ['chase', 20],
-          ['scatter', 7],
-          ['chase', 20],
-          ['scatter', 5],
-          ['chase', 1033],
-          ['scatter', 1/60],
+          ['scatter', s(7)],
+          ['chase', c(20)],
+          ['scatter', s(7)],
+          ['chase', c(20)],
+          ['scatter', s(5)],
+          ['chase', c(1033)],
+          ['scatter', s(1/60)],
           ['chase', Infinity]
         ];
       } else {
         return [
-          ['scatter', 5],
-          ['chase', 20],
-          ['scatter', 5],
-          ['chase', 20],
-          ['scatter', 5],
-          ['chase', 1037],
-          ['scatter', 1/60],
+          ['scatter', s(5)],
+          ['chase', c(20)],
+          ['scatter', s(5)],
+          ['chase', c(20)],
+          ['scatter', s(5)],
+          ['chase', c(1037)],
+          ['scatter', s(1/60)],
           ['chase', Infinity]
         ];
       }
@@ -2079,6 +2101,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     setLives(3);
     setLevel(1);
     setCombo(0);
+    setScoreRate(0);
     gameRef.current.lastUpdate = 0;
   };
 
