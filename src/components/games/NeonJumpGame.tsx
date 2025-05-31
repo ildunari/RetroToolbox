@@ -10993,18 +10993,18 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
   }, []);
 
-  const saveGameData = useCallback(async () => {
-    const game = gameRef.current;
-    
+  const saveGameData = useCallback(async (game: GameState) => {
+
     // CRITICAL FIX: Acquire lock before saving to prevent corruption
     if (!await acquireStorageLock()) {
       console.warn('Could not acquire save lock, skipping save');
       return;
     }
-    
+
+    let saveData: any;
     try {
       // Sanitize data before saving
-      const saveData = {
+      saveData = {
         totalCoins: Math.max(0, Math.min(999999, Math.floor(game.totalCoins))),
         upgrades: {
           jumpHeight: Math.max(0, Math.min(5, Math.floor(game.upgrades.jumpHeight || 0))),
@@ -11027,8 +11027,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       if (e.name === 'QuotaExceededError') {
         try {
           localStorage.removeItem('neonJump_saveData_old');
-          const serialized = JSON.stringify(saveData);
-          localStorage.setItem('neonJump_saveData', serialized);
+          if (saveData) {
+            const serialized = JSON.stringify(saveData);
+            localStorage.setItem('neonJump_saveData', serialized);
+          }
         } catch (e2) {
           console.error('Still cannot save after cleanup:', e2);
           // Could show user notification here
@@ -11095,12 +11097,13 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     return true;
   }, []);
 
-  const loadGameData = useCallback(() => {
-    const game = gameRef.current;
+  const loadGameData = useCallback((game: GameState) => {
     try {
       const savedData = localStorage.getItem('neonJump_saveData');
-      if (savedData) {
-        const data = JSON.parse(savedData);
+      if (savedData == null) {
+        return;
+      }
+      const data = JSON.parse(savedData);
         
         // Validate save data
         if (!validateSaveData(data)) {
@@ -11131,7 +11134,6 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           game.player.position.y -= startingHeight;
           game.camera.y = -startingHeight + CAMERA_LOOK_AHEAD;
         }
-      }
     } catch (e) {
       console.error('Failed to load save data:', e);
       // Initialize with defaults
@@ -11184,7 +11186,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
     
     // Save data
-    saveGameData();
+    saveGameData(game);
     
     // Force re-render
     setShowShop(false);
@@ -11407,7 +11409,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Initialize game
     initializePlatforms();
-    loadGameData();
+    loadGameData(gameRef.current);
     
     // Canvas context loss handling
     const handleContextLost = (e: Event) => {
@@ -11552,7 +11554,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Save game data when game ends
     if (gameOver) {
-      saveGameData();
+      saveGameData(gameRef.current);
     }
   }, [score, highScore, updateHighScore, gameOver, saveGameData]);
 
