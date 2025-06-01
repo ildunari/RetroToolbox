@@ -134,7 +134,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
       previousGridPos: { row: 23, col: 14 },
       direction: 'none',
       nextDirection: 'none',
-      speed: 0.15 + (game.level - 1) * 0.01,
+      // Initial speed based on starting level
+      speed: 0.15 + (level - 1) * 0.01,
       mouthOpen: true,
       mouthTimer: 0,
       powerUpActive: null,
