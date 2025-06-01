@@ -19,9 +19,9 @@ function drawMaze(ctx: CanvasRenderingContext2D, maze: number[][]) {
 function drawPellets(ctx: CanvasRenderingContext2D, pellets: Set<string>) {
   ctx.fillStyle = '#ffffff';
   pellets.forEach(k => {
-    const [rStr, cStr] = k.split(':');
-    const r = parseInt(rStr, 10);
-    const c = parseInt(cStr, 10);
+    const num = parseInt(k);
+    const r = Math.floor(num / 1000);
+    const c = num % 1000;
     ctx.beginPath();
     ctx.arc(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2, 2, 0, Math.PI * 2);
     ctx.fill();
@@ -31,9 +31,9 @@ function drawPellets(ctx: CanvasRenderingContext2D, pellets: Set<string>) {
 function drawPowerPellets(ctx: CanvasRenderingContext2D, pellets: Set<string>) {
   ctx.fillStyle = '#ffff00';
   pellets.forEach(k => {
-    const [rStr, cStr] = k.split(':');
-    const r = parseInt(rStr, 10);
-    const c = parseInt(cStr, 10);
+    const num = parseInt(k);
+    const r = Math.floor(num / 1000);
+    const c = num % 1000;
     ctx.beginPath();
     ctx.arc(c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2, 6, 0, Math.PI * 2);
     ctx.fill();

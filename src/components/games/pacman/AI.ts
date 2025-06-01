@@ -81,7 +81,7 @@ export function findPath(maze: number[][], start: GridPosition, end: GridPositio
   return [];
 }
 
-function updateGhostAI(game: GameState, ghost: GameState['ghosts'][number]) {
+function updateGhostAI(game: GameState, ghost: GameState['ghosts'][number]): GridPosition {
   const pac = game.pacman;
   let newTargetGridPos = ghost.targetGridPos;
   
@@ -151,8 +151,8 @@ function updateGhostAI(game: GameState, ghost: GameState['ghosts'][number]) {
     newTargetGridPos = ghost.gridPos;
   }
   
-  // Apply the target position change immutably
-  ghost.targetGridPos = newTargetGridPos;
+  // Return the target position instead of mutating
+  return newTargetGridPos;
 }
 
 export function updateGhosts(game: GameState, deltaTime: number) {
@@ -163,7 +163,9 @@ export function updateGhosts(game: GameState, deltaTime: number) {
     // Create a working copy of the ghost for modifications
     let updatedGhost = { ...ghost };
     
-    updateGhostAI(game, updatedGhost);
+    // Get the new target position from AI and apply it immutably
+    const newTargetGridPos = updateGhostAI(game, updatedGhost);
+    updatedGhost = { ...updatedGhost, targetGridPos: newTargetGridPos };
 
     const path = findPath(game.maze, updatedGhost.gridPos, updatedGhost.targetGridPos);
     if (path.length > 1) {
