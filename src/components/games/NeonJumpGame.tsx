@@ -3231,10 +3231,10 @@ class PerformanceManager {
 
   // Battery Optimization
   isOnBattery(): boolean {
-    // @ts-ignore - Check for battery API
+    // @ts-expect-error - navigator.getBattery is non-standard
     if (navigator.getBattery) {
       return new Promise(resolve => {
-        // @ts-ignore
+        // @ts-expect-error - getBattery returns a promise in supported browsers
         navigator.getBattery().then((battery: any) => {
           resolve(!battery.charging && battery.level < 0.5);
         });
@@ -5870,8 +5870,10 @@ class ExtensibilityFrameworkManager {
       game: {
         getState: () => this.getGameState(),
         setState: (state: any) => this.setGameState(state),
-        addEventListener: (event: string, callback: Function) => this.addEventListener(event, callback),
-        removeEventListener: (event: string, callback: Function) => this.removeEventListener(event, callback)
+        addEventListener: (event: string, callback: EventListenerOrEventListenerObject) =>
+          this.addEventListener(event, callback),
+        removeEventListener: (event: string, callback: EventListenerOrEventListenerObject) =>
+          this.removeEventListener(event, callback)
       },
       
       // Audio API
@@ -6222,12 +6224,12 @@ class ExtensibilityFrameworkManager {
     window.dispatchEvent(event);
   }
 
-  private addEventListener(event: string, callback: Function): void {
-    window.addEventListener(`neonjump-${event}`, callback as EventListener);
+  private addEventListener(event: string, callback: EventListenerOrEventListenerObject): void {
+    window.addEventListener(`neonjump-${event}`, callback);
   }
 
-  private removeEventListener(event: string, callback: Function): void {
-    window.removeEventListener(`neonjump-${event}`, callback as EventListener);
+  private removeEventListener(event: string, callback: EventListenerOrEventListenerObject): void {
+    window.removeEventListener(`neonjump-${event}`, callback);
   }
 
   private playPluginSound(soundId: string, volume: number = 1): void {
@@ -7760,7 +7762,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     }
 
     // Check "too high" death condition to prevent player getting lost off-screen
-    const MAX_HEIGHT_ABOVE_CAMERA_TOP = 1200; // Approximately 2 screen heights
+    // Allow greater vertical exploration before triggering fail-safe
+    const MAX_HEIGHT_ABOVE_CAMERA_TOP = 5000; // Prevent premature game over
     // player.position.y is top of player, game.camera.y is top of camera
     // If player.position.y is much more negative, they are higher up
     if ((game.camera.y - player.position.y) > MAX_HEIGHT_ABOVE_CAMERA_TOP) {
@@ -7866,7 +7869,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           const perfectPoints = scoreManagerRef.current.recordPerfectLanding(fallVelocity);
           if (perfectPoints > 0 && gameFeelManagerRef.current) {
             gameFeelManagerRef.current.cameraShake(0.5, 100);
-            gameFeelManagerRef.current.colorFlash('#00ff00', 0.1, 80); // Much shorter duration
+            // Softer flash to reduce visual clutter when bonuses stack
+            gameFeelManagerRef.current.colorFlash('#00ff00', 0.05, 60);
           }
           
           // CHECKPOINT 5: Landing particle effects
@@ -9471,7 +9475,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     
     // Update atmospheric effects based on height
     const heightFactor = Math.max(0, -game.camera.y / 1000);
-    game.atmosphericColorShift = heightFactor;
+    // Limit intensity to avoid excessive brightness at extreme heights
+    game.atmosphericColorShift = Math.min(heightFactor, 0.5);
     
     // Generate enhanced particle effects
     if (player.state === 'jumping' && Math.random() < 0.3) {
@@ -9580,7 +9585,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     if (game.atmosphericColorShift > 0) {
       ctx.save();
       ctx.globalCompositeOperation = 'overlay';
-      ctx.fillStyle = `rgba(0, 255, 255, ${game.atmosphericColorShift * 0.2})`;
+      ctx.fillStyle = `rgba(0, 255, 255, ${game.atmosphericColorShift * 0.15})`;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.restore();
     }
@@ -9595,7 +9600,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         
         ctx.save();
         ctx.globalCompositeOperation = 'screen';
-        ctx.globalAlpha = light.intensity * 0.3;
+        ctx.globalAlpha = light.intensity * 0.2;
         
         const gradient = ctx.createRadialGradient(
           screenX, screenY, 0,
@@ -10860,7 +10865,9 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     if (uiManagerRef.current && uiManagerRef.current.isMenuVisible()) {
       uiManagerRef.current.render();
     }
-    if (performanceManagerRef.current && false) { // Debug mode - set to true to show performance
+    // Render debug performance info when enabled
+    const showPerformance = false;
+    if (performanceManagerRef.current && showPerformance) {
       performanceManagerRef.current.renderDebugInfo(ctx, 10, 10);
     }
     

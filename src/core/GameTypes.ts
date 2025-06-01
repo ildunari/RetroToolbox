@@ -12,6 +12,8 @@ export interface GameStats {
     breakout: number;
     tetris: number;
     spaceInvaders: number;
+    pacman: number;
+    neonJump: number;
   };
   gamesPlayed: number;
   totalScore: number;
