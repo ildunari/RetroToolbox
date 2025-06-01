@@ -2,8 +2,11 @@ import { GameState, GridPosition, Direction } from './types';
 
 const CELL_SIZE = 20;
 
-function pixelToGrid(pos: { x: number; y: number }): GridPosition {
-  return { row: Math.floor(pos.y / CELL_SIZE), col: Math.floor(pos.x / CELL_SIZE) };
+function pixelToGrid(pos: { x: number; y: number }, maze: number[][]): GridPosition {
+  return { 
+    row: Math.max(0, Math.min(maze.length - 1, Math.floor(pos.y / CELL_SIZE))), 
+    col: Math.max(0, Math.min(maze[0].length - 1, Math.floor(pos.x / CELL_SIZE)))
+  };
 }
 
 function canMove(maze: number[][], pos: GridPosition, dir: Direction) {
@@ -173,7 +176,7 @@ export function updateGhosts(game: GameState, deltaTime: number) {
       ghost.position.x = CELL_SIZE / 2;
     }
 
-    const newPos = pixelToGrid(ghost.position);
+    const newPos = pixelToGrid(ghost.position, game.maze);
     ghost.gridPos = newPos;
   }
 }
