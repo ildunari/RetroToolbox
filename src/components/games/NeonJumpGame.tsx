@@ -780,7 +780,7 @@ const MAX_FALL_SPEED = 15;
 const AIR_CONTROL = 0.8;
 const COYOTE_TIME = 6; // frames
 const JUMP_BUFFER_TIME = 6; // frames
-const CAMERA_SMOOTH = 0.3; // Increased from 0.1 for faster following
+const CAMERA_SMOOTH = 0.9; // Much faster camera following to prevent player going off-screen
 const CAMERA_LOOK_AHEAD = 120; // Slightly more look-ahead
 const CAMERA_DEADZONE_Y = 50; // Add deadzone to reduce minor adjustments
 
@@ -7073,10 +7073,15 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const predictedVelY = Math.min(player.velocity.y + GRAVITY * 30, MAX_FALL_SPEED);
     const predictedHeight = Math.abs(predictedVelY * 30); // 30 frames ahead
     
-    // Adjust gap based on player state
+    // Adjust gap based on player state AND auto-jump force
+    const jumpBonus = game.upgrades.jumpHeight * UPGRADE_JUMP_HEIGHT_BONUS;
+    const levelBonus = Math.min(game.level * 0.02, 0.3);
+    const totalJumpForce = Math.abs(BASE_JUMP_FORCE * (1 + jumpBonus + levelBonus));
+    const maxReachableHeight = (totalJumpForce * totalJumpForce) / (2 * GRAVITY);
+    
     const dynamicGapY = player.velocity.y < 0 ? 
-      MAX_PLATFORM_GAP_Y * 0.8 : // Jumping, make easier
-      MAX_PLATFORM_GAP_Y * 0.6;  // Falling, make much easier
+      Math.min(MAX_PLATFORM_GAP_Y, maxReachableHeight) * 0.8 : // Cap at actual jump height
+      Math.min(MAX_PLATFORM_GAP_Y, maxReachableHeight) * 0.6;  // Falling, make easier
     
     // Calculate reachable zone from highest platform
     const minY = highestPlatform.y - dynamicGapY;
@@ -7088,11 +7093,21 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     const newX = minX + Math.random() * (maxX - minX);
     const newY = minY + Math.random() * (maxY - minY);
     
-    // Choose platform type based on level
-    const types: Platform['type'][] = ['standard', 'standard', 'standard']; // More standard platforms
-    if (game.level > 2) types.push('moving', 'bouncy');
-    if (game.level > 4) types.push('crumbling', 'ice');
-    if (game.level > 6) types.push('phase', 'conveyor');
+    // Choose platform type based on level with better distribution
+    const types: Platform['type'][] = ['standard', 'standard', 'standard', 'standard']; // 4 standard
+    if (game.level > 2) {
+      types.push('moving', 'bouncy', 'standard'); // Still favor standard
+    }
+    if (game.level > 4) {
+      types.push('crumbling', 'ice');
+      // Remove one standard to balance
+      types.splice(types.indexOf('standard'), 1);
+    }
+    if (game.level > 6) {
+      types.push('phase', 'conveyor');
+      // Add bouncy back for variety at high levels
+      types.push('bouncy');
+    }
     
     const type = types[Math.floor(Math.random() * types.length)];
     const platform = createPlatform(newX, newY, type);
@@ -7304,10 +7319,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
   const spawnEnemies = useCallback(() => {
     const game = gameRef.current;
     
-    // Calculate spawn interval based on height
+    // Calculate spawn interval with better scaling
     const spawnInterval = Math.max(
-      ENEMY_SPAWN_BASE_INTERVAL - (game.level - 1) * 10,
-      100
+      ENEMY_SPAWN_BASE_INTERVAL / (1 + game.level * 0.1), // Exponential scaling instead of linear
+      150 // Increased minimum interval
     );
     
     // Check if we should spawn
@@ -7647,7 +7662,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     // Calculate current maximum horizontal speed based on level progression
     const baseSpeed = HORIZONTAL_SPEED;
     const speedIncreasePerLevel = 0.1; // Adjust this for desired scaling
-    const maxPossibleSpeed = 6.0; // Cap the speed increase to prevent it from becoming too fast
+    const maxPossibleSpeed = 10.0; // Increased cap to allow reaching edge platforms
     let currentDynamicMaxSpeed = baseSpeed + (game.level - 1) * speedIncreasePerLevel;
     currentDynamicMaxSpeed = Math.min(currentDynamicMaxSpeed, maxPossibleSpeed);
 
@@ -7763,7 +7778,7 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
 
     // Check "too high" death condition to prevent player getting lost off-screen
     // Allow greater vertical exploration before triggering fail-safe
-    const MAX_HEIGHT_ABOVE_CAMERA_TOP = 5000; // Prevent premature game over
+    const MAX_HEIGHT_ABOVE_CAMERA_TOP = 50000; // Greatly increased to prevent false deaths during rapid ascent
     // player.position.y is top of player, game.camera.y is top of camera
     // If player.position.y is much more negative, they are higher up
     if ((game.camera.y - player.position.y) > MAX_HEIGHT_ABOVE_CAMERA_TOP) {
@@ -7820,7 +7835,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
           if (platform.type !== 'bouncy') { // Skip auto-jump for bouncy platforms as they have their own jump logic
             // Apply jump height upgrade
             const jumpBonus = game.upgrades.jumpHeight * UPGRADE_JUMP_HEIGHT_BONUS;
-            const jumpForce = BASE_JUMP_FORCE * (1 + jumpBonus);
+            const levelBonus = Math.min(game.level * 0.02, 0.3); // Up to 30% bonus from levels
+            const jumpForce = BASE_JUMP_FORCE * (1 + jumpBonus + levelBonus);
             
             player.velocity.y = jumpForce;
             player.canDoubleJump = true;
@@ -8365,12 +8381,11 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       }
     }
     
-    // Enhanced bidirectional culling for platforms
+    // Fixed culling - only remove platforms far below camera
     const cullingBufferVertical = game.worldBounds.height + CULLING_BUFFER;
     game.platforms = game.platforms.filter(p => 
       p.active && // Only consider active platforms
-      p.y < game.camera.y + cullingBufferVertical && // Below camera
-      p.y > game.camera.y - cullingBufferVertical // Above camera
+      p.y > game.camera.y - cullingBufferVertical * 2 // Only cull platforms far below
     );
     
     // CRITICAL FIX: Generate new platforms with infinite loop protection
@@ -8386,8 +8401,8 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
         console.warn('Platform generation stuck, creating emergency platform');
         const emergencyPlatform: Platform = {
           id: game.nextPlatformId++,
-          x: 200,
-          y: game.camera.y - 200,
+          x: game.player.position.x - PLATFORM_WIDTH / 2, // Center on player X
+          y: game.player.position.y - 150, // Place above player
           width: 120,
           height: 20,
           type: 'standard',
@@ -10777,6 +10792,18 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
       backgroundManagerRef.current.update(deltaTime, game.camera.y);
     }
     updateVisualEffects(deltaTime);
+    
+    // Time-based score increment to prevent stagnation
+    if (game.lastUpdate % 60 === 0) { // Every second at 60fps
+      const timeBonus = 10 + Math.floor(game.level * 2); // Scale with level
+      game.score += timeBonus;
+      scoreManagerRef.current.addScore({
+        type: 'time',
+        basePoints: timeBonus,
+        multiplier: 1,
+        position: { x: game.player.position.x, y: game.player.position.y }
+      });
+    }
     
     // CHECKPOINT 6: Update Audio & Polish Systems
     if (audioManagerRef.current) {
