@@ -123,6 +123,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameOver, setGameOver] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [gamePhase, setGamePhase] = useState<'ready' | 'playing' | 'dying' | 'levelComplete'>('ready');
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [level, setLevel] = useState(1);
@@ -383,7 +384,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
 
   // Input handlers - setup when component mounts
   useEffect(() => {
-    return setupInput(canvasRef.current, gameRef, () => setPaused(p => !p), soundEnabledRef);
+    return setupInput(canvasRef.current, gameRef, () => setPaused(p => !p), soundEnabledRef, setGamePhase);
   }, []);
 
   // Detect device performance and set quality level
@@ -1188,7 +1189,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           </div>
         )}
         
-        {!gameOver && gameRef.current.gamePhase === 'ready' && (
+        {!gameOver && gamePhase === 'ready' && (
           <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
             <div className="text-white text-center">
               <h2 className="text-4xl font-bold mb-4">READY?</h2>

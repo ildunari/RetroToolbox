@@ -6,10 +6,12 @@ export function setupInput(
   canvas: HTMLCanvasElement | null,
   gameRef: MutableRefObject<GameState>,
   togglePause: () => void,
-  soundEnabledRef: MutableRefObject<boolean>
+  soundEnabledRef: MutableRefObject<boolean>,
+  setGamePhase?: (phase: 'ready' | 'playing' | 'dying' | 'levelComplete') => void
 ) {
   const handleKey = (e: KeyboardEvent) => {
     const game = gameRef.current;
+    
     if (e.key === ' ' || e.key === 'Escape') {
       e.preventDefault();
       togglePause();
@@ -34,10 +36,20 @@ export function setupInput(
         dir = 'right';
         break;
     }
+    
     if (dir !== 'none') {
+      if (!game) {
+        return;
+      }
+      
       game.pacman.nextDirection = dir;
+      
       if (game.gamePhase === 'ready') {
         game.gamePhase = 'playing';
+        // Update React state to trigger re-render
+        if (setGamePhase) {
+          setGamePhase('playing');
+        }
         // Set lastUpdate to current time to start the game loop properly
         game.lastUpdate = performance.now();
         if (soundEnabledRef.current) {
