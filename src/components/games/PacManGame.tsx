@@ -424,8 +424,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     initializeGame();
     
     const gameLoop = (timestamp: number) => {
+      const game = gameRef.current;
       if (!paused && !gameOver) {
-        const game = gameRef.current;
         if (game.lastUpdate === 0) {
           game.lastUpdate = timestamp;
         }
