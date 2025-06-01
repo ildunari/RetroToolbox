@@ -50,7 +50,11 @@ export function findPath(maze: number[][], start: GridPosition, end: GridPositio
   const key = (p: GridPosition) => `${p.row}:${p.col}`;
   const visited = new Set<string>([key(start)]);
 
-  while (queue.length) {
+  // Add iteration limit to prevent infinite loops when maze sections are isolated
+  const MAX_ITERATIONS = maze.length * maze[0].length * 2;
+  let iterations = 0;
+
+  while (queue.length && iterations++ < MAX_ITERATIONS) {
     const cur = queue.shift()!;
     if (cur.row === end.row && cur.col === end.col) {
       const path: GridPosition[] = [cur];
@@ -119,6 +123,10 @@ function updateGhostAI(game: GameState, ghost: GameState['ghosts'][number]) {
           case 'right':
             pc += 2; break;
         }
+        // Apply bounds checking to intermediate position before vector calculation
+        pr = Math.max(0, Math.min(game.maze.length - 1, pr));
+        pc = Math.max(0, Math.min(game.maze[0].length - 1, pc));
+        
         if (blinky) {
           const vr = pr - blinky.gridPos.row;
           const vc = pc - blinky.gridPos.col;
@@ -174,6 +182,13 @@ export function updateGhosts(game: GameState, deltaTime: number) {
       ghost.position.x = game.maze[0].length * CELL_SIZE - CELL_SIZE / 2;
     } else if (ghost.position.x > game.maze[0].length * CELL_SIZE + CELL_SIZE / 2) {
       ghost.position.x = CELL_SIZE / 2;
+    }
+
+    // Add Y-axis tunnel wrapping for ghosts
+    if (ghost.position.y < -CELL_SIZE / 2) {
+      ghost.position.y = game.maze.length * CELL_SIZE - CELL_SIZE / 2;
+    } else if (ghost.position.y > game.maze.length * CELL_SIZE + CELL_SIZE / 2) {
+      ghost.position.y = CELL_SIZE / 2;
     }
 
     const newPos = pixelToGrid(ghost.position, game.maze);
