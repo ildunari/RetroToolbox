@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Heart, Star, Zap, Shield, Timer, Play, Pause, RotateCcw } from 'lucide-react';
+import { Heart, Star, Zap, Shield, Timer, Play, Pause, RotateCcw, Skull } from 'lucide-react';
 import { soundManager } from '../../core/SoundManager';
 import { Particle } from '../../core/ParticleSystem';
 import { FadingCanvas } from "../ui/FadingCanvas";
@@ -20,8 +20,39 @@ interface Direction {
 interface PowerUp {
   x: number;
   y: number;
-  type: 'speed' | 'points' | 'shield' | 'shrink';
+  type:
+    | 'speed'
+    | 'points'
+    | 'shield'
+    | 'shrink'
+    | 'reverse'
+    | 'slow'
+    | 'invincible'
+    | 'multiplier'
+    | 'poison';
   lifeTime: number;
+}
+
+interface Obstacle {
+  x: number;
+  y: number;
+}
+
+interface BigFood {
+  x: number;
+  y: number;
+  lifeTime: number;
+}
+
+interface PortalPair {
+  a: Position;
+  b: Position;
+  lifeTime: number;
+}
+
+interface Ghost {
+  position: Position;
+  direction: Direction;
 }
 
 interface GameState {
@@ -29,10 +60,17 @@ interface GameState {
   direction: Direction;
   nextDirection: Direction;
   food: Position;
+  bigFood: BigFood | null;
+  portals: PortalPair | null;
+  obstacles: Obstacle[];
+  ghost: Ghost | null;
   particles: Particle[];
   speed: number;
   lastUpdate: number;
   gridSize: number;
+  scoreMultiplier: number;
+  reverseControls: boolean;
+  invincibleUntil: number;
 }
 
 interface Settings {
@@ -52,21 +90,37 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
   const [scoreFlash, setScoreFlash] = useState<boolean>(false);
   const prevScore = useRef<number>(0);
   const [powerUps, setPowerUps] = useState<PowerUp[]>([]);
+  const [obstacles, setObstacles] = useState<Obstacle[]>([]);
+  const [bigFood, setBigFood] = useState<BigFood | null>(null);
+  const [portals, setPortals] = useState<PortalPair | null>(null);
+  const [ghost, setGhost] = useState<Ghost | null>(null);
   const [lives, setLives] = useState<number>(3);
   const animationIdRef = useRef<number | null>(null);
   const speedTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const effectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scoreFlashTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const foodsEatenRef = useRef<number>(0);
+
+  const baseSpeed =
+    settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100;
   
   const gameRef = useRef<GameState>({
     snake: [{ x: 10, y: 10 }],
     direction: { x: 1, y: 0 },
     nextDirection: { x: 1, y: 0 },
     food: { x: 15, y: 15 },
+    bigFood: null,
+    portals: null,
+    obstacles: [],
+    ghost: null,
     particles: [],
-    speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
+    speed: baseSpeed,
     lastUpdate: 0,
-    gridSize: 20
+    gridSize: 20,
+    scoreMultiplier: 1,
+    reverseControls: false,
+    invincibleUntil: 0
   });
 
   useEffect(() => {
@@ -90,19 +144,23 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
       switch(e.key) {
         case 'ArrowUp':
         case 'w':
-          if (game.direction.y === 0) game.nextDirection = { x: 0, y: -1 };
+          if (game.direction.y === 0)
+            game.nextDirection = game.reverseControls ? { x: 0, y: 1 } : { x: 0, y: -1 };
           break;
         case 'ArrowDown':
         case 's':
-          if (game.direction.y === 0) game.nextDirection = { x: 0, y: 1 };
+          if (game.direction.y === 0)
+            game.nextDirection = game.reverseControls ? { x: 0, y: -1 } : { x: 0, y: 1 };
           break;
         case 'ArrowLeft':
         case 'a':
-          if (game.direction.x === 0) game.nextDirection = { x: -1, y: 0 };
+          if (game.direction.x === 0)
+            game.nextDirection = game.reverseControls ? { x: 1, y: 0 } : { x: -1, y: 0 };
           break;
         case 'ArrowRight':
         case 'd':
-          if (game.direction.x === 0) game.nextDirection = { x: 1, y: 0 };
+          if (game.direction.x === 0)
+            game.nextDirection = game.reverseControls ? { x: -1, y: 0 } : { x: 1, y: 0 };
           break;
         case ' ':
         case 'Escape':
@@ -117,8 +175,18 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
     window.addEventListener('keydown', handleInput);
 
     const spawnPowerUp = () => {
-      if (Math.random() < 0.3 && powerUps.length < 2) {
-        const types: PowerUp['type'][] = ['speed', 'points', 'shield', 'shrink'];
+      if (Math.random() < 0.3 && powerUps.length < 3) {
+        const types: PowerUp['type'][] = [
+          'speed',
+          'points',
+          'shield',
+          'shrink',
+          'reverse',
+          'slow',
+          'invincible',
+          'multiplier',
+          'poison'
+        ];
         const type = types[Math.floor(Math.random() * types.length)];
         const powerUp: PowerUp = {
           x: Math.floor(Math.random() * gameRef.current.gridSize),
@@ -127,6 +195,57 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
           lifeTime: 10000
         };
         setPowerUps(prev => [...prev, powerUp]);
+      }
+    };
+
+    const spawnObstacle = () => {
+      if (obstacles.length < 5 && Math.random() < 0.2) {
+        const newObs: Obstacle = {
+          x: Math.floor(Math.random() * gameRef.current.gridSize),
+          y: Math.floor(Math.random() * gameRef.current.gridSize)
+        };
+        setObstacles(o => [...o, newObs]);
+      }
+    };
+
+    const spawnBigFood = () => {
+      if (!bigFood && Math.random() < 0.1) {
+        const bf: BigFood = {
+          x: Math.floor(Math.random() * gameRef.current.gridSize),
+          y: Math.floor(Math.random() * gameRef.current.gridSize),
+          lifeTime: 7000
+        };
+        setBigFood(bf);
+      }
+    };
+
+    const spawnPortals = () => {
+      if (!portals && Math.random() < 0.05) {
+        const pair: PortalPair = {
+          a: {
+            x: Math.floor(Math.random() * gameRef.current.gridSize),
+            y: Math.floor(Math.random() * gameRef.current.gridSize)
+          },
+          b: {
+            x: Math.floor(Math.random() * gameRef.current.gridSize),
+            y: Math.floor(Math.random() * gameRef.current.gridSize)
+          },
+          lifeTime: 10000
+        };
+        setPortals(pair);
+      }
+    };
+
+    const spawnGhost = () => {
+      if (!ghost && Math.random() < 0.05) {
+        const g: Ghost = {
+          position: {
+            x: Math.floor(Math.random() * gameRef.current.gridSize),
+            y: Math.floor(Math.random() * gameRef.current.gridSize)
+          },
+          direction: { x: 1, y: 0 }
+        };
+        setGhost(g);
       }
     };
 
@@ -148,6 +267,32 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
     const gameLoop = (timestamp: DOMHighResTimeStamp) => {
       if (!paused && !gameOver) {
         const deltaTime = timestamp - gameRef.current.lastUpdate;
+
+        if (bigFood) {
+          bigFood.lifeTime -= deltaTime;
+          if (bigFood.lifeTime <= 0) setBigFood(null);
+        }
+        if (portals) {
+          portals.lifeTime -= deltaTime;
+          if (portals.lifeTime <= 0) setPortals(null);
+        }
+        if (ghost) {
+          if (Math.random() < 0.3) {
+            const dirs: Direction[] = [
+              { x: 1, y: 0 },
+              { x: -1, y: 0 },
+              { x: 0, y: 1 },
+              { x: 0, y: -1 }
+            ];
+            ghost.direction = dirs[Math.floor(Math.random() * dirs.length)];
+          }
+          ghost.position.x += ghost.direction.x;
+          ghost.position.y += ghost.direction.y;
+          if (ghost.position.x < 0) ghost.position.x = gameRef.current.gridSize - 1;
+          if (ghost.position.x >= gameRef.current.gridSize) ghost.position.x = 0;
+          if (ghost.position.y < 0) ghost.position.y = gameRef.current.gridSize - 1;
+          if (ghost.position.y >= gameRef.current.gridSize) ghost.position.y = 0;
+        }
         
         if (deltaTime >= gameRef.current.speed) {
           const game = gameRef.current;
@@ -167,6 +312,16 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
           if (head.y < 0) head.y = game.gridSize - 1;
           if (head.y >= game.gridSize) head.y = 0;
 
+          if (portals) {
+            if (head.x === portals.a.x && head.y === portals.a.y) {
+              head.x = portals.b.x;
+              head.y = portals.b.y;
+            } else if (head.x === portals.b.x && head.y === portals.b.y) {
+              head.x = portals.a.x;
+              head.y = portals.a.y;
+            }
+          }
+
           // Check self collision
           if (snake.some(segment => segment.x === head.x && segment.y === head.y)) {
             if (lives > 1) {
@@ -184,9 +339,30 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
               return;
             }
           } else {
-            snake.unshift(head);            // Check food collision
+            snake.unshift(head);
+
+            // Check obstacle collision
+            const hitObstacle = obstacles.some(o => o.x === head.x && o.y === head.y);
+            const hitGhost = ghost && ghost.position.x === head.x && ghost.position.y === head.y;
+            if ((hitObstacle || hitGhost) && timestamp > game.invincibleUntil) {
+              if (lives > 1) {
+                setLives(l => l - 1);
+                soundManager.playHit();
+                createParticles(head.x, head.y, '#ef4444', 20);
+                game.snake = [{ x: 10, y: 10 }];
+                game.direction = { x: 1, y: 0 };
+                game.nextDirection = { x: 1, y: 0 };
+              } else {
+                setGameOver(true);
+                soundManager.playGameOver();
+                updateHighScore('snake', score);
+                return;
+              }
+            }
+
+            // Check food collision
             if (head.x === game.food.x && head.y === game.food.y) {
-              setScore(s => s + 10);
+              setScore(s => s + 10 * game.scoreMultiplier);
               soundManager.playCollect();
               createParticles(game.food.x, game.food.y, '#10b981', 15);
               
@@ -198,7 +374,23 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
                 };
               } while (snake.some(s => s.x === game.food.x && s.y === game.food.y));
               
+              foodsEatenRef.current += 1;
+              if (foodsEatenRef.current % 5 === 0) {
+                game.speed = Math.max(40, game.speed - 10);
+              }
               spawnPowerUp();
+              spawnObstacle();
+              spawnBigFood();
+              spawnPortals();
+              spawnGhost();
+            } else if (bigFood && head.x === bigFood.x && head.y === bigFood.y) {
+              setScore(s => s + 30 * game.scoreMultiplier);
+              createParticles(bigFood.x, bigFood.y, '#fde047', 25);
+              setBigFood(null);
+              foodsEatenRef.current += 1;
+              if (foodsEatenRef.current % 5 === 0) {
+                game.speed = Math.max(40, game.speed - 10);
+              }
             } else {
               snake.pop();
             }
@@ -221,7 +413,7 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
                         clearTimeout(speedTimeoutRef.current);
                       }
                       speedTimeoutRef.current = setTimeout(() => {
-                        game.speed = settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100;
+                        game.speed = baseSpeed;
                         speedTimeoutRef.current = null;
                       }, 5000);
                       break;
@@ -232,6 +424,36 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
                       if (snake.length > 3) {
                         snake.splice(-2);
                       }
+                      break;
+                    case 'reverse':
+                      game.reverseControls = true;
+                      if (effectTimeoutRef.current) clearTimeout(effectTimeoutRef.current);
+                      effectTimeoutRef.current = setTimeout(() => {
+                        game.reverseControls = false;
+                        effectTimeoutRef.current = null;
+                      }, 5000);
+                      break;
+                    case 'slow':
+                      game.speed = baseSpeed * 1.5;
+                      if (speedTimeoutRef.current) clearTimeout(speedTimeoutRef.current);
+                      speedTimeoutRef.current = setTimeout(() => {
+                        game.speed = baseSpeed;
+                        speedTimeoutRef.current = null;
+                      }, 5000);
+                      break;
+                    case 'invincible':
+                      game.invincibleUntil = timestamp + 5000;
+                      break;
+                    case 'multiplier':
+                      game.scoreMultiplier = 2;
+                      if (effectTimeoutRef.current) clearTimeout(effectTimeoutRef.current);
+                      effectTimeoutRef.current = setTimeout(() => {
+                        game.scoreMultiplier = 1;
+                        effectTimeoutRef.current = null;
+                      }, 5000);
+                      break;
+                    case 'poison':
+                      setScore(s => Math.max(0, s - 20));
                       break;
                   }
                   return false;
@@ -253,7 +475,10 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
       });
 
       // Draw
-      ctx.fillStyle = '#0f172a';
+      const bgGrad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      bgGrad.addColorStop(0, '#0f172a');
+      bgGrad.addColorStop(1, '#1e293b');
+      ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Draw grid with subtle lines
@@ -274,26 +499,10 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
       // Draw snake with gradient and glow
       const snake = gameRef.current.snake;
       snake.forEach((segment, index) => {
-        const gradient = ctx.createRadialGradient(
-          segment.x * cellSize + cellSize/2,
-          segment.y * cellSize + cellSize/2,
-          0,
-          segment.x * cellSize + cellSize/2,
-          segment.y * cellSize + cellSize/2,
-          cellSize/2
-        );
-
-        if (index === 0) {
-          gradient.addColorStop(0, '#10b981');
-          gradient.addColorStop(1, '#059669');
-        } else {
-          gradient.addColorStop(0, '#059669');
-          gradient.addColorStop(1, '#047857');
-        }
-
-        ctx.shadowBlur = 20;
+        const hue = 160 - index * 3;
+        ctx.fillStyle = `hsl(${hue},70%,45%)`;
+        ctx.shadowBlur = index === 0 ? 20 : 10;
         ctx.shadowColor = '#10b981';
-        ctx.fillStyle = gradient;
         ctx.fillRect(
           segment.x * cellSize + 2,
           segment.y * cellSize + 2,
@@ -316,15 +525,41 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
       );
       ctx.shadowBlur = 0;
 
+      if (bigFood) {
+        ctx.save();
+        ctx.translate(
+          bigFood.x * cellSize + cellSize / 2,
+          bigFood.y * cellSize + cellSize / 2
+        );
+        ctx.rotate((timestamp / 200) % (Math.PI * 2));
+        ctx.fillStyle = '#fde047';
+        for (let i = 0; i < 5; i++) {
+          ctx.rotate((Math.PI * 2) / 5);
+          ctx.beginPath();
+          ctx.moveTo(0, -cellSize / 2);
+          ctx.lineTo(cellSize / 6, -cellSize / 6);
+          ctx.lineTo(cellSize / 2, 0);
+          ctx.lineTo(cellSize / 6, cellSize / 6);
+          ctx.lineTo(0, cellSize / 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
       // Draw power-ups
       powerUps.forEach(powerUp => {
         const colors: Record<PowerUp['type'], string> = {
           speed: '#3b82f6',
           points: '#f59e0b',
           shield: '#8b5cf6',
-          shrink: '#ec4899'
+          shrink: '#ec4899',
+          reverse: '#f97316',
+          slow: '#38bdf8',
+          invincible: '#a21caf',
+          multiplier: '#84cc16',
+          poison: '#dc2626'
         };
-        
+
         ctx.fillStyle = colors[powerUp.type];
         ctx.save();
         ctx.translate(
@@ -335,6 +570,34 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
         ctx.fillRect(-cellSize/3, -cellSize/3, cellSize/1.5, cellSize/1.5);
         ctx.restore();
       });
+
+      obstacles.forEach(o => {
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(o.x * cellSize + 2, o.y * cellSize + 2, cellSize - 4, cellSize - 4);
+      });
+
+      if (portals) {
+        const colors = ['#38bdf8', '#f472b6'];
+        [portals.a, portals.b].forEach((p, i) => {
+          ctx.fillStyle = colors[i];
+          ctx.beginPath();
+          ctx.arc(p.x * cellSize + cellSize / 2, p.y * cellSize + cellSize / 2, cellSize / 3, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      if (ghost) {
+        ctx.fillStyle = 'rgba(192,132,252,0.8)';
+        ctx.beginPath();
+        ctx.arc(
+          ghost.position.x * cellSize + cellSize / 2,
+          ghost.position.y * cellSize + cellSize / 2,
+          cellSize / 2.5,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
 
       // Draw particles
       gameRef.current.particles.forEach(p => p.draw(ctx));
@@ -353,6 +616,10 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
         clearTimeout(speedTimeoutRef.current);
         speedTimeoutRef.current = null;
       }
+      if (effectTimeoutRef.current) {
+        clearTimeout(effectTimeoutRef.current);
+        effectTimeoutRef.current = null;
+      }
       window.removeEventListener('keydown', handleInput);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
@@ -361,13 +628,14 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
 
   const updateDirectionByDelta = (dx: number, dy: number) => {
     const game = gameRef.current;
+    const factor = game.reverseControls ? -1 : 1;
     if (Math.abs(dx) > Math.abs(dy)) {
       if (game.direction.x === 0) {
-        game.nextDirection = dx > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 };
+        game.nextDirection = dx * factor > 0 ? { x: 1, y: 0 } : { x: -1, y: 0 };
       }
     } else {
       if (game.direction.y === 0) {
-        game.nextDirection = dy > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 };
+        game.nextDirection = dy * factor > 0 ? { x: 0, y: 1 } : { x: 0, y: -1 };
       }
     }
   };
@@ -419,14 +687,26 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
       direction: { x: 1, y: 0 },
       nextDirection: { x: 1, y: 0 },
       food: { x: 15, y: 15 },
+      bigFood: null,
+      portals: null,
+      obstacles: [],
+      ghost: null,
       particles: [],
-      speed: settings.difficulty === 'easy' ? 150 : settings.difficulty === 'hard' ? 80 : 100,
+      speed: baseSpeed,
       lastUpdate: 0,
-      gridSize: 20
+      gridSize: 20,
+      scoreMultiplier: 1,
+      reverseControls: false,
+      invincibleUntil: 0
     };
     setScore(0);
     setLives(3);
     setPowerUps([]);
+    setObstacles([]);
+    setBigFood(null);
+    setPortals(null);
+    setGhost(null);
+    foodsEatenRef.current = 0;
     setGameOver(false);
     setPaused(false);
   };
@@ -454,6 +734,9 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
       if (speedTimeoutRef.current) {
         clearTimeout(speedTimeoutRef.current);
       }
+      if (effectTimeoutRef.current) {
+        clearTimeout(effectTimeoutRef.current);
+      }
       if (animationIdRef.current) {
         cancelAnimationFrame(animationIdRef.current);
       }
@@ -477,6 +760,11 @@ export const SnakeGame: React.FC<SnakeGameProps> = ({ settings, updateHighScore 
                 {p.type === 'points' && <Star size={16} />}
                 {p.type === 'shield' && <Shield size={16} />}
                 {p.type === 'shrink' && <Timer size={16} />}
+                {p.type === 'reverse' && <RotateCcw size={16} />}
+                {p.type === 'slow' && <Pause size={16} />}
+                {p.type === 'invincible' && <Shield size={16} className="fill-purple-500" />}
+                {p.type === 'multiplier' && <Star size={16} className="text-green-400" />}
+                {p.type === 'poison' && <Skull size={16} />}
               </div>
             ))}
           </div>
