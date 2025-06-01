@@ -381,10 +381,10 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     soundEnabledRef.current = settings.soundEnabled;
   }, [settings.soundEnabled]);
 
-  // Input handlers
+  // Input handlers - setup when component mounts
   useEffect(() => {
     return setupInput(canvasRef.current, gameRef, () => setPaused(p => !p), soundEnabledRef);
-  }, []); // No dependencies needed - ref provides current value
+  }, []);
 
   // Detect device performance and set quality level
   useEffect(() => {
