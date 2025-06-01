@@ -83,12 +83,14 @@ export function findPath(maze: number[][], start: GridPosition, end: GridPositio
 
 function updateGhostAI(game: GameState, ghost: GameState['ghosts'][number]) {
   const pac = game.pacman;
+  let newTargetGridPos = ghost.targetGridPos;
+  
   if (ghost.mode === 'scatter') {
-    ghost.targetGridPos = ghost.scatterTarget;
+    newTargetGridPos = ghost.scatterTarget;
   } else if (ghost.mode === 'chase') {
     switch (ghost.aiType) {
       case 'blinky':
-        ghost.targetGridPos = pac.gridPos;
+        newTargetGridPos = pac.gridPos;
         break;
       case 'pinky':
         let tr = pac.gridPos.row;
@@ -107,7 +109,7 @@ function updateGhostAI(game: GameState, ghost: GameState['ghosts'][number]) {
             tc += 4;
             break;
         }
-        ghost.targetGridPos = { row: Math.max(0, Math.min(game.maze.length - 1, tr)), col: Math.max(0, Math.min(game.maze[0].length - 1, tc)) };
+        newTargetGridPos = { row: Math.max(0, Math.min(game.maze.length - 1, tr)), col: Math.max(0, Math.min(game.maze[0].length - 1, tc)) };
         break;
       case 'inky': {
         const blinky = game.ghosts.find(g => g.aiType === 'blinky');
@@ -130,69 +132,95 @@ function updateGhostAI(game: GameState, ghost: GameState['ghosts'][number]) {
         if (blinky) {
           const vr = pr - blinky.gridPos.row;
           const vc = pc - blinky.gridPos.col;
-          ghost.targetGridPos = {
+          newTargetGridPos = {
             row: Math.max(0, Math.min(game.maze.length - 1, pr + vr)),
             col: Math.max(0, Math.min(game.maze[0].length - 1, pc + vc)),
           };
         } else {
-          ghost.targetGridPos = pac.gridPos;
+          newTargetGridPos = pac.gridPos;
         }
         break; }
       case 'clyde':
         const dist = getDistance(ghost.gridPos, pac.gridPos);
-        ghost.targetGridPos = dist > 8 ? pac.gridPos : ghost.scatterTarget;
+        newTargetGridPos = dist > 8 ? pac.gridPos : ghost.scatterTarget;
         break;
     }
   } else if (ghost.mode === 'eaten') {
-    ghost.targetGridPos = { row: 14, col: 14 };
+    newTargetGridPos = { row: 14, col: 14 };
   } else {
-    ghost.targetGridPos = ghost.gridPos;
+    newTargetGridPos = ghost.gridPos;
   }
+  
+  // Apply the target position change immutably
+  ghost.targetGridPos = newTargetGridPos;
 }
 
 export function updateGhosts(game: GameState, deltaTime: number) {
-  for (const ghost of game.ghosts) {
-    if (game.freezeTimer > 0 && ghost.mode !== 'eaten') continue;
+  // Create new ghosts array with immutable updates
+  game.ghosts = game.ghosts.map(ghost => {
+    if (game.freezeTimer > 0 && ghost.mode !== 'eaten') return ghost;
 
-    updateGhostAI(game, ghost);
+    // Create a working copy of the ghost for modifications
+    let updatedGhost = { ...ghost };
+    
+    updateGhostAI(game, updatedGhost);
 
-    const path = findPath(game.maze, ghost.gridPos, ghost.targetGridPos);
+    const path = findPath(game.maze, updatedGhost.gridPos, updatedGhost.targetGridPos);
     if (path.length > 1) {
       const next = path[1];
-      if (next.row < ghost.gridPos.row) ghost.direction = 'up';
-      else if (next.row > ghost.gridPos.row) ghost.direction = 'down';
-      else if (next.col < ghost.gridPos.col) ghost.direction = 'left';
-      else if (next.col > ghost.gridPos.col) ghost.direction = 'right';
+      let newDirection = updatedGhost.direction;
+      if (next.row < updatedGhost.gridPos.row) newDirection = 'up';
+      else if (next.row > updatedGhost.gridPos.row) newDirection = 'down';
+      else if (next.col < updatedGhost.gridPos.col) newDirection = 'left';
+      else if (next.col > updatedGhost.gridPos.col) newDirection = 'right';
+      
+      if (newDirection !== updatedGhost.direction) {
+        updatedGhost = { ...updatedGhost, direction: newDirection };
+      }
     }
 
-    const speed = ghost.speed * (ghost.mode === 'frightened' ? 0.5 : 1);
+    const speed = updatedGhost.speed * (updatedGhost.mode === 'frightened' ? 0.5 : 1);
     const moveDistance = speed * CELL_SIZE * deltaTime;
-    switch (ghost.direction) {
+    
+    // Calculate new position immutably
+    let newPosition = { ...updatedGhost.position };
+    switch (updatedGhost.direction) {
       case 'up':
-        ghost.position.y -= moveDistance; break;
+        newPosition = { ...newPosition, y: newPosition.y - moveDistance };
+        break;
       case 'down':
-        ghost.position.y += moveDistance; break;
+        newPosition = { ...newPosition, y: newPosition.y + moveDistance };
+        break;
       case 'left':
-        ghost.position.x -= moveDistance; break;
+        newPosition = { ...newPosition, x: newPosition.x - moveDistance };
+        break;
       case 'right':
-        ghost.position.x += moveDistance; break;
+        newPosition = { ...newPosition, x: newPosition.x + moveDistance };
+        break;
     }
 
-    if (ghost.position.x < -CELL_SIZE / 2) {
-      ghost.position.x = game.maze[0].length * CELL_SIZE - CELL_SIZE / 2;
-    } else if (ghost.position.x > game.maze[0].length * CELL_SIZE + CELL_SIZE / 2) {
-      ghost.position.x = CELL_SIZE / 2;
+    // Handle tunnel wrapping immutably
+    if (newPosition.x < -CELL_SIZE / 2) {
+      newPosition = { ...newPosition, x: game.maze[0].length * CELL_SIZE - CELL_SIZE / 2 };
+    } else if (newPosition.x > game.maze[0].length * CELL_SIZE + CELL_SIZE / 2) {
+      newPosition = { ...newPosition, x: CELL_SIZE / 2 };
     }
 
     // Add Y-axis tunnel wrapping for ghosts
-    if (ghost.position.y < -CELL_SIZE / 2) {
-      ghost.position.y = game.maze.length * CELL_SIZE - CELL_SIZE / 2;
-    } else if (ghost.position.y > game.maze.length * CELL_SIZE + CELL_SIZE / 2) {
-      ghost.position.y = CELL_SIZE / 2;
+    if (newPosition.y < -CELL_SIZE / 2) {
+      newPosition = { ...newPosition, y: game.maze.length * CELL_SIZE - CELL_SIZE / 2 };
+    } else if (newPosition.y > game.maze.length * CELL_SIZE + CELL_SIZE / 2) {
+      newPosition = { ...newPosition, y: CELL_SIZE / 2 };
     }
 
-    const newPos = pixelToGrid(ghost.position, game.maze);
-    ghost.gridPos = newPos;
-  }
+    const newGridPos = pixelToGrid(newPosition, game.maze);
+    
+    // Return updated ghost with immutable changes
+    return { 
+      ...updatedGhost, 
+      position: newPosition,
+      gridPos: newGridPos
+    };
+  });
 }
 

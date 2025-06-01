@@ -477,13 +477,13 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         // Update ghost exit timers
         game.ghosts.forEach(ghost => {
           if (ghost.exitTimer > 0) {
-            ghost.exitTimer -= deltaTime;
+            ghost.exitTimer = Math.max(0, ghost.exitTimer - deltaTime);
           }
         });
         
         // Update timers
         if (game.frightenedTimer > 0) {
-          game.frightenedTimer -= deltaTime;
+          game.frightenedTimer = Math.max(0, game.frightenedTimer - deltaTime);
           if (game.frightenedTimer <= 0) {
             game.ghosts.forEach(ghost => {
               if (ghost.mode === 'frightened') {
@@ -497,31 +497,33 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         }
         
         if (game.freezeTimer > 0) {
-          game.freezeTimer -= deltaTime;
+          game.freezeTimer = Math.max(0, game.freezeTimer - deltaTime);
         }
         
         if (game.pacman.powerUpTimer > 0) {
-          game.pacman.powerUpTimer -= deltaTime;
+          game.pacman.powerUpTimer = Math.max(0, game.pacman.powerUpTimer - deltaTime);
           if (game.pacman.powerUpTimer <= 0) {
             game.pacman.powerUpActive = null;
+            game.pacman.powerUpTimer = 0; // Ensure timer is exactly 0
           }
         }
         
         if (game.comboTimer > 0) {
-          game.comboTimer -= deltaTime;
+          game.comboTimer = Math.max(0, game.comboTimer - deltaTime);
           if (game.comboTimer <= 0) {
             game.combo = 0;
+            game.comboTimer = 0; // Ensure timer is exactly 0
             setCombo(0);
           }
         }
         
         if (game.pacman.invincibleTimer > 0) {
-          game.pacman.invincibleTimer -= deltaTime;
+          game.pacman.invincibleTimer = Math.max(0, game.pacman.invincibleTimer - deltaTime);
         }
         
         // Handle death timer
         if (game.deathTimer > 0) {
-          game.deathTimer -= deltaTime;
+          game.deathTimer = Math.max(0, game.deathTimer - deltaTime);
           if (game.deathTimer <= 0 && game.gamePhase === 'dying') {
             // Reset positions after death animation
             game.pacman.position = { x: 14 * CELL_SIZE, y: 23 * CELL_SIZE };
@@ -658,47 +660,86 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         
         // If we're close to grid center, we can move to next grid
         if (distToCenter < 2 && canMove(pacman.gridPos, pacman.direction)) {
-          pacman.previousGridPos = pacman.gridPos;
-          pacman.gridPos = getNextGridPos(pacman.gridPos, pacman.direction);
-          pacman.targetGridPos = getNextGridPos(pacman.gridPos, pacman.direction);
+          const newGridPos = getNextGridPos(pacman.gridPos, pacman.direction);
+          const newTargetGridPos = getNextGridPos(newGridPos, pacman.direction);
+          
+          game.pacman = {
+            ...pacman,
+            previousGridPos: pacman.gridPos,
+            gridPos: newGridPos,
+            targetGridPos: newTargetGridPos
+          };
         }
         
         // Always move in the current direction
         const speed = pacman.powerUpActive === 'speed' ? pacman.speed * 1.5 : pacman.speed;
         const moveDistance = speed * CELL_SIZE * deltaTime;
         
-        switch (pacman.direction) {
+        // Calculate new position immutably
+        let newPosition = { ...game.pacman.position };
+        switch (game.pacman.direction) {
           case 'up':
-            pacman.position.y -= moveDistance;
+            newPosition = { ...newPosition, y: newPosition.y - moveDistance };
             break;
           case 'down':
-            pacman.position.y += moveDistance;
+            newPosition = { ...newPosition, y: newPosition.y + moveDistance };
             break;
           case 'left':
-            pacman.position.x -= moveDistance;
+            newPosition = { ...newPosition, x: newPosition.x - moveDistance };
             break;
           case 'right':
-            pacman.position.x += moveDistance;
+            newPosition = { ...newPosition, x: newPosition.x + moveDistance };
             break;
         }
         
-        // Handle tunnel wrap-around for Pac-Man
-        if (pacman.position.x < -CELL_SIZE / 2) {
-          pacman.position.x = MAZE_WIDTH * CELL_SIZE - CELL_SIZE / 2;
-          pacman.gridPos = { row: pacman.gridPos.row, col: MAZE_WIDTH - 1 };
-          pacman.previousGridPos = { row: pacman.gridPos.row, col: 0 };
-        } else if (pacman.position.x > MAZE_WIDTH * CELL_SIZE + CELL_SIZE / 2) {
-          pacman.position.x = CELL_SIZE / 2;
-          pacman.gridPos = { row: pacman.gridPos.row, col: 0 };
-          pacman.previousGridPos = { row: pacman.gridPos.row, col: MAZE_WIDTH - 1 };
+        // Apply position update
+        game.pacman = { ...game.pacman, position: newPosition };
+        
+        // Handle tunnel wrap-around for Pac-Man immutably
+        const currentPacman = game.pacman;
+        if (currentPacman.position.x < -CELL_SIZE / 2) {
+          game.pacman = {
+            ...currentPacman,
+            position: { ...currentPacman.position, x: MAZE_WIDTH * CELL_SIZE - CELL_SIZE / 2 },
+            gridPos: { row: currentPacman.gridPos.row, col: MAZE_WIDTH - 1 },
+            previousGridPos: { row: currentPacman.gridPos.row, col: 0 }
+          };
+        } else if (currentPacman.position.x > MAZE_WIDTH * CELL_SIZE + CELL_SIZE / 2) {
+          game.pacman = {
+            ...currentPacman,
+            position: { ...currentPacman.position, x: CELL_SIZE / 2 },
+            gridPos: { row: currentPacman.gridPos.row, col: 0 },
+            previousGridPos: { row: currentPacman.gridPos.row, col: MAZE_WIDTH - 1 }
+          };
+        }
+
+        // Add Y-axis tunnel wrapping for Pac-Man immutably
+        const updatedPacman = game.pacman;
+        if (updatedPacman.position.y < -CELL_SIZE / 2) {
+          game.pacman = {
+            ...updatedPacman,
+            position: { ...updatedPacman.position, y: MAZE_HEIGHT * CELL_SIZE - CELL_SIZE / 2 },
+            gridPos: { row: MAZE_HEIGHT - 1, col: updatedPacman.gridPos.col },
+            previousGridPos: { row: 0, col: updatedPacman.gridPos.col }
+          };
+        } else if (updatedPacman.position.y > MAZE_HEIGHT * CELL_SIZE + CELL_SIZE / 2) {
+          game.pacman = {
+            ...updatedPacman,
+            position: { ...updatedPacman.position, y: CELL_SIZE / 2 },
+            gridPos: { row: 0, col: updatedPacman.gridPos.col },
+            previousGridPos: { row: MAZE_HEIGHT - 1, col: updatedPacman.gridPos.col }
+          };
         }
         
-        // Snap to grid if we can't move further
-        if (!canMove(pacman.gridPos, pacman.direction)) {
-          const gridCenter = gridToPixel(pacman.gridPos);
-          pacman.position.x = gridCenter.x;
-          pacman.position.y = gridCenter.y;
-          pacman.direction = 'none';
+        // Snap to grid if we can't move further immutably
+        const finalPacman = game.pacman;
+        if (!canMove(finalPacman.gridPos, finalPacman.direction)) {
+          const gridCenter = gridToPixel(finalPacman.gridPos);
+          game.pacman = {
+            ...finalPacman,
+            position: { x: gridCenter.x, y: gridCenter.y },
+            direction: 'none'
+          };
         }
       }
       
@@ -922,11 +963,12 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
               }
             }
           } else if (pacman.shieldHits > 0 && ghost.mode !== 'eaten') {
-            // Shield blocks one hit
-            pacman.shieldHits--;
+            // Shield blocks one hit - validate bounds
+            pacman.shieldHits = Math.max(0, pacman.shieldHits - 1);
             if (pacman.shieldHits <= 0) {
               pacman.powerUpActive = null;
               pacman.powerUpTimer = 0;
+              pacman.shieldHits = 0; // Ensure hits is exactly 0
             }
             createParticles(pacman.position.x, pacman.position.y, '#00ffff', 20);
             // Bounce ghost away

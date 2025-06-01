@@ -38,6 +38,8 @@ export function setupInput(
       game.pacman.nextDirection = dir;
       if (game.gamePhase === 'ready') {
         game.gamePhase = 'playing';
+        // Set lastUpdate to current time to start the game loop properly
+        game.lastUpdate = performance.now();
         if (soundEnabledRef.current) {
           soundManager.startGhostSiren('normal');
         }
@@ -64,6 +66,8 @@ export function setupInput(
     }
     if (game.gamePhase === 'ready') {
       game.gamePhase = 'playing';
+      // Set lastUpdate to current time to start the game loop properly
+      game.lastUpdate = performance.now();
       if (soundEnabledRef.current) {
         soundManager.startGhostSiren('normal');
       }
