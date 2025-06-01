@@ -3231,10 +3231,10 @@ class PerformanceManager {
 
   // Battery Optimization
   isOnBattery(): boolean {
-    // @ts-ignore - Check for battery API
+    // @ts-expect-error - Check for battery API (experimental feature)
     if (navigator.getBattery) {
       return new Promise(resolve => {
-        // @ts-ignore
+        // @ts-expect-error - Battery API is experimental
         navigator.getBattery().then((battery: any) => {
           resolve(!battery.charging && battery.level < 0.5);
         });
@@ -5870,8 +5870,8 @@ class ExtensibilityFrameworkManager {
       game: {
         getState: () => this.getGameState(),
         setState: (state: any) => this.setGameState(state),
-        addEventListener: (event: string, callback: Function) => this.addEventListener(event, callback),
-        removeEventListener: (event: string, callback: Function) => this.removeEventListener(event, callback)
+        addEventListener: (event: string, callback: EventListener) => this.addEventListener(event, callback),
+        removeEventListener: (event: string, callback: EventListener) => this.removeEventListener(event, callback)
       },
       
       // Audio API
@@ -6222,12 +6222,12 @@ class ExtensibilityFrameworkManager {
     window.dispatchEvent(event);
   }
 
-  private addEventListener(event: string, callback: Function): void {
-    window.addEventListener(`neonjump-${event}`, callback as EventListener);
+  private addEventListener(event: string, callback: EventListener): void {
+    window.addEventListener(`neonjump-${event}`, callback);
   }
 
-  private removeEventListener(event: string, callback: Function): void {
-    window.removeEventListener(`neonjump-${event}`, callback as EventListener);
+  private removeEventListener(event: string, callback: EventListener): void {
+    window.removeEventListener(`neonjump-${event}`, callback);
   }
 
   private playPluginSound(soundId: string, volume: number = 1): void {
@@ -10860,9 +10860,10 @@ export const NeonJumpGame: React.FC<NeonJumpGameProps> = ({ settings, updateHigh
     if (uiManagerRef.current && uiManagerRef.current.isMenuVisible()) {
       uiManagerRef.current.render();
     }
-    if (performanceManagerRef.current && false) { // Debug mode - set to true to show performance
-      performanceManagerRef.current.renderDebugInfo(ctx, 10, 10);
-    }
+    // Debug mode - uncomment to show performance info
+    // if (performanceManagerRef.current) {
+    //   performanceManagerRef.current.renderDebugInfo(ctx, 10, 10);
+    // }
     
     // CHECKPOINT 7: Render Production-Ready Features
     if (mobileOptimizationManagerRef.current && mobileOptimizationManagerRef.current.isMobileDevice()) {
