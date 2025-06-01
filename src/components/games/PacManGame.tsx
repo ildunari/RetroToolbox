@@ -332,6 +332,8 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     const { row, col } = gridPos;
     const maze = gameRef.current.maze;
     
+    // Bounds checking and wall collision detection
+    // 0 = wall (cannot move), 1 = pellet, 2 = power pellet, 3 = empty (all walkable)
     switch (direction) {
       case 'up':
         return row > 0 && maze[row - 1][col] !== 0;
