@@ -25,6 +25,11 @@ const MAZE_WIDTH = 28;
 const MAZE_HEIGHT = 31;
 const MAX_PARTICLES = 100;
 
+// Score overflow protection helper
+const addSafeScore = (currentScore: number, points: number): number => {
+  return Math.min(currentScore + points, Number.MAX_SAFE_INTEGER);
+};
+
 // Particle pool for performance
 class ParticlePool {
   private pool: Particle[] = [];
@@ -125,6 +130,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
   const particlePoolRef = useRef(new ParticlePool());
   const powerUpIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const animationIdRef = useRef<number | null>(null);
+  const soundEnabledRef = useRef(settings.soundEnabled);
   
   const gameRef = useRef<GameState>({
     pacman: {
@@ -370,10 +376,15 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
     }
   };
 
+  // Update sound enabled ref when settings change
+  useEffect(() => {
+    soundEnabledRef.current = settings.soundEnabled;
+  }, [settings.soundEnabled]);
+
   // Input handlers
   useEffect(() => {
-    return setupInput(canvasRef.current, gameRef, () => setPaused(p => !p), settings.soundEnabled);
-  }, [settings.soundEnabled]);
+    return setupInput(canvasRef.current, gameRef, () => setPaused(p => !p), soundEnabledRef);
+  }, []); // No dependencies needed - ref provides current value
 
   // Detect device performance and set quality level
   useEffect(() => {
@@ -432,7 +443,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           updatePacMan(deltaTime);
           
           // Update ghosts
-          updateGhosts(deltaTime);
+          updateGhosts(game, deltaTime);
         }
         
         // Update particles
@@ -598,7 +609,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
           
           // Add bonus score for level completion
           const levelBonus = 1000 * game.level;
-          game.score += levelBonus;
+          game.score = addSafeScore(game.score, levelBonus);
           setScore(game.score);
           
           createParticles(game.pacman.position.x, game.pacman.position.y, '#00ff00', 50);
@@ -698,7 +709,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         if (game.pellets.has(key)) {
           game.pellets.delete(key);
           game.pelletCacheDirty = true; // Mark cache as dirty
-          game.score += 10 * (game.combo + 1);
+          game.score = addSafeScore(game.score, 10 * (game.combo + 1));
           game.combo++;
           game.comboTimer = 2;
           setCombo(game.combo);
@@ -725,7 +736,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         if (game.powerPellets.has(key)) {
           game.powerPellets.delete(key);
           game.pelletCacheDirty = true; // Mark cache as dirty
-          game.score += 50 * (game.combo + 1);
+          game.score = addSafeScore(game.score, 50 * (game.combo + 1));
           game.globalDotCounter++;
           game.pelletsEaten++;
           game.frightenedTimer = Math.max(8 - (game.level - 1) * 0.5, 2); // Decrease frightened time per level (min 2s)
@@ -768,7 +779,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
         if (game.fruit && game.fruit.position &&
             pacman.gridPos.row === game.fruit.position.row &&
             pacman.gridPos.col === game.fruit.position.col) {
-          game.score += game.fruit.points;
+          game.score = addSafeScore(game.score, game.fruit.points);
           setScore(game.score);
           
           // Show points with text particle
@@ -809,7 +820,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
                 if (game.pellets.has(nearKey)) {
                   game.pellets.delete(nearKey);
                   game.pelletCacheDirty = true;
-                  game.score += 10 * (game.combo + 1);
+                  game.score = addSafeScore(game.score, 10 * (game.combo + 1));
                   game.globalDotCounter++;
                   game.pelletsEaten++;
                   
@@ -853,7 +864,7 @@ export const PacManGame: React.FC<PacManGameProps> = ({ settings, updateHighScor
             // Eat ghost
             ghost.mode = 'eaten';
             const points = 200 * Math.pow(2, game.ghostScoreMultiplier - 1);
-            game.score += points;
+            game.score = addSafeScore(game.score, points);
             game.ghostScoreMultiplier++;
             game.combo++;
             game.comboTimer = 2;

@@ -6,7 +6,7 @@ export function setupInput(
   canvas: HTMLCanvasElement | null,
   gameRef: MutableRefObject<GameState>,
   togglePause: () => void,
-  soundEnabled: boolean
+  soundEnabledRef: MutableRefObject<boolean>
 ) {
   const handleKey = (e: KeyboardEvent) => {
     const game = gameRef.current;
@@ -38,7 +38,7 @@ export function setupInput(
       game.pacman.nextDirection = dir;
       if (game.gamePhase === 'ready') {
         game.gamePhase = 'playing';
-        if (soundEnabled) {
+        if (soundEnabledRef.current) {
           soundManager.startGhostSiren('normal');
         }
       }
@@ -64,7 +64,7 @@ export function setupInput(
     }
     if (game.gamePhase === 'ready') {
       game.gamePhase = 'playing';
-      if (soundEnabled) {
+      if (soundEnabledRef.current) {
         soundManager.startGhostSiren('normal');
       }
     }
