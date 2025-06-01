@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export type GameType = 'snake' | 'pong' | 'breakout' | 'tetris' | 'spaceInvaders' | 'pacman';
+export type GameType =
+  | 'snake'
+  | 'pong'
+  | 'breakout'
+  | 'tetris'
+  | 'spaceInvaders'
+  | 'pacman'
+  | 'neonJump';
 
 export interface HighScores {
   snake: number;
@@ -9,6 +16,7 @@ export interface HighScores {
   tetris: number;
   spaceInvaders: number;
   pacman?: number; // Optional for backward compatibility
+  neonJump?: number;
 }
 
 export interface Achievement {
@@ -39,7 +47,8 @@ const DEFAULT_STATS: GameStats = {
     breakout: 0,
     tetris: 0,
     spaceInvaders: 0,
-    pacman: 0
+    pacman: 0,
+    neonJump: 0
   },
   gamesPlayed: 0,
   totalScore: 0,
@@ -50,7 +59,15 @@ const STORAGE_KEY = 'retroGameStats';
 const MAX_STORAGE_SIZE = 2 * 1024 * 1024; // 2MB limit for stats
 const MAX_ACHIEVEMENTS = 1000; // Prevent unlimited growth
 
-const VALID_GAME_TYPES: GameType[] = ['snake', 'pong', 'breakout', 'tetris', 'spaceInvaders', 'pacman'];
+const VALID_GAME_TYPES: GameType[] = [
+  'snake',
+  'pong',
+  'breakout',
+  'tetris',
+  'spaceInvaders',
+  'pacman',
+  'neonJump'
+];
 
 // Validation function to ensure stats object has correct shape and types
 const validateStats = (data: unknown): GameStats | null => {
@@ -73,7 +90,8 @@ const validateStats = (data: unknown): GameStats | null => {
       breakout: 0,
       tetris: 0,
       spaceInvaders: 0,
-      pacman: 0
+      pacman: 0,
+      neonJump: 0
     };
 
     // Validate each game score
